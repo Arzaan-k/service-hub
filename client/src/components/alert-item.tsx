@@ -2,7 +2,7 @@ interface AlertItemProps {
   alert: {
     id: string;
     severity: string;
-    title: string;
+    alertCode: string;
     description: string;
     detectedAt: string;
     containerId: string;
@@ -32,13 +32,27 @@ export default function AlertItem({ alert, containerName, onAction }: AlertItemP
         </div>
         <div className={`w-2 h-2 ${colors.badge} rounded-full pulse-indicator`}></div>
       </div>
-      <p className={`text-sm font-medium ${colors.text} mb-1`}>{alert.title}</p>
+      <p className={`text-sm font-medium ${colors.text} mb-1`}>{alert.alertCode}</p>
       <p className="text-xs text-muted-foreground mb-2">{containerName}</p>
       <p className="text-xs text-foreground mb-3">{alert.description}</p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onAction?.(alert.id, "acknowledge")}
+          className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted/20 transition-smooth"
+          data-testid={`button-ack-${alert.id}`}
+        >
+          Acknowledge
+        </button>
+        <button
+          onClick={() => onAction?.(alert.id, "resolve")}
+          className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted/20 transition-smooth"
+          data-testid={`button-resolve-${alert.id}`}
+        >
+          Resolve
+        </button>
         <button
           onClick={() => onAction?.(alert.id, "dispatch")}
-          className={`flex-1 px-3 py-1.5 text-xs font-medium ${colors.badge} text-white rounded hover:opacity-90 transition-smooth`}
+          className={`px-3 py-1.5 text-xs font-medium ${colors.badge} text-white rounded hover:opacity-90 transition-smooth`}
           data-testid={`button-dispatch-${alert.id}`}
         >
           Dispatch Technician

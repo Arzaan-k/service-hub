@@ -3,32 +3,96 @@
 @tailwind utilities;
 
 :root {
+  /* Base Colors */
   --background: hsl(222, 47%, 11%);
   --foreground: hsl(210, 40%, 98%);
   --card: hsl(222, 47%, 15%);
   --card-foreground: hsl(210, 40%, 98%);
   --popover: hsl(222, 47%, 13%);
   --popover-foreground: hsl(210, 40%, 98%);
-  --primary: hsl(217, 91%, 60%);
-  --primary-foreground: hsl(222, 47%, 11%);
-  --secondary: hsl(217, 33%, 17%);
-  --secondary-foreground: hsl(210, 40%, 98%);
-  --muted: hsl(217, 33%, 17%);
-  --muted-foreground: hsl(215, 20%, 65%);
-  --accent: hsl(262, 83%, 58%);
-  --accent-foreground: hsl(210, 40%, 98%);
-  --destructive: hsl(0, 84%, 60%);
-  --destructive-foreground: hsl(210, 40%, 98%);
-  --success: hsl(160, 84%, 39%);
-  --success-foreground: hsl(210, 40%, 98%);
-  --warning: hsl(38, 92%, 50%);
-  --warning-foreground: hsl(222, 47%, 11%);
   --border: hsl(217, 33%, 25%);
   --input: hsl(217, 33%, 25%);
   --ring: hsl(217, 91%, 60%);
   --radius: 0.5rem;
   --font-sans: 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+
+  /* Semantic Colors - Primary Actions */
+  --primary: hsl(217, 91%, 60%);
+  --primary-foreground: hsl(222, 47%, 11%);
+  --primary-light: hsl(217, 91%, 70%);
+  --primary-dark: hsl(217, 91%, 50%);
+
+  /* Semantic Colors - Secondary/Neutral */
+  --secondary: hsl(217, 33%, 17%);
+  --secondary-foreground: hsl(210, 40%, 98%);
+  --muted: hsl(217, 33%, 17%);
+  --muted-foreground: hsl(215, 20%, 65%);
+
+  /* Functional Area Colors */
+  --dashboard: hsl(200, 100%, 50%); /* Blue - Dashboard/Overview */
+  --dashboard-foreground: hsl(222, 47%, 11%);
+  --dashboard-light: hsl(200, 100%, 60%);
+  --dashboard-dark: hsl(200, 100%, 40%);
+
+  --containers: hsl(120, 60%, 50%); /* Green - Containers/Fleet */
+  --containers-foreground: hsl(222, 47%, 11%);
+  --containers-light: hsl(120, 60%, 60%);
+  --containers-dark: hsl(120, 60%, 40%);
+
+  --alerts: hsl(0, 84%, 60%); /* Red - Alerts/Issues */
+  --alerts-foreground: hsl(210, 40%, 98%);
+  --alerts-light: hsl(0, 84%, 70%);
+  --alerts-dark: hsl(0, 84%, 50%);
+
+  --service: hsl(30, 100%, 50%); /* Orange - Service Requests */
+  --service-foreground: hsl(222, 47%, 11%);
+  --service-light: hsl(30, 100%, 60%);
+  --service-dark: hsl(30, 100%, 40%);
+
+  --technicians: hsl(280, 60%, 50%); /* Purple - Technicians */
+  --technicians-foreground: hsl(210, 40%, 98%);
+  --technicians-light: hsl(280, 60%, 60%);
+  --technicians-dark: hsl(280, 60%, 40%);
+
+  --scheduling: hsl(200, 60%, 50%); /* Cyan - Scheduling */
+  --scheduling-foreground: hsl(222, 47%, 11%);
+  --scheduling-light: hsl(200, 60%, 60%);
+  --scheduling-dark: hsl(200, 60%, 40%);
+
+  --clients: hsl(160, 60%, 50%); /* Teal - Clients */
+  --clients-foreground: hsl(222, 47%, 11%);
+  --clients-light: hsl(160, 60%, 60%);
+  --clients-dark: hsl(160, 60%, 40%);
+
+  --whatsapp: hsl(120, 100%, 40%); /* WhatsApp Green */
+  --whatsapp-foreground: hsl(210, 40%, 98%);
+  --whatsapp-light: hsl(120, 100%, 50%);
+  --whatsapp-dark: hsl(120, 100%, 30%);
+
+  --inventory: hsl(45, 100%, 50%); /* Yellow - Inventory */
+  --inventory-foreground: hsl(222, 47%, 11%);
+  --inventory-light: hsl(45, 100%, 60%);
+  --inventory-dark: hsl(45, 100%, 40%);
+
+  --analytics: hsl(270, 60%, 50%); /* Magenta - Analytics */
+  --analytics-foreground: hsl(210, 40%, 98%);
+  --analytics-light: hsl(270, 60%, 60%);
+  --analytics-dark: hsl(270, 60%, 40%);
+
+  /* Status Colors */
+  --success: hsl(160, 84%, 39%);
+  --success-foreground: hsl(210, 40%, 98%);
+  --warning: hsl(38, 92%, 50%);
+  --warning-foreground: hsl(222, 47%, 11%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --info: hsl(200, 100%, 50%);
+  --info-foreground: hsl(222, 47%, 11%);
+
+  /* Legacy support */
+  --accent: hsl(262, 83%, 58%);
+  --accent-foreground: hsl(210, 40%, 98%);
 }
 
 * {
@@ -131,6 +195,156 @@ body {
 .scrollbar-thin::-webkit-scrollbar-track {
   background: var(--card);
 }
+
+/* Semantic Color Utilities - Direct CSS Classes */
+.bg-containers { background-color: #4ade80; }
+.bg-alerts { background-color: #ef4444; }
+.bg-service { background-color: #f97316; }
+.bg-technicians { background-color: #a855f7; }
+.bg-scheduling { background-color: #06b6d4; }
+.bg-clients { background-color: #14b8a6; }
+.bg-whatsapp { background-color: #22c55e; }
+.bg-inventory { background-color: #eab308; }
+.bg-analytics { background-color: #d946ef; }
+.bg-dashboard { background-color: #3b82f6; }
+
+.text-containers { color: #4ade80; }
+.text-alerts { color: #ef4444; }
+.text-service { color: #f97316; }
+.text-technicians { color: #a855f7; }
+.text-scheduling { color: #06b6d4; }
+.text-clients { color: #14b8a6; }
+.text-whatsapp { color: #22c55e; }
+.text-inventory { color: #eab308; }
+.text-analytics { color: #d946ef; }
+.text-dashboard { color: #3b82f6; }
+
+.border-containers { border-color: #4ade80; }
+.border-alerts { border-color: #ef4444; }
+.border-service { border-color: #f97316; }
+.border-technicians { border-color: #a855f7; }
+.border-scheduling { border-color: #06b6d4; }
+.border-clients { border-color: #14b8a6; }
+.border-whatsapp { border-color: #22c55e; }
+.border-inventory { border-color: #eab308; }
+.border-analytics { border-color: #d946ef; }
+.border-dashboard { border-color: #3b82f6; }
+
+/* Component Type Indicators */
+.component-header {
+  @apply flex items-center gap-2 mb-4;
+}
+
+.component-icon {
+  @apply p-2 rounded-lg;
+}
+
+.component-title {
+  @apply text-lg font-semibold text-foreground;
+}
+
+/* Status Indicators */
+.status-indicator {
+  @apply w-2 h-2 rounded-full;
+}
+
+.status-active {
+  @apply animate-pulse;
+}
+
+/* Enhanced Hover Effects */
+.hover-lift {
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.hover-lift:hover {
+  @apply transform -translate-y-1 shadow-lg;
+}
+
+/* Color-coded borders for different sections */
+.section-containers {
+  @apply border-l-4;
+  border-left-color: #4ade80;
+}
+
+.section-alerts {
+  @apply border-l-4;
+  border-left-color: #ef4444;
+}
+
+.section-service {
+  @apply border-l-4;
+  border-left-color: #f97316;
+}
+
+.section-technicians {
+  @apply border-l-4;
+  border-left-color: #a855f7;
+}
+
+.section-scheduling {
+  @apply border-l-4;
+  border-left-color: #06b6d4;
+}
+
+.section-clients {
+  @apply border-l-4;
+  border-left-color: #14b8a6;
+}
+
+.section-whatsapp {
+  @apply border-l-4;
+  border-left-color: #22c55e;
+}
+
+.section-inventory {
+  @apply border-l-4;
+  border-left-color: #eab308;
+}
+
+.section-analytics {
+  @apply border-l-4;
+  border-left-color: #d946ef;
+}
+
+.section-dashboard {
+  @apply border-l-4;
+  border-left-color: #3b82f6;
+}
+
+/* Additional semantic color utilities */
+.bg-containers\/10 { background-color: rgba(74, 222, 128, 0.1); }
+.bg-alerts\/10 { background-color: rgba(239, 68, 68, 0.1); }
+.bg-service\/10 { background-color: rgba(249, 115, 22, 0.1); }
+.bg-technicians\/10 { background-color: rgba(168, 85, 247, 0.1); }
+.bg-scheduling\/10 { background-color: rgba(6, 182, 212, 0.1); }
+.bg-clients\/10 { background-color: rgba(20, 184, 166, 0.1); }
+.bg-whatsapp\/10 { background-color: rgba(34, 197, 94, 0.1); }
+.bg-inventory\/10 { background-color: rgba(234, 179, 8, 0.1); }
+.bg-analytics\/10 { background-color: rgba(217, 70, 239, 0.1); }
+.bg-dashboard\/10 { background-color: rgba(59, 130, 246, 0.1); }
+
+.bg-containers\/20 { background-color: rgba(74, 222, 128, 0.2); }
+.bg-alerts\/20 { background-color: rgba(239, 68, 68, 0.2); }
+.bg-service\/20 { background-color: rgba(249, 115, 22, 0.2); }
+.bg-technicians\/20 { background-color: rgba(168, 85, 247, 0.2); }
+.bg-scheduling\/20 { background-color: rgba(6, 182, 212, 0.2); }
+.bg-clients\/20 { background-color: rgba(20, 184, 166, 0.2); }
+.bg-whatsapp\/20 { background-color: rgba(34, 197, 94, 0.2); }
+.bg-inventory\/20 { background-color: rgba(234, 179, 8, 0.2); }
+.bg-analytics\/20 { background-color: rgba(217, 70, 239, 0.2); }
+.bg-dashboard\/20 { background-color: rgba(59, 130, 246, 0.2); }
+
+.border-containers\/20 { border-color: rgba(74, 222, 128, 0.2); }
+.border-alerts\/20 { border-color: rgba(239, 68, 68, 0.2); }
+.border-service\/20 { border-color: rgba(249, 115, 22, 0.2); }
+.border-technicians\/20 { border-color: rgba(168, 85, 247, 0.2); }
+.border-scheduling\/20 { border-color: rgba(6, 182, 212, 0.2); }
+.border-clients\/20 { border-color: rgba(20, 184, 166, 0.2); }
+.border-whatsapp\/20 { border-color: rgba(34, 197, 94, 0.2); }
+.border-inventory\/20 { border-color: rgba(234, 179, 8, 0.2); }
+.border-analytics\/20 { border-color: rgba(217, 70, 239, 0.2); }
+.border-dashboard\/20 { border-color: rgba(59, 130, 246, 0.2); }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: var(--muted);

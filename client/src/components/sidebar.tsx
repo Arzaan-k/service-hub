@@ -5,18 +5,23 @@ export default function Sidebar() {
   const [location] = useLocation();
   const user = getCurrentUser();
 
+  const role = (user?.role || "client").toLowerCase();
   const navItems = [
-    { path: "/", label: "Dashboard", icon: "fas fa-th-large", badge: "3" },
-    { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250" },
-    { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", badgeColor: "bg-destructive" },
-    { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench" },
-    { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat" },
-    { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt" },
-    { path: "/clients", label: "Clients", icon: "fas fa-users" },
-    { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true },
-    { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse" },
-    { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line" },
-  ];
+    // Everyone
+    { path: "/", label: "Dashboard", icon: "fas fa-th-large", badge: "3", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", badgeColor: "bg-destructive", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench", roles: ["admin","coordinator","technician","client","super_admin"] },
+    // Admin/Coordinator only
+    { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat", roles: ["admin","coordinator","super_admin"] },
+    { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", roles: ["admin","coordinator","super_admin"] },
+    { path: "/clients", label: "Clients", icon: "fas fa-users", roles: ["admin","coordinator","super_admin"] },
+    // Admin/Coordinator/Technician (and WhatsApp also visible to client per earlier rule)
+    { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true, roles: ["admin","coordinator","super_admin"] },
+    { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", roles: ["admin","coordinator","technician","super_admin"] },
+    // Admin analytics
+    { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", roles: ["admin","super_admin"] },
+  ].filter(item => item.roles.includes(role));
 
   const handleLogout = () => {
     clearAuth();

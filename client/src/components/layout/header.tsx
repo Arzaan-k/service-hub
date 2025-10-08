@@ -1,7 +1,9 @@
 import { useState } from "react";
+import ColorGuide from "@/components/color-guide";
 
 export default function Header({ title }: { title: string }) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [showColorGuide, setShowColorGuide] = useState(false);
 
   return (
     <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6 sticky top-0 z-10">
@@ -31,12 +33,23 @@ export default function Header({ title }: { title: string }) {
           <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full"></span>
         </button>
 
+        {/* Color Guide Button */}
+        <button
+          onClick={() => setShowColorGuide(true)}
+          className="p-2 hover:bg-muted/20 rounded-md transition-smooth"
+          title="Color Coding Guide"
+        >
+          <i className="fas fa-palette text-muted-foreground"></i>
+        </button>
+
         {/* WhatsApp Status */}
         <div className="flex items-center gap-2 px-3 py-1.5 bg-success/10 border border-success/20 rounded-md">
           <i className="fab fa-whatsapp text-success"></i>
           <span className="text-xs font-medium text-success">Connected</span>
         </div>
       </div>
+
+      <ColorGuide isOpen={showColorGuide} onClose={() => setShowColorGuide(false)} />
     </header>
   );
 }

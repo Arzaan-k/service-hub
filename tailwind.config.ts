@@ -24,6 +24,8 @@ export default {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
+          light: "hsl(var(--primary-light))",
+          dark: "hsl(var(--primary-dark))",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -48,6 +50,71 @@ export default {
         warning: {
           DEFAULT: "hsl(var(--warning))",
           foreground: "hsl(var(--warning-foreground))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
+        },
+        // Functional Area Colors
+        dashboard: {
+          DEFAULT: "hsl(var(--dashboard))",
+          foreground: "hsl(var(--dashboard-foreground))",
+          light: "hsl(var(--dashboard-light))",
+          dark: "hsl(var(--dashboard-dark))",
+        },
+        containers: {
+          DEFAULT: "hsl(var(--containers))",
+          foreground: "hsl(var(--containers-foreground))",
+          light: "hsl(var(--containers-light))",
+          dark: "hsl(var(--containers-dark))",
+        },
+        alerts: {
+          DEFAULT: "hsl(var(--alerts))",
+          foreground: "hsl(var(--alerts-foreground))",
+          light: "hsl(var(--alerts-light))",
+          dark: "hsl(var(--alerts-dark))",
+        },
+        service: {
+          DEFAULT: "hsl(var(--service))",
+          foreground: "hsl(var(--service-foreground))",
+          light: "hsl(var(--service-light))",
+          dark: "hsl(var(--service-dark))",
+        },
+        technicians: {
+          DEFAULT: "hsl(var(--technicians))",
+          foreground: "hsl(var(--technicians-foreground))",
+          light: "hsl(var(--technicians-light))",
+          dark: "hsl(var(--technicians-dark))",
+        },
+        scheduling: {
+          DEFAULT: "hsl(var(--scheduling))",
+          foreground: "hsl(var(--scheduling-foreground))",
+          light: "hsl(var(--scheduling-light))",
+          dark: "hsl(var(--scheduling-dark))",
+        },
+        clients: {
+          DEFAULT: "hsl(var(--clients))",
+          foreground: "hsl(var(--clients-foreground))",
+          light: "hsl(var(--clients-light))",
+          dark: "hsl(var(--clients-dark))",
+        },
+        whatsapp: {
+          DEFAULT: "hsl(var(--whatsapp))",
+          foreground: "hsl(var(--whatsapp-foreground))",
+          light: "hsl(var(--whatsapp-light))",
+          dark: "hsl(var(--whatsapp-dark))",
+        },
+        inventory: {
+          DEFAULT: "hsl(var(--inventory))",
+          foreground: "hsl(var(--inventory-foreground))",
+          light: "hsl(var(--inventory-light))",
+          dark: "hsl(var(--inventory-dark))",
+        },
+        analytics: {
+          DEFAULT: "hsl(var(--analytics))",
+          foreground: "hsl(var(--analytics-foreground))",
+          light: "hsl(var(--analytics-light))",
+          dark: "hsl(var(--analytics-dark))",
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

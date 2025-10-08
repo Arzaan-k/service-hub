@@ -49,7 +49,7 @@ export class AlertService {
         }
 
       } catch (error) {
-        console.error(`[Alert Service] Error polling container ${container.containerId}:`, error);
+        console.error(`[Alert Service] Error polling container ${container.containerCode || container.containerId}:`, error);
       }
     }
 
@@ -64,7 +64,7 @@ export class AlertService {
     );
 
     if (hasOpenAlert) {
-      console.log(`[Alert Service] Alert already exists for ${container.containerId} - ${errorCode}`);
+      console.log(`[Alert Service] Alert already exists for ${container.containerCode || container.containerId} - ${errorCode}`);
       return;
     }
 
@@ -93,7 +93,7 @@ export class AlertService {
     };
 
     const createdAlert = await storage.createAlert(alert);
-    console.log(`[Alert Service] Created alert ${createdAlert.id} for container ${container.containerId}`);
+    console.log(`[Alert Service] Created alert ${createdAlert.id} for container ${container.containerCode || container.containerId}`);
 
     // Notify client via WhatsApp if they exist
     if (container.currentClientId) {
@@ -133,16 +133,15 @@ export class AlertService {
     const requestId = `SR-${Date.now().toString().slice(-6)}`;
     
     const serviceRequest = await storage.createServiceRequest({
-      requestId,
+      requestNumber: requestId,
       containerId: container.id,
-      clientId: container.currentClientId,
+      customerId: container.currentCustomerId,
       alertId: alert.id,
       status: 'pending',
       priority: alert.severity,
       issueDescription: alert.description,
       requiredParts: alert.requiredParts,
-      estimatedCost: null,
-      actualCost: null
+      estimatedDuration: alert.estimatedServiceTime
     });
 
     console.log(`[Alert Service] Created service request ${requestId} from alert ${alert.id}`);

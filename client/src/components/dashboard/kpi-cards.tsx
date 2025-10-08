@@ -12,10 +12,10 @@ export default function KPICards({ stats }: KPICardsProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       {/* Total Fleet */}
-      <div className="bg-card border border-border rounded-lg p-6 hover-lift transition-smooth">
+      <div className="bg-card border border-containers/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#4ade80', borderLeftWidth: '4px' }}>
         <div className="flex items-center justify-between mb-4">
-          <div className="p-3 bg-primary/10 rounded-lg">
-            <i className="fas fa-box text-primary text-xl"></i>
+          <div className="p-3 bg-containers/10 rounded-lg" style={{ backgroundColor: 'rgba(74, 222, 128, 0.1)' }}>
+            <i className="fas fa-box text-containers text-xl" style={{ color: '#4ade80' }}></i>
           </div>
           <span className="text-xs text-success font-medium">+12% vs last month</span>
         </div>
@@ -23,34 +23,34 @@ export default function KPICards({ stats }: KPICardsProps) {
         <p className="text-sm text-muted-foreground mt-1">Total Containers</p>
         <div className="mt-4 flex items-center gap-2 text-xs">
           <span className="text-muted-foreground">IoT:</span>
-          <span className="font-medium text-primary">90</span>
+          <span className="font-medium text-containers">90</span>
           <span className="text-muted-foreground">Manual:</span>
           <span className="font-medium text-muted">160</span>
         </div>
       </div>
 
       {/* Active Alerts */}
-      <div className="bg-card border border-border rounded-lg p-6 hover-lift transition-smooth">
+      <div className="bg-card border border-alerts/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#ef4444', borderLeftWidth: '4px' }}>
         <div className="flex items-center justify-between mb-4">
-          <div className="p-3 bg-destructive/10 rounded-lg">
-            <i className="fas fa-exclamation-triangle text-destructive text-xl"></i>
+          <div className="p-3 bg-alerts/10 rounded-lg" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
+            <i className="fas fa-exclamation-triangle text-alerts text-xl" style={{ color: '#ef4444' }}></i>
           </div>
-          <span className="text-xs text-destructive font-medium">3 Critical</span>
+          <span className="text-xs text-alerts font-medium" style={{ color: '#ef4444' }}>3 Critical</span>
         </div>
         <h3 className="text-3xl font-bold text-foreground">{stats?.activeAlerts || 0}</h3>
         <p className="text-sm text-muted-foreground mt-1">Active Alerts</p>
         <div className="mt-4 flex gap-2">
-          <span className="px-2 py-0.5 bg-destructive/20 text-destructive text-xs rounded-full">3 Critical</span>
+          <span className="px-2 py-0.5 bg-alerts/20 text-alerts text-xs rounded-full">3 Critical</span>
           <span className="px-2 py-0.5 bg-warning/20 text-warning text-xs rounded-full">5 High</span>
-          <span className="px-2 py-0.5 bg-accent/20 text-accent text-xs rounded-full">4 Med</span>
+          <span className="px-2 py-0.5 bg-info/20 text-info text-xs rounded-full">4 Med</span>
         </div>
       </div>
 
       {/* Service Requests */}
-      <div className="bg-card border border-border rounded-lg p-6 hover-lift transition-smooth">
+      <div className="bg-card border border-service/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#f97316', borderLeftWidth: '4px' }}>
         <div className="flex items-center justify-between mb-4">
-          <div className="p-3 bg-warning/10 rounded-lg">
-            <i className="fas fa-wrench text-warning text-xl"></i>
+          <div className="p-3 bg-service/10 rounded-lg" style={{ backgroundColor: 'rgba(249, 115, 22, 0.1)' }}>
+            <i className="fas fa-wrench text-service text-xl" style={{ color: '#f97316' }}></i>
           </div>
           <span className="text-xs text-success font-medium">95% on-time</span>
         </div>
@@ -62,10 +62,10 @@ export default function KPICards({ stats }: KPICardsProps) {
       </div>
 
       {/* Fleet Utilization */}
-      <div className="bg-card border border-border rounded-lg p-6 hover-lift transition-smooth">
+      <div className="bg-card border border-dashboard/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#3b82f6', borderLeftWidth: '4px' }}>
         <div className="flex items-center justify-between mb-4">
-          <div className="p-3 bg-secondary/10 rounded-lg">
-            <i className="fas fa-chart-pie text-secondary text-xl"></i>
+          <div className="p-3 bg-dashboard/10 rounded-lg" style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)' }}>
+            <i className="fas fa-chart-pie text-dashboard text-xl" style={{ color: '#3b82f6' }}></i>
           </div>
           <span className="text-xs text-success font-medium">+8% efficiency</span>
         </div>
@@ -73,7 +73,7 @@ export default function KPICards({ stats }: KPICardsProps) {
         <p className="text-sm text-muted-foreground mt-1">Fleet Utilization</p>
         <div className="mt-4 w-full bg-muted/30 rounded-full h-2">
           <div
-            className="bg-secondary h-2 rounded-full"
+            className="bg-dashboard h-2 rounded-full"
             style={{ width: `${stats?.fleetUtilization || 0}%` }}
           ></div>
         </div>

@@ -9,8 +9,13 @@ export default function ContainerLookup({ containers }: ContainerLookupProps) {
   const selectedContainer = containers?.find((c) => c.containerId === searchId);
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6">
-      <h3 className="text-lg font-semibold text-foreground mb-4">Quick Container Lookup</h3>
+    <div className="bg-card border border-containers/20 rounded-lg p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="p-2 bg-containers/10 rounded-lg">
+          <i className="fas fa-search text-containers text-sm"></i>
+        </div>
+        <h3 className="text-lg font-semibold text-foreground">Quick Container Lookup</h3>
+      </div>
 
       <div className="space-y-4">
         <div>

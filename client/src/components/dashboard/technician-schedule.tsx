@@ -4,14 +4,19 @@ interface TechnicianScheduleProps {
 
 export default function TechnicianSchedule({ technicians }: TechnicianScheduleProps) {
   return (
-    <div className="bg-card border border-border rounded-lg p-6">
+    <div className="bg-card border border-scheduling/20 rounded-lg p-6">
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-foreground">Today's Technician Schedule</h3>
-          <p className="text-sm text-muted-foreground">Jan 15, 2025</p>
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-scheduling/10 rounded-lg">
+            <i className="fas fa-calendar-alt text-scheduling text-sm"></i>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Today's Technician Schedule</h3>
+            <p className="text-sm text-muted-foreground">Jan 15, 2025</p>
+          </div>
         </div>
         <div className="flex gap-2">
-          <button className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-smooth">
+          <button className="px-3 py-1.5 text-xs font-medium bg-scheduling text-scheduling-foreground rounded-md hover:bg-scheduling/90 transition-smooth">
             Auto-Schedule
           </button>
           <button className="px-3 py-1.5 text-xs font-medium border border-border rounded-md hover:bg-muted/20 transition-smooth">

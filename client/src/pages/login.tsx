@@ -104,6 +104,19 @@ export default function Login() {
             </button>
           </form>
 
+          {/* Sign Up Link */}
+          <div className="mt-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Don't have an account?{" "}
+              <button
+                onClick={() => setLocation("/signup")}
+                className="text-primary hover:underline font-medium"
+              >
+                Create Account
+              </button>
+            </p>
+          </div>
+
           {/* Security Notice */}
           <div className="mt-6 p-4 bg-muted/50 rounded-lg border border-border">
             <div className="flex items-start gap-3">

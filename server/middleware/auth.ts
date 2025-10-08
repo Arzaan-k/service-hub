@@ -32,8 +32,12 @@ export function requireRole(...roles: string[]) {
       return res.status(401).json({ error: "Authentication required" });
     }
 
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Insufficient permissions" });
+    if (roles.length > 0) {
+      const userRole = (req.user.role || "client").toLowerCase();
+      const allowed = roles.map(r => r.toLowerCase()).includes(userRole);
+      if (!allowed) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
     }
 
     next();

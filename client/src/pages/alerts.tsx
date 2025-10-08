@@ -1,24 +1,46 @@
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
-import { useQuery } from "@tanstack/react-query";
-import { getAuthToken } from "@/lib/auth";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import AlertItem from "@/components/alert-item";
 
 export default function Alerts() {
-  const authToken = getAuthToken();
+  const queryClient = useQueryClient();
 
-  const { data: alerts } = useQuery({
-    queryKey: ["/api/alerts"],
-    queryFn: async () => {
-      const res = await fetch("/api/alerts", {
-        headers: { "x-user-id": authToken || "" },
-      });
-      return res.json();
+  const { data: alerts } = useQuery({ queryKey: ["/api/alerts"] });
+
+  const { data: containers } = useQuery({ queryKey: ["/api/containers"] });
+
+  const acknowledge = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("PUT", `/api/alerts/${id}/acknowledge`);
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    }
   });
 
-  const { data: containers } = useQuery({
-    queryKey: ["/api/containers"],
+  const resolve = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("PUT", `/api/alerts/${id}/resolve`, { resolutionMethod: "service" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    }
+  });
+
+  const dispatch = useMutation({
+    mutationFn: async (alertId: string) => {
+      // Create a service request from alert
+      await apiRequest("POST", "/api/service-requests", { alertId, issueDescription: "Auto-dispatch from alert" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+    }
   });
 
   return (
@@ -34,7 +56,12 @@ export default function Alerts() {
                 <AlertItem
                   key={alert.id}
                   alert={alert}
-                  containerName={container?.containerId || "Unknown"}
+                  containerName={container?.containerCode || "Unknown"}
+                  onAction={(id, action) => {
+                    if (action === "acknowledge") acknowledge.mutate(id);
+                    if (action === "resolve") resolve.mutate(id);
+                    if (action === "dispatch") dispatch.mutate(id);
+                  }}
                 />
               );
             })}

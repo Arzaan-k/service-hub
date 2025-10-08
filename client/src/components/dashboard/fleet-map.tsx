@@ -8,13 +8,16 @@ declare global {
 
 interface Container {
   id: string;
-  containerId: string;
+  containerCode: string;
   currentLocation?: {
     lat: number;
     lng: number;
     address?: string;
   };
-  status: string;
+  healthScore?: number;
+  usageCycles?: number;
+  capacity?: string;
+  orbcommDeviceId?: string;
 }
 
 interface FleetMapProps {
@@ -26,7 +29,7 @@ export default function FleetMap({ containers }: FleetMapProps) {
   const mapInstanceRef = useRef<any>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !window.L || !mapRef.current) return;
+    if (typeof window === "undefined" || !window.L || !mapRef.current || !containers) return;
 
     if (!mapInstanceRef.current) {
       mapInstanceRef.current = window.L.map(mapRef.current).setView([34.0522, -118.2437], 10);
@@ -45,13 +48,24 @@ export default function FleetMap({ containers }: FleetMapProps) {
 
     // Add container markers
     containers.forEach((container) => {
-      if (container.currentLocation) {
-        const color =
-          container.status === "active"
-            ? "#22c55e"
-            : container.status === "maintenance"
-              ? "#f97316"
-              : "#ef4444";
+      if (container.currentLocation && container.currentLocation.lat && container.currentLocation.lng) {
+        // Determine status based on health score and other factors
+        const healthScore = container.healthScore || 0;
+        const hasIot = !!container.orbcommDeviceId;
+        
+        let status = "unknown";
+        let color = "#ef4444"; // Default to red
+        
+        if (healthScore >= 80) {
+          status = "active";
+          color = "#22c55e"; // Green
+        } else if (healthScore >= 60) {
+          status = "maintenance";
+          color = "#f97316"; // Orange
+        } else {
+          status = "critical";
+          color = "#ef4444"; // Red
+        }
 
         const marker = window.L.circleMarker(
           [container.currentLocation.lat, container.currentLocation.lng],
@@ -65,12 +79,19 @@ export default function FleetMap({ containers }: FleetMapProps) {
           }
         ).addTo(mapInstanceRef.current);
 
+        const statusDisplay = status.charAt(0).toUpperCase() + status.slice(1);
+        const locationDisplay = container.currentLocation?.address || 
+          `Location: ${container.currentLocation?.lat?.toFixed(4)}, ${container.currentLocation?.lng?.toFixed(4)}`;
+
         marker.bindPopup(`
           <div class="p-2">
-            <p class="font-mono font-semibold text-sm">${container.containerId}</p>
-            <p class="text-xs text-gray-600">${container.currentLocation.address || "Unknown"}</p>
+            <p class="font-mono font-semibold text-sm">${container.containerCode || "Unknown"}</p>
+            <p class="text-xs text-gray-600">${locationDisplay}</p>
             <p class="text-xs mt-1 font-medium" style="color: ${color}">
-              ${container.status.charAt(0).toUpperCase() + container.status.slice(1)}
+              ${statusDisplay} (${healthScore}% health)
+            </p>
+            <p class="text-xs text-gray-500 mt-1">
+              ${container.capacity || "Unknown capacity"} • ${hasIot ? "IoT Enabled" : "Manual Tracking"}
             </p>
           </div>
         `);
@@ -79,11 +100,16 @@ export default function FleetMap({ containers }: FleetMapProps) {
   }, [containers]);
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6">
+    <div className="bg-card border border-dashboard/20 rounded-lg p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-foreground">Real-time Fleet Map</h3>
         <div className="flex items-center gap-2">
-          <button className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-smooth">
+          <div className="p-2 bg-dashboard/10 rounded-lg">
+            <i className="fas fa-map-marked-alt text-dashboard text-sm"></i>
+          </div>
+          <h3 className="text-lg font-semibold text-foreground">Real-time Fleet Map</h3>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="px-3 py-1.5 text-xs font-medium bg-dashboard text-dashboard-foreground rounded-md hover:bg-dashboard/90 transition-smooth">
             Refresh Map
           </button>
           <select className="px-3 py-1.5 text-xs border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring">
@@ -95,7 +121,7 @@ export default function FleetMap({ containers }: FleetMapProps) {
         </div>
       </div>
 
-      <div ref={mapRef} className="map-container bg-muted/10 rounded-lg"></div>
+      <div ref={mapRef} className="map-container bg-muted/10 rounded-lg h-96"></div>
 
       <div className="mt-4 flex flex-wrap gap-4 text-xs">
         <div className="flex items-center gap-2">

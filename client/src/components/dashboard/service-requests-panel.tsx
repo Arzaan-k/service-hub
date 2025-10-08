@@ -36,10 +36,15 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
   };
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6">
+    <div className="bg-card border border-service/20 rounded-lg p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-foreground">Recent Service Requests</h3>
-        <button className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-smooth">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-service/10 rounded-lg">
+            <i className="fas fa-wrench text-service text-sm"></i>
+          </div>
+          <h3 className="text-lg font-semibold text-foreground">Recent Service Requests</h3>
+        </div>
+        <button className="px-3 py-1.5 text-xs font-medium bg-service text-service-foreground rounded-md hover:bg-service/90 transition-smooth">
           + New Request
         </button>
       </div>
@@ -62,8 +67,8 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
               return (
                 <tr key={request.id} className="border-b border-border hover:bg-muted/10 transition-smooth">
                   <td className="py-3 px-2 font-mono text-xs">{request.requestNumber}</td>
-                  <td className="py-3 px-2 font-mono text-xs">{container?.containerId || "Unknown"}</td>
-                  <td className="py-3 px-2">{request.issueDescription.substring(0, 20)}...</td>
+                  <td className="py-3 px-2 font-mono text-xs">{container?.containerCode || container?.containerId || "Unknown"}</td>
+                  <td className="py-3 px-2">{(request.issueDescription || "").substring(0, 20)}{(request.issueDescription || "").length > 20 ? "..." : ""}</td>
                   <td className="py-3 px-2">
                     <span className={`px-2 py-0.5 ${getPriorityColor(request.priority)} text-xs rounded-full`}>
                       {request.priority}

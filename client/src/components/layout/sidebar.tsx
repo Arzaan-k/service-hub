@@ -5,18 +5,23 @@ export default function Sidebar() {
   const [location] = useLocation();
   const user = getCurrentUser();
 
+  const role = (user?.role || "client").toLowerCase();
   const navItems = [
-    { path: "/", label: "Dashboard", icon: "fas fa-th-large", badge: "3" },
-    { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250" },
-    { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", badgeColor: "destructive" },
-    { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench" },
-    { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat" },
-    { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt" },
-    { path: "/clients", label: "Clients", icon: "fas fa-users" },
-    { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true },
-    { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse" },
-    { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line" },
-  ];
+    // Everyone
+    { path: "/", label: "Dashboard", icon: "fas fa-th-large", badge: "3", color: "dashboard", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250", color: "containers", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", color: "alerts", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench", color: "service", roles: ["admin","coordinator","technician","client","super_admin"] },
+    // Admin/Coordinator only
+    { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat", color: "technicians", roles: ["admin","coordinator","super_admin"] },
+    { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", color: "scheduling", roles: ["admin","coordinator","super_admin"] },
+    { path: "/clients", label: "Clients", icon: "fas fa-users", color: "clients", roles: ["admin","coordinator","super_admin"] },
+    // Admin/Coordinator/Technician
+    { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true, color: "whatsapp", roles: ["admin","coordinator","super_admin"] },
+    { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", color: "inventory", roles: ["admin","coordinator","technician","super_admin"] },
+    // Admin-only analytics
+    { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", color: "analytics", roles: ["admin","super_admin"] },
+  ].filter(item => item.roles.includes(role));
 
   const handleLogout = () => {
     clearAuth();
@@ -42,38 +47,103 @@ export default function Sidebar() {
       <nav className="flex-1 p-4 overflow-y-auto scrollbar-thin">
         <div className="space-y-1">
           {navItems.map((item) => (
-            <Link key={item.path} href={item.path}>
-              <a
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth ${
-                  location === item.path
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-                data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-              >
-                <i className={`${item.icon} w-5`}></i>
-                <span className="font-medium">{item.label}</span>
-                {item.badge && (
-                  <span
-                    className={`ml-auto ${
-                      item.badgeColor === "destructive" ? "bg-destructive" : "bg-primary"
-                    } text-${item.badgeColor === "destructive" ? "destructive" : "primary"}-foreground text-xs px-2 py-0.5 rounded-full`}
-                  >
-                    {item.badge}
-                  </span>
-                )}
-                {item.hasPulse && <span className="ml-auto w-2 h-2 bg-success rounded-full pulse-dot"></span>}
-              </a>
+            <Link 
+              key={item.path} 
+              href={item.path}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth group ${
+                location === item.path
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              style={location === item.path ? {
+                backgroundColor: item.color === 'containers' ? 'rgba(74, 222, 128, 0.1)' :
+                                item.color === 'alerts' ? 'rgba(239, 68, 68, 0.1)' :
+                                item.color === 'service' ? 'rgba(249, 115, 22, 0.1)' :
+                                item.color === 'technicians' ? 'rgba(168, 85, 247, 0.1)' :
+                                item.color === 'scheduling' ? 'rgba(6, 182, 212, 0.1)' :
+                                item.color === 'clients' ? 'rgba(20, 184, 166, 0.1)' :
+                                item.color === 'whatsapp' ? 'rgba(34, 197, 94, 0.1)' :
+                                item.color === 'inventory' ? 'rgba(234, 179, 8, 0.1)' :
+                                item.color === 'analytics' ? 'rgba(217, 70, 239, 0.1)' :
+                                'rgba(59, 130, 246, 0.1)',
+                borderLeftColor: item.color === 'containers' ? '#4ade80' :
+                                item.color === 'alerts' ? '#ef4444' :
+                                item.color === 'service' ? '#f97316' :
+                                item.color === 'technicians' ? '#a855f7' :
+                                item.color === 'scheduling' ? '#06b6d4' :
+                                item.color === 'clients' ? '#14b8a6' :
+                                item.color === 'whatsapp' ? '#22c55e' :
+                                item.color === 'inventory' ? '#eab308' :
+                                item.color === 'analytics' ? '#d946ef' :
+                                '#3b82f6',
+                borderLeftWidth: '4px',
+                color: item.color === 'containers' ? '#4ade80' :
+                       item.color === 'alerts' ? '#ef4444' :
+                       item.color === 'service' ? '#f97316' :
+                       item.color === 'technicians' ? '#a855f7' :
+                       item.color === 'scheduling' ? '#06b6d4' :
+                       item.color === 'clients' ? '#14b8a6' :
+                       item.color === 'whatsapp' ? '#22c55e' :
+                       item.color === 'inventory' ? '#eab308' :
+                       item.color === 'analytics' ? '#d946ef' :
+                       '#3b82f6'
+              } : {}}
+              data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              <i 
+                className={`${item.icon} w-5`}
+                style={location === item.path ? {
+                  color: item.color === 'containers' ? '#4ade80' :
+                         item.color === 'alerts' ? '#ef4444' :
+                         item.color === 'service' ? '#f97316' :
+                         item.color === 'technicians' ? '#a855f7' :
+                         item.color === 'scheduling' ? '#06b6d4' :
+                         item.color === 'clients' ? '#14b8a6' :
+                         item.color === 'whatsapp' ? '#22c55e' :
+                         item.color === 'inventory' ? '#eab308' :
+                         item.color === 'analytics' ? '#d946ef' :
+                         '#3b82f6'
+                } : {}}
+              ></i>
+              <span className="font-medium">{item.label}</span>
+              {item.badge && (
+                <span
+                  className="ml-auto text-white text-xs px-2 py-0.5 rounded-full"
+                  style={{
+                    backgroundColor: item.color === 'containers' ? '#4ade80' :
+                                    item.color === 'alerts' ? '#ef4444' :
+                                    item.color === 'service' ? '#f97316' :
+                                    item.color === 'technicians' ? '#a855f7' :
+                                    item.color === 'scheduling' ? '#06b6d4' :
+                                    item.color === 'clients' ? '#14b8a6' :
+                                    item.color === 'whatsapp' ? '#22c55e' :
+                                    item.color === 'inventory' ? '#eab308' :
+                                    item.color === 'analytics' ? '#d946ef' :
+                                    '#3b82f6'
+                  }}
+                >
+                  {item.badge}
+                </span>
+              )}
+              {item.hasPulse && (
+                <span 
+                  className="ml-auto w-2 h-2 rounded-full pulse-dot"
+                  style={{
+                    backgroundColor: item.color === 'whatsapp' ? '#22c55e' : '#3b82f6'
+                  }}
+                ></span>
+              )}
             </Link>
           ))}
         </div>
 
         <div className="mt-6 pt-6 border-t border-border space-y-1">
-          <Link href="/settings">
-            <a className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-smooth">
-              <i className="fas fa-cog w-5"></i>
-              <span className="font-medium">Settings</span>
-            </a>
+          <Link 
+            href="/settings"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-smooth"
+          >
+            <i className="fas fa-cog w-5"></i>
+            <span className="font-medium">Settings</span>
           </Link>
         </div>
       </nav>

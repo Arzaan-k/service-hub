@@ -25,10 +25,15 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
   };
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6">
+    <div className="bg-card border border-alerts/20 rounded-lg p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-foreground">Active Alerts</h3>
-        <button className="text-xs text-primary hover:underline">View All</button>
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-alerts/10 rounded-lg">
+            <i className="fas fa-exclamation-triangle text-alerts text-sm"></i>
+          </div>
+          <h3 className="text-lg font-semibold text-foreground">Active Alerts</h3>
+        </div>
+        <button className="text-xs text-alerts hover:underline">View All</button>
       </div>
 
       <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin">
@@ -53,7 +58,7 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
               </div>
               <p className={`text-sm font-medium ${colors.text} mb-1`}>{alert.title}</p>
               <p className="text-xs text-muted-foreground mb-2">
-                {container?.containerId || "Unknown"}
+                {container?.containerCode || container?.containerId || "Unknown"}
               </p>
               <p className="text-xs text-foreground mb-3">{alert.description}</p>
               {alert.aiClassification && (
