@@ -1543,19 +1543,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Start IoT polling every 5 minutes
-  setInterval(
-    async () => {
-      try {
-        await fetch(`http://localhost:${process.env.PORT || 5000}/api/iot/poll`, {
-          method: "POST",
-        });
-      } catch (error) {
-        console.error("IoT polling error:", error);
-      }
-    },
-    5 * 60 * 1000
-  );
+  // WhatsApp webhook for receiving messages
+  app.post("/api/whatsapp/webhook", async (req, res) => {
+    try {
+      const { whatsappService } = await import('./services/whatsapp');
+      const result = await whatsappService.handleWebhook(req.body);
+      res.json({ status: 'ok', result });
+    } catch (error) {
+      console.error('WhatsApp webhook error:', error);
+      res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
+
+  // WhatsApp webhook verification for initial setup
+  app.get("/api/whatsapp/webhook", async (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    // Verify the token matches your configured verify token
+    if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+      console.log('WhatsApp webhook verified');
+      res.status(200).send(challenge);
+    } else {
+      console.log('WhatsApp webhook verification failed');
+      res.status(403).send('Forbidden');
+    }
+  });
 
   return httpServer;
 }

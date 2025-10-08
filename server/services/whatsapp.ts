@@ -458,3 +458,104 @@ export async function sendCustomerFeedbackRequest(customer: any, service: any): 
     ]
   );
 }
+
+// WhatsApp webhook handler for incoming messages
+export async function handleWebhook(body: any): Promise<any> {
+  try {
+    console.log('Received WhatsApp webhook:', JSON.stringify(body, null, 2));
+
+    // Handle different types of webhook events
+    if (body.object === 'whatsapp_business_account') {
+      const { storage } = await import('../storage');
+
+      for (const entry of body.entry || []) {
+        for (const change of entry.changes || []) {
+          if (change.field === 'messages') {
+            const messageData = change.value;
+
+            // Extract message information
+            const message = messageData.messages?.[0];
+            if (!message) continue;
+
+            const from = message.from; // Sender's phone number
+            const messageId = message.id;
+            const timestamp = message.timestamp;
+
+            // Check if we've already processed this message
+            // const existingMessage = await storage.getWhatsAppMessageById(messageId);
+            // if (existingMessage) {
+            //   console.log(`Message ${messageId} already processed`);
+            //   continue;
+            // }
+
+            // Store the message (simplified for now)
+            // await storage.createWhatsAppMessage({
+            //   messageId,
+            //   from,
+            //   timestamp: new Date(parseInt(timestamp) * 1000),
+            //   type: message.type || 'text',
+            //   content: message,
+            //   status: 'received'
+            // });
+
+            // Handle different message types
+            if (message.type === 'text') {
+              const text = message.text?.body;
+              if (text) {
+                console.log(`Received text message from ${from}: ${text}`);
+
+                // Here you can add logic to respond to messages
+                // For now, we'll just log it
+                // await storage.createWhatsAppMessage({
+                //   messageId: `response_${Date.now()}`,
+                //   from: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+                //   to: from,
+                //   timestamp: new Date(),
+                //   type: 'text',
+                //   content: { text: { body: `Thank you for your message: "${text}". We will respond soon.` } },
+                //   status: 'sent'
+                // });
+              }
+            } else if (message.type === 'interactive') {
+              const interactiveData = message.interactive;
+              console.log(`Received interactive message from ${from}:`, interactiveData);
+
+              // Handle button clicks, list selections, etc.
+              if (interactiveData.type === 'button_reply') {
+                const buttonId = interactiveData.button_reply.id;
+                console.log(`Button clicked: ${buttonId}`);
+              }
+            }
+
+            // Broadcast the message to connected WebSocket clients
+            const clients = (global as any).websocketClients || [];
+            clients.forEach((client: any) => {
+              if (client.readyState === 1) { // WebSocket.OPEN
+                client.send(JSON.stringify({
+                  type: 'whatsapp_message',
+                  data: {
+                    from,
+                    message,
+                    timestamp: new Date()
+                  }
+                }));
+              }
+            });
+          }
+        }
+      }
+
+      return { status: 'processed', message: 'Webhook processed successfully' };
+    }
+
+    return { status: 'ignored', message: 'Not a WhatsApp message' };
+  } catch (error) {
+    console.error('Error processing WhatsApp webhook:', error);
+    throw error;
+  }
+}
+
+// Export the service as an object for easier importing
+export const whatsappService = {
+  handleWebhook
+};
