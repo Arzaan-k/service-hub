@@ -8,9 +8,9 @@
   --foreground: hsl(210, 40%, 98%);
   --card: hsl(222, 47%, 15%);
   --card-foreground: hsl(210, 40%, 98%);
-  --popover: hsl(222, 47%, 18%);
+  --popover: hsl(222, 47%, 28%);
   --popover-foreground: hsl(210, 40%, 98%);
-  --border: hsl(217, 33%, 25%);
+  --border: hsl(217, 33%, 35%);
   --input: hsl(217, 33%, 25%);
   --ring: hsl(217, 91%, 60%);
   --radius: 0.5rem;
@@ -133,8 +133,21 @@ body {
   border-radius: 4px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(217, 91%, 55%);
+/* Enhanced dropdown visibility */
+[data-radix-select-content] {
+  background-color: hsl(222, 47%, 28%) !important;
+  border: 1px solid hsl(217, 33%, 35%) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3) !important;
+}
+
+[data-radix-select-item] {
+  color: hsl(210, 40%, 98%) !important;
+}
+
+[data-radix-select-item]:hover,
+[data-radix-select-item][data-highlighted] {
+  background-color: hsl(217, 91%, 60%) !important;
+  color: hsl(222, 47%, 11%) !important;
 }
 
 /* Pulse animation */
