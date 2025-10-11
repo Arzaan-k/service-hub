@@ -49,14 +49,19 @@ class OrbcommAPIClient {
         console.log(`📍 URL: ${this.url}`);
         console.log(`👤 Username: ${this.username}`);
         
-        // Create WebSocket connection with proper headers
-        this.ws = new WebSocket(this.url, {
-          headers: {
-            'Authorization': `Basic ${Buffer.from(`${this.username}:${this.password}`).toString('base64')}`,
-            'User-Agent': 'ContainerGenie/1.0',
-            'Origin': 'https://container-genie.com'
+        // Create WebSocket connection with proper headers and required subprotocol
+        // Important: Orbcomm expects the subprotocol 'cdh.orbcomm.com'
+        this.ws = new WebSocket(
+          this.url,
+          'cdh.orbcomm.com',
+          {
+            headers: {
+              'Authorization': `Basic ${Buffer.from(`${this.username}:${this.password}`).toString('base64')}`,
+              'User-Agent': 'ContainerGenie/1.0',
+              'Origin': 'https://container-genie.com'
+            }
           }
-        });
+        );
 
         this.ws.on('open', () => {
           console.log('✅ Connected to Orbcomm CDH API');

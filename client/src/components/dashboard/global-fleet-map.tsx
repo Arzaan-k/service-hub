@@ -811,16 +811,16 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
       let statusText = "Unknown";
       
       if (status?.toUpperCase() === "DEPLOYED") {
-        color = healthScore >= 80 ? "#22c55e" : healthScore >= 60 ? "#f59e0b" : "#ef4444";
+        color = healthScore >= 80 ? "#73C8D2" : healthScore >= 60 ? "#FF9013" : "#ef4444";
         statusText = "Deployed";
       } else if (status?.toUpperCase() === "SALE") {
-        color = "#3b82f6";
+        color = "#0046FF";
         statusText = "For Sale";
       } else if (status?.toUpperCase() === "MAINTENANCE") {
-        color = "#f59e0b";
+        color = "#FF9013";
         statusText = "Maintenance";
       } else if (status?.toUpperCase() === "STORAGE") {
-        color = "#8b5cf6";
+        color = "#73C8D2";
         statusText = "Storage";
       }
 

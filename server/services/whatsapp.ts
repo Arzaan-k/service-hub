@@ -362,6 +362,318 @@ Service Request #${alert.serviceRequestId || 'TBD'}
 Reply URGENT for immediate callback`;
 }
 
+// WhatsApp Message Templates according to PRD
+export const WHATSAPP_TEMPLATES = {
+  // Alert Notifications
+  CRITICAL_ALERT: {
+    name: "critical_alert_notification",
+    category: "ALERT_UPDATE",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "🚨 CRITICAL ALERT"
+      },
+      {
+        type: "BODY",
+        text: "Container {{1}} requires immediate attention.\n\nIssue: {{2}}\nLocation: {{3}}\n\nA service technician will be assigned shortly.\n\nService Request #{{4}}"
+      },
+      {
+        type: "FOOTER",
+        text: "Reply URGENT for immediate callback"
+      },
+      {
+        type: "BUTTONS",
+        buttons: [
+          { type: "QUICK_REPLY", text: "View Details" },
+          { type: "QUICK_REPLY", text: "Call Support" }
+        ]
+      }
+    ]
+  },
+
+  HIGH_ALERT: {
+    name: "high_alert_notification",
+    category: "ALERT_UPDATE",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "⚠️ HIGH PRIORITY ALERT"
+      },
+      {
+        type: "BODY",
+        text: "Container {{1}} needs attention within 24 hours.\n\nIssue: {{2}}\n\nService will be scheduled automatically.\n\nService Request #{{3}}"
+      },
+      {
+        type: "BUTTONS",
+        buttons: [
+          { type: "QUICK_REPLY", text: "Approve Service" },
+          { type: "QUICK_REPLY", text: "Schedule Later" },
+          { type: "QUICK_REPLY", text: "More Info" }
+        ]
+      }
+    ]
+  },
+
+  // Service Schedule Templates
+  SERVICE_SCHEDULE_CLIENT: {
+    name: "service_schedule_client",
+    category: "TRANSACTIONAL",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "✅ Service Scheduled"
+      },
+      {
+        type: "BODY",
+        text: "Container: {{1}}\nDate: {{2}}\nTime Window: {{3}}\nTechnician: {{4}}\n\nTrack status: {{5}}\n\n[Button: Reschedule] [Button: Cancel]"
+      }
+    ]
+  },
+
+  SERVICE_SCHEDULE_TECHNICIAN: {
+    name: "service_schedule_technician",
+    category: "TRANSACTIONAL",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "📋 Tomorrow's Schedule"
+      },
+      {
+        type: "BODY",
+        text: "Total Services: {{1}}\n\n1️⃣ {{2}} - {{3}}\n   Container: {{4}}\n   Issue: {{5}}\n   Parts: {{6}}\n\nRoute Map: {{7}}\n\n[Button: Acknowledge]"
+      }
+    ]
+  },
+
+  // Invoice Templates
+  INVOICE_GENERATED: {
+    name: "invoice_generated",
+    category: "TRANSACTIONAL",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "📄 Invoice Generated"
+      },
+      {
+        type: "BODY",
+        text: "Invoice #{{1}}\nService: {{2}}\nAmount: ₹{{3}}\nDue Date: {{4}}\n\nPDF: {{5}}\n\n[Button: Pay Now] [Button: View Details]"
+      }
+    ]
+  },
+
+  PAYMENT_REMINDER: {
+    name: "payment_reminder",
+    category: "MARKETING",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "💳 Payment Reminder"
+      },
+      {
+        type: "BODY",
+        text: "Invoice #{{1}} is due on {{2}}\nAmount: ₹{{3}}\n\nPay now to avoid late fees.\n\n[Button: Pay Now]"
+      }
+    ]
+  },
+
+  // Feedback Templates
+  FEEDBACK_REQUEST: {
+    name: "feedback_request",
+    category: "SURVEY",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "⭐ How was our service?"
+      },
+      {
+        type: "BODY",
+        text: "Service completed for Container {{1}}\n\nPlease rate your experience:\n\n⭐⭐⭐⭐⭐ Excellent\n⭐⭐⭐⭐ Good\n⭐⭐⭐ Average\n⭐⭐ Poor\n⭐ Very Poor"
+      }
+    ]
+  },
+
+  // Technician Workflow Templates
+  TECHNICIAN_SERVICE_START: {
+    name: "technician_service_start",
+    category: "TRANSACTIONAL",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "🔧 Service Starting"
+      },
+      {
+        type: "BODY",
+        text: "Container: {{1}}\nLocation: {{2}}\nIssue: {{3}}\n\nPlease confirm parts availability before starting."
+      },
+      {
+        type: "BUTTONS",
+        buttons: [
+          { type: "QUICK_REPLY", text: "Start Service" },
+          { type: "QUICK_REPLY", text: "Missing Parts" },
+          { type: "QUICK_REPLY", text: "Need Help" }
+        ]
+      }
+    ]
+  },
+
+  TECHNICIAN_SERVICE_COMPLETE: {
+    name: "technician_service_complete",
+    category: "TRANSACTIONAL",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "✅ Service Completion"
+      },
+      {
+        type: "BODY",
+        text: "Container: {{1}}\nService Duration: {{2}} minutes\n\nPlease upload photos and complete documentation."
+      },
+      {
+        type: "BUTTONS",
+        buttons: [
+          { type: "QUICK_REPLY", text: "Complete Service" },
+          { type: "QUICK_REPLY", text: "Upload Photos" },
+          { type: "QUICK_REPLY", text: "Add Notes" }
+        ]
+      }
+    ]
+  },
+
+  // Status Update Templates
+  CONTAINER_STATUS_UPDATE: {
+    name: "container_status_update",
+    category: "UPDATE",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "📦 Container Status Update"
+      },
+      {
+        type: "BODY",
+        text: "Container {{1}} status: {{2}}\n\nLocation: {{3}}\nLast Update: {{4}}\n\n[Button: View Details]"
+      }
+    ]
+  },
+
+  // Welcome and Help Templates
+  WELCOME_CLIENT: {
+    name: "welcome_client",
+    category: "MARKETING",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "👋 Welcome to ContainerGenie!"
+      },
+      {
+        type: "BODY",
+        text: "Hi {{1}}! Welcome to our container service management system.\n\nAvailable commands:\n• 'status' - Check container status\n• 'service' - Request service\n• 'invoice' - Check billing\n\nType 'help' anytime for assistance."
+      }
+    ]
+  }
+};
+
+// Template Management Functions
+export async function registerWhatsAppTemplate(templateConfig: any): Promise<any> {
+  const WHATSAPP_API_URL = `https://graph.facebook.com/v16.0/${process.env.WA_PHONE_NUMBER_ID}/message_templates`;
+  const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
+
+  try {
+    const response = await axios.post(
+      WHATSAPP_API_URL,
+      {
+        name: templateConfig.name,
+        language: templateConfig.language,
+        category: templateConfig.category,
+        components: templateConfig.components
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        },
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error("WhatsApp template registration error:", error.response?.data || error.message);
+    throw error;
+  }
+}
+
+export async function getWhatsAppTemplates(): Promise<any> {
+  const WHATSAPP_API_URL = `https://graph.facebook.com/v16.0/${process.env.WA_PHONE_NUMBER_ID}/message_templates`;
+  const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
+
+  try {
+    const response = await axios.get(WHATSAPP_API_URL, {
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error("WhatsApp template fetch error:", error.response?.data || error.message);
+    throw error;
+  }
+}
+
+export async function deleteWhatsAppTemplate(templateName: string): Promise<any> {
+  const WHATSAPP_API_URL = `https://graph.facebook.com/v16.0/${process.env.WA_PHONE_NUMBER_ID}/message_templates`;
+  const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
+
+  try {
+    const response = await axios.delete(`${WHATSAPP_API_URL}?name=${templateName}`, {
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error("WhatsApp template deletion error:", error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Template Registration Function
+export async function registerAllTemplates(): Promise<any> {
+  const results = [];
+
+  for (const [key, template] of Object.entries(WHATSAPP_TEMPLATES)) {
+    try {
+      const result = await registerWhatsAppTemplate(template);
+      results.push({ template: key, status: 'success', data: result });
+      console.log(`✅ Template ${key} registered successfully`);
+    } catch (error: any) {
+      results.push({ template: key, status: 'error', error: error.message });
+      console.error(`❌ Failed to register template ${key}:`, error.message);
+    }
+  }
+
+  return results;
+}
+
 
 export function formatInvoiceMessage(invoice: any): string {
   return `📄 *Invoice #${invoice.invoiceNumber}*
@@ -459,7 +771,7 @@ export async function sendCustomerFeedbackRequest(customer: any, service: any): 
   );
 }
 
-// WhatsApp webhook handler for incoming messages
+// Enhanced WhatsApp webhook handler for incoming messages and interactive responses
 export async function handleWebhook(body: any): Promise<any> {
   try {
     console.log('Received WhatsApp webhook:', JSON.stringify(body, null, 2));
@@ -472,9 +784,8 @@ export async function handleWebhook(body: any): Promise<any> {
         for (const change of entry.changes || []) {
           if (change.field === 'messages') {
             const messageData = change.value;
-
-            // Extract message information
             const message = messageData.messages?.[0];
+
             if (!message) continue;
 
             const from = message.from; // Sender's phone number
@@ -482,65 +793,70 @@ export async function handleWebhook(body: any): Promise<any> {
             const timestamp = message.timestamp;
 
             // Check if we've already processed this message
-            // const existingMessage = await storage.getWhatsAppMessageById(messageId);
-            // if (existingMessage) {
-            //   console.log(`Message ${messageId} already processed`);
-            //   continue;
-            // }
-
-            // Store the message (simplified for now)
-            // await storage.createWhatsAppMessage({
-            //   messageId,
-            //   from,
-            //   timestamp: new Date(parseInt(timestamp) * 1000),
-            //   type: message.type || 'text',
-            //   content: message,
-            //   status: 'received'
-            // });
-
-            // Handle different message types
-            if (message.type === 'text') {
-              const text = message.text?.body;
-              if (text) {
-                console.log(`Received text message from ${from}: ${text}`);
-
-                // Here you can add logic to respond to messages
-                // For now, we'll just log it
-                // await storage.createWhatsAppMessage({
-                //   messageId: `response_${Date.now()}`,
-                //   from: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
-                //   to: from,
-                //   timestamp: new Date(),
-                //   type: 'text',
-                //   content: { text: { body: `Thank you for your message: "${text}". We will respond soon.` } },
-                //   status: 'sent'
-                // });
-              }
-            } else if (message.type === 'interactive') {
-              const interactiveData = message.interactive;
-              console.log(`Received interactive message from ${from}:`, interactiveData);
-
-              // Handle button clicks, list selections, etc.
-              if (interactiveData.type === 'button_reply') {
-                const buttonId = interactiveData.button_reply.id;
-                console.log(`Button clicked: ${buttonId}`);
-              }
+            const existingMessage = await storage.getWhatsAppMessageById(messageId);
+            if (existingMessage) {
+              console.log(`Message ${messageId} already processed`);
+              continue;
             }
 
-            // Broadcast the message to connected WebSocket clients
-            const clients = (global as any).websocketClients || [];
-            clients.forEach((client: any) => {
-              if (client.readyState === 1) { // WebSocket.OPEN
-                client.send(JSON.stringify({
-                  type: 'whatsapp_message',
-                  data: {
-                    from,
-                    message,
-                    timestamp: new Date()
-                  }
-                }));
-              }
+            // Authorize phone number and get user info
+            const authResult = await authorizeWhatsAppMessage(from);
+
+            if (!authResult.authorized) {
+              await sendTextMessage(from, authResult.error || "Not authorized");
+              continue;
+            }
+
+            const user = authResult.user;
+
+            // Get or create session
+            let session = await storage.getWhatsappSession(from);
+            if (!session) {
+              session = await storage.createWhatsappSession({
+                phoneNumber: from,
+                userId: user.id,
+                conversationState: {},
+                lastMessageAt: new Date(),
+                isActive: true,
+              });
+            }
+
+            // Store the incoming message
+            await storage.createWhatsappMessage({
+              recipientType: user.role === 'technician' ? 'technician' : 'customer',
+              recipientId: user.id,
+              phoneNumber: from,
+              messageType: message.type,
+              templateName: null,
+              messageContent: message,
+              whatsappMessageId: messageId,
+              status: 'delivered',
+              conversationId: session.id,
+              relatedEntityType: 'whatsapp_inbound',
+              relatedEntityId: messageId,
+              sentAt: new Date(parseInt(timestamp) * 1000),
             });
+
+            // Process the message based on type and user role
+            await processIncomingMessage(message, user, session);
+
+            // Update session timestamp
+            await storage.updateWhatsappSession(session.id, {
+              lastMessageAt: new Date(),
+            });
+
+            // Broadcast the message to connected WebSocket clients
+            const broadcastWhatsAppMessage = (global as any).broadcastWhatsAppMessage;
+            if (broadcastWhatsAppMessage) {
+              broadcastWhatsAppMessage({
+                from,
+                message,
+                timestamp: new Date(),
+                userId: user.id,
+                userRole: user.role,
+                sessionId: session.id
+              }, user.id); // Send to the specific user
+            }
           }
         }
       }
@@ -555,7 +871,1165 @@ export async function handleWebhook(body: any): Promise<any> {
   }
 }
 
+// Process incoming WhatsApp messages based on user role and message type
+async function processIncomingMessage(message: any, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  const from = message.from;
+
+  try {
+    if (message.type === 'text') {
+      await handleTextMessage(message, user, session);
+            } else if (message.type === 'interactive') {
+      await handleInteractiveMessage(message, user, session);
+    } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+      await handleMediaMessage(message, user, session);
+    }
+  } catch (error) {
+    console.error('Error processing message:', error);
+    await sendTextMessage(from, 'Sorry, I encountered an error processing your message. Please try again.');
+  }
+}
+
+// Handle text messages based on user role and conversation state
+async function handleTextMessage(message: any, user: any, session: any): Promise<void> {
+  const text = message.text?.body?.toLowerCase().trim();
+  const from = message.from;
+
+  if (user.role === 'client') {
+    await handleClientTextMessage(text, from, user, session);
+  } else if (user.role === 'technician') {
+    await handleTechnicianTextMessage(text, from, user, session);
+  } else {
+    await sendTextMessage(from, 'Your role is not recognized. Please contact support.');
+  }
+}
+
+// Handle client text messages
+async function handleClientTextMessage(text: string, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  const conversationState = session.conversationState || {};
+
+  // Handle service request flow steps
+  if (conversationState.flow === 'service_request') {
+    await serviceRequestViaWhatsApp.handleServiceRequestFlow({ text: { body: text } }, user, session);
+    return;
+  }
+
+  // Handle general commands
+  if (text.includes('status') || text.includes('container')) {
+    const customer = await storage.getCustomerByUserId(user.id);
+    if (customer) {
+      const containers = await storage.getContainersByCustomer(customer.id);
+      const activeContainers = containers.filter((c: any) => c.status === 'active');
+      const alerts = await storage.getOpenAlerts();
+
+      await sendTextMessage(
+        from,
+        `📊 *Container Status Summary*\n\nTotal Containers: ${containers.length}\nActive: ${activeContainers.length}\nAlerts: ${alerts.length}\n\nFor detailed status, please check your dashboard.`
+      );
+    }
+  } else if (text.includes('service') || text.includes('help') || text.includes('request')) {
+    // Start service request flow
+    await initiateServiceRequestFlow(from, user, session);
+  } else if (text.includes('invoice') || text.includes('bill')) {
+    const customer = await storage.getCustomerByUserId(user.id);
+    if (customer) {
+      const invoices = await storage.getInvoicesByCustomer(customer.id);
+      const pendingInvoices = invoices.filter((inv: any) => inv.paymentStatus === 'pending');
+
+      if (pendingInvoices.length > 0) {
+        await sendTextMessage(
+          from,
+          `💰 *Pending Invoices*\n\nYou have ${pendingInvoices.length} pending invoice(s). Please check your dashboard for payment details.`
+        );
+      } else {
+        await sendTextMessage(from, '✅ All invoices are up to date!');
+      }
+    }
+  } else {
+    // Default response with available commands
+    await sendInteractiveButtons(
+      from,
+      '👋 Welcome! How can I help you today?\n\nAvailable commands:\n• "status" - Check container status\n• "service" - Request service\n• "invoice" - Check billing',
+      [
+        { id: 'check_status', title: 'Check Status' },
+        { id: 'request_service', title: 'Request Service' },
+        { id: 'check_invoices', title: 'Check Invoices' },
+      ]
+    );
+  }
+}
+
+// Handle technician text messages
+async function handleTechnicianTextMessage(text: string, from: string, user: any, session: any): Promise<void> {
+  if (text.includes('schedule')) {
+    await sendTextMessage(from, '📋 Your daily schedule is sent at 7 PM. Use the WhatsApp buttons to acknowledge or report issues.');
+  } else if (text.includes('help')) {
+    await sendTextMessage(
+      from,
+      '🤖 *Technician Commands*\n\n• "schedule" - View schedule info\n• Use WhatsApp buttons for workflow:\n  - Acknowledge Schedule\n  - Start Travel\n  - Arrived at Location\n  - Start/Complete Service\n\nFor emergencies, call support directly.'
+    );
+  } else {
+    await sendTextMessage(from, 'Use the WhatsApp buttons for your daily workflow. Type "help" for more information.');
+  }
+}
+
+// Handle interactive messages (button clicks, list selections)
+async function handleInteractiveMessage(message: any, user: any, session: any): Promise<void> {
+              const interactiveData = message.interactive;
+  const from = message.from;
+
+              if (interactiveData.type === 'button_reply') {
+                const buttonId = interactiveData.button_reply.id;
+    await handleButtonClick(buttonId, from, user, session);
+  } else if (interactiveData.type === 'list_reply') {
+    const listId = interactiveData.list_reply.id;
+    await handleListSelection(listId, from, user, session);
+  }
+}
+
+// Handle button clicks based on user role and context
+async function handleButtonClick(buttonId: string, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+
+  // Update conversation state based on button click
+  const conversationState = session.conversationState || {};
+
+  if (user.role === 'client') {
+    await handleClientButtonClick(buttonId, from, user, session, conversationState);
+  } else if (user.role === 'technician') {
+    await handleTechnicianButtonClick(buttonId, from, user, session, conversationState);
+  }
+}
+
+// Handle client button interactions
+async function handleClientButtonClick(buttonId: string, from: string, user: any, session: any, conversationState: any): Promise<void> {
+  const { storage } = await import('../storage');
+
+  switch (buttonId) {
+    case 'check_status':
+      const customer = await storage.getCustomerByUserId(user.id);
+      if (customer) {
+        const containers = await storage.getContainersByCustomer(customer.id);
+        await sendTextMessage(
+                    from,
+          `📦 *Container Status*\n\nYou have ${containers.length} containers assigned. ${containers.filter((c: any) => c.status === 'active').length} are currently active.`
+        );
+      }
+      break;
+
+    case 'request_service':
+      await initiateServiceRequestFlow(from, user, session);
+      break;
+
+    case 'check_invoices':
+      const customerInvoices = await storage.getCustomerByUserId(user.id);
+      if (customerInvoices) {
+        const invoices = await storage.getInvoicesByCustomer(customerInvoices.id);
+        const pendingInvoices = invoices.filter((inv: any) => inv.paymentStatus === 'pending');
+
+        if (pendingInvoices.length > 0) {
+          await sendTextMessage(
+            from,
+            `💳 *Payment Status*\n\nYou have ${pendingInvoices.length} pending invoice(s). Total amount: ₹${pendingInvoices.reduce((sum: number, inv: any) => sum + parseFloat(inv.totalAmount), 0).toFixed(2)}`
+          );
+        } else {
+          await sendTextMessage(from, '✅ All payments are up to date!');
+        }
+      }
+      break;
+
+    case 'approve_service':
+      if (conversationState.serviceRequestId) {
+        await approveServiceRequest(conversationState.serviceRequestId, from, user);
+      }
+      break;
+
+    case 'schedule_later':
+      if (conversationState.serviceRequestId) {
+        await scheduleServiceLater(conversationState.serviceRequestId, from, user);
+      }
+      break;
+
+    case 'rate_5':
+    case 'rate_4':
+    case 'rate_3':
+    case 'rate_2':
+    case 'rate_1':
+      if (conversationState.feedbackRequestId) {
+        const rating = buttonId.split('_')[1];
+        await submitFeedback(conversationState.feedbackRequestId, user.id, parseInt(rating), from);
+      }
+      break;
+
+    // Service request priority buttons
+    case 'priority_urgent':
+    case 'priority_high':
+    case 'priority_normal':
+    case 'priority_low':
+      if (conversationState.flow === 'service_request') {
+        await serviceRequestViaWhatsApp.handlePrioritySelection(buttonId, from, user, session);
+      } else {
+        await sendTextMessage(from, 'No active service request flow. Please start a new request.');
+      }
+      break;
+
+    default:
+      await sendTextMessage(from, 'Button action not recognized. Please try again.');
+  }
+}
+
+// Handle technician button interactions
+async function handleTechnicianButtonClick(buttonId: string, from: string, user: any, session: any, conversationState: any): Promise<void> {
+  const { storage } = await import('../storage');
+
+  switch (buttonId) {
+    case 'acknowledge':
+      await acknowledgeSchedule(from, user, conversationState);
+      break;
+
+    case 'start_travel':
+      await startTravel(from, user, conversationState);
+      break;
+
+    case 'arrived':
+      await confirmArrival(from, user, conversationState);
+      break;
+
+    case 'start_service':
+      await startService(from, user, conversationState);
+      break;
+
+    case 'complete_service':
+      await completeService(from, user, conversationState);
+      break;
+
+    case 'upload_photos':
+      await requestPhotoUpload(from, user, conversationState);
+      break;
+
+    case 'missing_parts':
+      await reportMissingParts(from, user, conversationState);
+      break;
+
+    case 'need_help':
+      await requestHelp(from, user, conversationState);
+      break;
+
+    default:
+      await sendTextMessage(from, 'Button action not recognized. Please use the workflow buttons.');
+  }
+}
+
+// Handle list selections
+async function handleListSelection(listId: string, from: string, user: any, session: any): Promise<void> {
+  const conversationState = session.conversationState || {};
+
+  // Handle service request container selection
+  if (conversationState.flow === 'service_request' && conversationState.step === 'awaiting_container_selection') {
+    await serviceRequestViaWhatsApp.handleContainerListSelection(listId, from, user, session);
+  } else {
+    await sendTextMessage(from, `Selected option: ${listId}`);
+  }
+}
+
+// Handle media messages (photos, videos, documents)
+async function handleMediaMessage(message: any, user: any, session: any): Promise<void> {
+  const from = message.from;
+
+  // For now, acknowledge media receipt
+  await sendTextMessage(from, '📎 Media received. Thank you for the documentation.');
+
+  // In the future, this could process images for:
+  // - Container damage assessment
+  // - Service completion photos
+  // - Document uploads
+}
+
+// Complete Service Request Flow via WhatsApp (PRD Section 4.4.1)
+export class ServiceRequestViaWhatsApp {
+  private storage: any;
+
+  constructor() {
+    this.initializeStorage();
+  }
+
+  private async initializeStorage() {
+    const { storage } = await import('../storage');
+    this.storage = storage;
+  }
+
+  // Initiate service request flow for clients
+  async initiateServiceRequestFlow(from: string, user: any, session: any): Promise<void> {
+    // Update conversation state
+    await this.storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        step: 'awaiting_container_selection',
+        userId: user.id,
+        flow: 'service_request'
+      },
+    });
+
+    const customer = await this.storage.getCustomerByUserId(user.id);
+    if (customer) {
+      const containers = await this.storage.getContainersByCustomer(customer.id);
+      const activeContainers = containers.filter((c: any) => c.status === 'active');
+
+      if (activeContainers.length === 0) {
+        await sendTextMessage(from, '❌ No active containers found. Please contact support to activate containers.');
+        return;
+      }
+
+      if (activeContainers.length === 1) {
+        // Single container - skip selection and go to issue description
+        await this.handleContainerSelected(activeContainers[0].id, from, user, session);
+      } else {
+        // Multiple containers - show selection
+        const containerOptions = activeContainers.map((container: any) => ({
+          id: container.id,
+          title: `${container.containerCode} - ${container.type}`,
+          description: `Status: ${container.status} | Location: ${container.currentLocation?.address || 'Unknown'}`,
+        }));
+
+        await sendInteractiveList(
+          from,
+          '🔧 *Service Request*\n\nWhich container needs service?',
+          'Select Container',
+          [{ title: 'Containers', rows: containerOptions }]
+        );
+      }
+    }
+  }
+
+  // Handle container selection
+  async handleContainerSelection(containerId: string, from: string, user: any, session: any): Promise<void> {
+    const container = await this.storage.getContainer(containerId);
+    if (!container) {
+      await sendTextMessage(from, '❌ Container not found. Please try again.');
+      return;
+    }
+
+    // Update conversation state
+    await this.storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        step: 'awaiting_issue_description',
+        userId: user.id,
+        flow: 'service_request',
+        selectedContainerId: containerId,
+        containerInfo: container
+      },
+    });
+
+    // Send issue description prompt
+    const message = `📦 *Container Selected: ${container.containerCode}*\n\n🔧 Please describe the issue you\'re experiencing:\n\n• What seems to be the problem?\n• When did it start?\n• Any error messages or unusual behavior?\n\nType your description or use voice note.`;
+
+    await sendTextMessage(from, message);
+  }
+
+  // Handle issue description text input
+  async handleIssueDescription(description: string, from: string, user: any, session: any): Promise<void> {
+    const conversationState = session.conversationState || {};
+
+    if (conversationState.step !== 'awaiting_issue_description') {
+      await sendTextMessage(from, '❌ Invalid step. Please start a new service request.');
+      return;
+    }
+
+    // Update conversation state
+    await this.storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        step: 'awaiting_priority_selection',
+        userId: user.id,
+        flow: 'service_request',
+        selectedContainerId: conversationState.selectedContainerId,
+        issueDescription: description,
+        containerInfo: conversationState.containerInfo
+      },
+    });
+
+    // Send priority selection
+    const message = `📋 *Issue Description Received*\n\n"${description}"\n\n🔥 Select service priority:`;
+
+    await sendInteractiveButtons(
+      from,
+      message,
+      [
+        { id: 'priority_urgent', title: '🚨 Urgent (Critical)' },
+        { id: 'priority_high', title: '⚠️ High (24h)' },
+        { id: 'priority_normal', title: '📅 Normal (72h)' },
+        { id: 'priority_low', title: '⏰ Low (Scheduled)' }
+      ]
+    );
+  }
+
+  // Handle priority selection and create service request
+  async handlePrioritySelection(priority: string, from: string, user: any, session: any): Promise<void> {
+    const conversationState = session.conversationState || {};
+
+    if (conversationState.step !== 'awaiting_priority_selection') {
+      await sendTextMessage(from, '❌ Invalid step. Please start a new service request.');
+      return;
+    }
+
+    try {
+      // Create service request
+      const serviceRequest = await this.storage.createServiceRequest({
+        requestNumber: `SR-${Date.now()}`,
+        containerId: conversationState.selectedContainerId,
+        customerId: user.id,
+        issueDescription: conversationState.issueDescription,
+        priority: priority.replace('priority_', ''),
+        status: 'pending',
+        createdBy: user.id,
+        createdAt: new Date(),
+      });
+
+      // Send confirmation message
+      const message = `✅ *Service Request Created!*\n\n📋 Request #${serviceRequest.requestNumber}\n🔧 Issue: ${conversationState.issueDescription}\n🔥 Priority: ${priority.replace('priority_', '').toUpperCase()}\n📦 Container: ${conversationState.containerInfo.containerCode}\n\nOur team will review and schedule this service. You\'ll receive updates via WhatsApp.`;
+
+      await sendTextMessage(from, message);
+
+      // Clear conversation state
+      await this.storage.updateWhatsappSession(session.id, {
+        conversationState: {},
+      });
+
+      // Log the service request creation
+      await this.storage.createAuditLog({
+        userId: user.id,
+        action: 'service_request_created_via_whatsapp',
+        entityType: 'service_request',
+        entityId: serviceRequest.id,
+        source: 'whatsapp',
+        timestamp: new Date(),
+      });
+
+  } catch (error) {
+      console.error('Error creating service request:', error);
+      await sendTextMessage(from, '❌ Error creating service request. Please try again or contact support.');
+    }
+  }
+
+  // Handle container selection from list
+  async handleContainerListSelection(containerId: string, from: string, user: any, session: any): Promise<void> {
+    await this.handleContainerSelection(containerId, from, user, session);
+  }
+
+  // Handle all service request flow steps
+  async handleServiceRequestFlow(message: any, user: any, session: any): Promise<void> {
+    const conversationState = session.conversationState || {};
+    const text = message.text?.body?.trim();
+
+    switch (conversationState.step) {
+      case 'awaiting_container_selection':
+        // This shouldn't happen as container selection is handled via interactive messages
+        break;
+
+      case 'awaiting_issue_description':
+        await this.handleIssueDescription(text, message.from, user, session);
+        break;
+
+      case 'awaiting_priority_selection':
+        // Priority is handled via button clicks, not text
+        await sendTextMessage(message.from, 'Please use the priority buttons to continue.');
+        break;
+
+      default:
+        await sendTextMessage(message.from, 'Service request flow not active. Type "service" to start a new request.');
+    }
+  }
+}
+
+// Global instance for easy access
+export const serviceRequestViaWhatsApp = new ServiceRequestViaWhatsApp();
+
+// Legacy function (kept for backward compatibility)
+async function initiateServiceRequestFlow(from: string, user: any, session: any): Promise<void> {
+  await serviceRequestViaWhatsApp.initiateServiceRequestFlow(from, user, session);
+}
+
+// Handle service request text input
+async function handleServiceRequestText(text: string, from: string, user: any, session: any): Promise<void> {
+  // This would handle text-based service requests
+  await sendTextMessage(from, 'Please use the interactive buttons for service requests.');
+}
+
+// Approve service request
+async function approveServiceRequest(serviceRequestId: string, from: string, user: any): Promise<void> {
+  const { storage } = await import('../storage');
+
+  const serviceRequest = await storage.getServiceRequest(serviceRequestId);
+  if (serviceRequest && serviceRequest.customerId === user.id) {
+    await storage.updateServiceRequest(serviceRequestId, { status: 'approved' });
+    await sendTextMessage(from, '✅ Service request approved! Our team will schedule this shortly.');
+  } else {
+    await sendTextMessage(from, '❌ Service request not found or not authorized.');
+  }
+}
+
+// Schedule service later
+async function scheduleServiceLater(serviceRequestId: string, from: string, user: any): Promise<void> {
+  const { storage } = await import('../storage');
+
+  const serviceRequest = await storage.getServiceRequest(serviceRequestId);
+  if (serviceRequest && serviceRequest.customerId === user.id) {
+    await storage.updateServiceRequest(serviceRequestId, { status: 'pending' });
+    await sendTextMessage(from, '⏰ Service request noted for later scheduling. We\'ll be in touch.');
+  } else {
+    await sendTextMessage(from, '❌ Service request not found or not authorized.');
+  }
+}
+
+// Submit feedback
+async function submitFeedback(feedbackRequestId: string, userId: string, rating: number, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  const feedback = await storage.getFeedback(feedbackRequestId);
+  if (feedback && feedback.customerId === userId) {
+    await storage.updateFeedback(feedbackRequestId, {
+      rating,
+      submittedAt: new Date(),
+    });
+
+    const messages = {
+      5: '🌟 Thank you for the excellent rating! We appreciate your feedback.',
+      4: '⭐ Thank you for the positive feedback! We\'ll keep up the good work.',
+      3: '👍 Thanks for your feedback! We\'ll work on improving.',
+      2: '😔 Sorry to hear that. We\'ll reach out to make things right.',
+      1: '😞 We\'re sorry for the poor experience. Our team will contact you immediately.',
+    };
+
+    await sendTextMessage(from, messages[rating as keyof typeof messages] || 'Thank you for your feedback!');
+  }
+}
+
+// Enhanced Technician Workflow Functions (PRD Section 4.6.2)
+export async function initiateTechnicianWorkflow(technician: any, scheduledServices: any[]): Promise<any> {
+  const { storage } = await import('../storage');
+
+  // Send schedule with interactive buttons
+  const message = await formatTechnicianScheduleMessage(scheduledServices);
+
+  return await sendInteractiveButtons(
+    technician.phoneNumber,
+    message,
+    [
+      { id: 'acknowledge_schedule', title: 'Acknowledge Schedule' },
+      { id: 'view_details', title: 'View Details' },
+      { id: 'report_issue', title: 'Report Issue' }
+    ]
+  );
+}
+
+export async function handleTechnicianAcknowledge(technicianId: string, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  // Update technician status and acknowledge schedule
+  await storage.updateTechnician(technicianId, { status: 'available' });
+
+  // Send confirmation and next steps
+  await sendTextMessage(from, '✅ Schedule acknowledged successfully!\n\nYour schedule is confirmed. You\'ll receive travel notifications when it\'s time to start.');
+
+  // Log the acknowledgment
+  await storage.createAuditLog({
+    userId: technicianId,
+    action: 'schedule_acknowledged',
+    entityType: 'scheduled_service',
+    source: 'whatsapp',
+    timestamp: new Date(),
+  });
+}
+
+export async function handleTechnicianStartTravel(technicianId: string, serviceId: string, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  // Update service status to in progress (travel)
+  await storage.updateScheduledService(serviceId, {
+    status: 'in_progress',
+    actualStartTime: new Date(),
+  });
+
+  // Send next service details
+  const nextService = await storage.getNextScheduledService(technicianId);
+  if (nextService) {
+    const message = `🚗 Travel started to:\n\n📍 ${nextService.container?.currentLocation?.address || 'Location'}\n🔧 Container: ${nextService.container?.containerCode}\n📋 Issue: ${nextService.serviceRequest?.issueDescription}\n\n⏱️ ETA: ${calculateETA(nextService)}`;
+
+    await sendInteractiveButtons(
+      from,
+      message,
+      [
+        { id: 'arrived_at_location', title: 'Arrived at Location' },
+        { id: 'call_customer', title: 'Call Customer' },
+        { id: 'need_directions', title: 'Need Directions' }
+      ]
+    );
+  } else {
+    await sendTextMessage(from, '🚗 Travel started. Safe journey to the first service location!');
+  }
+}
+
+export async function handleTechnicianArrival(technicianId: string, serviceId: string, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  // Update service status and arrival time
+  await storage.updateScheduledService(serviceId, {
+    status: 'in_progress',
+    actualStartTime: new Date(),
+  });
+
+  // Send service start prompt
+  const service = await storage.getScheduledService(serviceId);
+  if (service) {
+    const message = `📍 *Arrival Confirmed*\n\n🔧 Service: ${service.serviceRequest?.issueDescription}\n📦 Container: ${service.container?.containerCode}\n⚙️ Required Parts: ${service.serviceRequest?.requiredParts?.join(', ') || 'None'}\n\nReady to start service?`;
+
+    await sendInteractiveButtons(
+      from,
+      message,
+      [
+        { id: 'start_service_work', title: 'Start Service' },
+        { id: 'missing_parts', title: 'Missing Parts' },
+        { id: 'need_help', title: 'Need Help' },
+        { id: 'customer_not_ready', title: 'Customer Not Ready' }
+      ]
+    );
+  }
+}
+
+export async function handleTechnicianStartService(technicianId: string, serviceId: string, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  // Update service request status
+  await storage.updateServiceRequest(serviceId, {
+    status: 'in_progress',
+    actualStartTime: new Date(),
+  });
+
+  // Send service completion checklist
+  const message = `🔧 *Service Started*\n\n✅ Parts verified\n📋 Complete the service and upload documentation:\n\n• Before photos\n• Repair process\n• After photos\n• Used parts confirmation\n• Customer signature`;
+
+  await sendInteractiveButtons(
+    from,
+    message,
+    [
+      { id: 'upload_before_photos', title: 'Upload Before Photos' },
+      { id: 'complete_service', title: 'Complete Service' },
+      { id: 'need_assistance', title: 'Need Assistance' }
+    ]
+  );
+}
+
+export async function handleTechnicianCompleteService(technicianId: string, serviceId: string, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  // Update service request status to completed
+  await storage.updateServiceRequest(serviceId, {
+    status: 'completed',
+    actualEndTime: new Date(),
+  });
+
+  // Calculate and log service duration
+  const service = await storage.getServiceRequest(serviceId);
+  if (service) {
+    const duration = Math.round((new Date().getTime() - service.actualStartTime.getTime()) / (1000 * 60));
+    await storage.updateServiceRequest(serviceId, { serviceDuration: duration });
+
+    // Send completion confirmation and next steps
+    const message = `✅ *Service Completed Successfully!*\n\n⏱️ Duration: ${duration} minutes\n📋 Service documented and saved\n\nNext service will be prompted automatically.`;
+
+    await sendTextMessage(from, message);
+
+    // Check for next service
+    const nextService = await storage.getNextScheduledService(technicianId);
+    if (nextService) {
+      setTimeout(async () => {
+        await sendNextServicePrompt(technicianId, from);
+      }, 2000);
+    } else {
+      await sendEndOfDayPrompt(from);
+    }
+  }
+}
+
+export async function handleTechnicianMissingParts(technicianId: string, serviceId: string, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  // Report missing parts and update service status
+  await storage.updateServiceRequest(serviceId, {
+    status: 'pending',
+    resolutionNotes: 'Missing required parts - awaiting procurement',
+  });
+
+  await sendTextMessage(from, '⚠️ *Missing Parts Reported*\n\nSupport team has been notified. You\'ll be updated when parts are available.');
+
+  // Notify admin/coordinator
+  const admins = await storage.getUsersByRole('admin');
+  for (const admin of admins) {
+    await sendTextMessage(
+      admin.phoneNumber,
+      `🚨 *Parts Alert*\n\nTechnician ${technicianId} reported missing parts for Service Request ${serviceId}.\n\nPlease arrange procurement immediately.`
+    );
+  }
+}
+
+export async function handleTechnicianNeedHelp(technicianId: string, serviceId: string, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  await sendTextMessage(from, '🆘 *Help Request Sent*\n\nSupport team has been notified and will contact you shortly.');
+
+  // Notify admin/coordinator
+  const coordinators = await storage.getUsersByRole('coordinator');
+  for (const coordinator of coordinators) {
+    await sendTextMessage(
+      coordinator.phoneNumber,
+      `🆘 *Technician Needs Help*\n\nTechnician ${technicianId} needs assistance with Service Request ${serviceId}.\n\nPlease contact them immediately.`
+    );
+  }
+}
+
+// Helper functions for technician workflow
+async function formatTechnicianScheduleMessage(scheduledServices: any[]): Promise<string> {
+  if (scheduledServices.length === 0) {
+    return '📋 *No Services Scheduled*\n\nYou have no services scheduled for today. Enjoy your day off!';
+  }
+
+  let message = `📋 *Today's Schedule (${new Date().toLocaleDateString()})*\n\nTotal Services: ${scheduledServices.length}\n\n`;
+
+  for (let i = 0; i < scheduledServices.length; i++) {
+    const service = scheduledServices[i];
+    message += `${i + 1}️⃣ *${service.estimatedStartTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'TBD'}*\n`;
+    message += `   📦 Container: ${service.container?.containerCode || service.container?.containerId}\n`;
+    message += `   📍 Location: ${service.container?.currentLocation?.address || 'Unknown'}\n`;
+    message += `   🔧 Issue: ${service.serviceRequest?.issueDescription}\n`;
+    if (service.serviceRequest?.requiredParts?.length > 0) {
+      message += `   ⚙️ Parts: ${service.serviceRequest.requiredParts.join(', ')}\n`;
+    }
+    message += '\n';
+  }
+
+  message += '🗺️ Route Map: [View Route]\n\n';
+  return message;
+}
+
+async function sendNextServicePrompt(technicianId: string, from: string): Promise<void> {
+  const { storage } = await import('../storage');
+
+  const nextService = await storage.getNextScheduledService(technicianId);
+  if (nextService) {
+    const message = `🔄 *Next Service*\n\n📦 Container: ${nextService.container?.containerCode}\n📍 Location: ${nextService.container?.currentLocation?.address}\n🔧 Issue: ${nextService.serviceRequest?.issueDescription}\n\nReady to proceed?`;
+
+    await sendInteractiveButtons(
+      from,
+      message,
+      [
+        { id: 'start_travel_next', title: 'Start Travel' },
+        { id: 'reschedule_service', title: 'Reschedule' },
+        { id: 'skip_service', title: 'Skip Service' }
+      ]
+    );
+  }
+}
+
+async function sendEndOfDayPrompt(from: string): Promise<void> {
+  const message = `🏁 *End of Day*\n\n✅ All services completed!\n\n📊 Please submit your timesheet:\n• Total services: [Count]\n• Total travel time: [Time]\n• Total work time: [Time]\n\nGreat job today!`;
+
+  await sendInteractiveButtons(
+    from,
+    message,
+    [
+      { id: 'submit_timesheet', title: 'Submit Timesheet' },
+      { id: 'report_issues', title: 'Report Issues' },
+      { id: 'end_day', title: 'End Day' }
+    ]
+  );
+}
+
+function calculateETA(service: any): string {
+  // Simple ETA calculation - in production, use Google Maps Distance Matrix API
+  return '30 minutes';
+}
+
+// Technician workflow functions (legacy - kept for backward compatibility)
+async function acknowledgeSchedule(from: string, user: any, conversationState: any): Promise<void> {
+  await handleTechnicianAcknowledge(user.id, from);
+}
+
+async function startTravel(from: string, user: any, conversationState: any): Promise<void> {
+  const serviceId = conversationState?.currentServiceId;
+  if (serviceId) {
+    await handleTechnicianStartTravel(user.id, serviceId, from);
+  } else {
+    await sendTextMessage(from, '❌ No active service found. Please contact support.');
+  }
+}
+
+async function confirmArrival(from: string, user: any, conversationState: any): Promise<void> {
+  const serviceId = conversationState?.currentServiceId;
+  if (serviceId) {
+    await handleTechnicianArrival(user.id, serviceId, from);
+  } else {
+    await sendTextMessage(from, '❌ No active service found. Please contact support.');
+  }
+}
+
+async function startService(from: string, user: any, conversationState: any): Promise<void> {
+  const serviceId = conversationState?.currentServiceId;
+  if (serviceId) {
+    await handleTechnicianStartService(user.id, serviceId, from);
+  } else {
+    await sendTextMessage(from, '❌ No active service found. Please contact support.');
+  }
+}
+
+async function completeService(from: string, user: any, conversationState: any): Promise<void> {
+  const serviceId = conversationState?.currentServiceId;
+  if (serviceId) {
+    await handleTechnicianCompleteService(user.id, serviceId, from);
+  } else {
+    await sendTextMessage(from, '❌ No active service found. Please contact support.');
+  }
+}
+
+async function requestPhotoUpload(from: string, user: any, conversationState: any): Promise<void> {
+  await sendTextMessage(from, '📸 Please upload before and after photos to complete the service documentation.');
+}
+
+async function reportMissingParts(from: string, user: any, conversationState: any): Promise<void> {
+  const serviceId = conversationState?.currentServiceId;
+  if (serviceId) {
+    await handleTechnicianMissingParts(user.id, serviceId, from);
+  } else {
+    await sendTextMessage(from, '❌ No active service found. Please contact support.');
+  }
+}
+
+async function requestHelp(from: string, user: any, conversationState: any): Promise<void> {
+  const serviceId = conversationState?.currentServiceId;
+  if (serviceId) {
+    await handleTechnicianNeedHelp(user.id, serviceId, from);
+  } else {
+    await sendTextMessage(from, '❌ No active service found. Please contact support.');
+  }
+}
+
+// Automated Customer Communication Flows (PRD Section 4.8)
+export class CustomerCommunicationService {
+  private storage: any;
+
+  constructor() {
+    this.initializeStorage();
+  }
+
+  private async initializeStorage() {
+    const { storage } = await import('../storage');
+    this.storage = storage;
+  }
+
+  // Send alert notification to customer (PRD 4.2.2)
+  async sendAlertNotification(alertId: string, customerId: string): Promise<void> {
+    const alert = await this.storage.getAlert(alertId);
+    const container = await this.storage.getContainer(alert.containerId);
+    const customer = await this.storage.getCustomer(customerId);
+
+    if (!alert || !container || !customer) return;
+
+    const customerUser = await this.storage.getUser(customer.userId);
+    if (!customerUser) return;
+
+    let templateName: string;
+    let parameters: string[];
+
+    if (['critical', 'high'].includes(alert.severity)) {
+      templateName = 'high_alert_notification';
+      parameters = [
+        container.containerCode,
+        alert.title,
+        container.currentLocation?.address || 'Unknown',
+        alert.serviceRequestId || 'TBD'
+      ];
+    } else {
+      templateName = 'container_status_update';
+      parameters = [
+        container.containerCode,
+        alert.severity.toUpperCase(),
+        container.currentLocation?.address || 'Unknown',
+        new Date(alert.detectedAt).toLocaleString()
+      ];
+    }
+
+    await sendTemplateMessage(customerUser.phoneNumber, templateName, 'en', parameters);
+
+    // Log the communication
+    await this.storage.createWhatsappMessage({
+      recipientType: 'customer',
+      recipientId: customerUser.id,
+      phoneNumber: customerUser.phoneNumber,
+      messageType: 'template',
+      templateName,
+      messageContent: { alert, container, parameters },
+      whatsappMessageId: `alert_${alertId}_${Date.now()}`,
+      status: 'sent',
+      relatedEntityType: 'alert',
+      relatedEntityId: alertId,
+      sentAt: new Date(),
+    });
+  }
+
+  // Send service schedule confirmation to customer (PRD 4.5.2)
+  async sendServiceScheduleConfirmation(serviceRequestId: string): Promise<void> {
+    const serviceRequest = await this.storage.getServiceRequest(serviceRequestId);
+    if (!serviceRequest) return;
+
+    const customer = await this.storage.getCustomer(serviceRequest.customerId);
+    if (!customer) return;
+
+    const customerUser = await this.storage.getUser(customer.userId);
+    if (!customerUser) return;
+
+    const scheduledService = await this.storage.getScheduledServicesByTechnician(
+      serviceRequest.assignedTechnicianId,
+      new Date().toISOString().split('T')[0]
+    );
+
+    const service = scheduledService.find(s => s.serviceRequestId === serviceRequestId);
+    if (!service) return;
+
+    const technician = await this.storage.getTechnician(serviceRequest.assignedTechnicianId);
+    if (!technician) return;
+
+    const parameters = [
+      serviceRequest.containerId, // Container ID
+      service.scheduledDate.toISOString().split('T')[0], // Date
+      service.scheduledTimeWindow || 'TBD', // Time window
+      technician.name, // Technician name
+      `${process.env.FRONTEND_URL || 'https://container-genie.com'}/dashboard` // Dashboard link
+    ];
+
+    await sendTemplateMessage(customerUser.phoneNumber, 'service_schedule_client', 'en', parameters);
+
+    // Log the communication
+    await this.storage.createWhatsappMessage({
+      recipientType: 'customer',
+      recipientId: customerUser.id,
+      phoneNumber: customerUser.phoneNumber,
+      messageType: 'template',
+      templateName: 'service_schedule_client',
+      messageContent: { serviceRequest, service, technician, parameters },
+      whatsappMessageId: `schedule_${serviceRequestId}_${Date.now()}`,
+      status: 'sent',
+      relatedEntityType: 'service_request',
+      relatedEntityId: serviceRequestId,
+      sentAt: new Date(),
+    });
+  }
+
+  // Send invoice to customer (PRD 4.4.2)
+  async sendInvoice(invoiceId: string): Promise<void> {
+    const invoice = await this.storage.getInvoice(invoiceId);
+    if (!invoice) return;
+
+    const customer = await this.storage.getCustomer(invoice.customerId);
+    if (!customer) return;
+
+    const customerUser = await this.storage.getUser(customer.userId);
+    if (!customerUser) return;
+
+    const serviceRequest = await this.storage.getServiceRequest(invoice.serviceRequestId);
+
+    const parameters = [
+      invoice.invoiceNumber,
+      serviceRequest?.issueDescription || 'Container Service',
+      invoice.totalAmount.toString(),
+      invoice.dueDate.toISOString().split('T')[0],
+      `${process.env.FRONTEND_URL || 'https://container-genie.com'}/invoice/${invoice.id}` // PDF link
+    ];
+
+    await sendTemplateMessage(customerUser.phoneNumber, 'invoice_generated', 'en', parameters);
+
+    // Update invoice sent timestamp
+    await this.storage.updateInvoice(invoiceId, { sentAt: new Date() });
+
+    // Log the communication
+    await this.storage.createWhatsappMessage({
+      recipientType: 'customer',
+      recipientId: customerUser.id,
+      phoneNumber: customerUser.phoneNumber,
+      messageType: 'template',
+      templateName: 'invoice_generated',
+      messageContent: { invoice, serviceRequest, parameters },
+      whatsappMessageId: `invoice_${invoiceId}_${Date.now()}`,
+      status: 'sent',
+      relatedEntityType: 'invoice',
+      relatedEntityId: invoiceId,
+      sentAt: new Date(),
+    });
+  }
+
+  // Send payment reminder (PRD 4.4.2)
+  async sendPaymentReminder(invoiceId: string): Promise<void> {
+    const invoice = await this.storage.getInvoice(invoiceId);
+    if (!invoice || invoice.paymentStatus !== 'pending') return;
+
+    const customer = await this.storage.getCustomer(invoice.customerId);
+    if (!customer) return;
+
+    const customerUser = await this.storage.getUser(customer.userId);
+    if (!customerUser) return;
+
+    // Calculate days until due
+    const daysUntilDue = Math.ceil((invoice.dueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysUntilDue <= 0) {
+      // Overdue reminder
+      const message = `💳 *Payment Overdue*\n\nInvoice #${invoice.invoiceNumber}\nAmount: ₹${invoice.totalAmount}\n\nPlease make payment immediately to avoid service interruption.\n\n[Pay Now]`;
+      await sendTextMessage(customerUser.phoneNumber, message);
+    } else {
+      // Regular reminder
+      const parameters = [
+        invoice.invoiceNumber,
+        invoice.dueDate.toISOString().split('T')[0],
+        invoice.totalAmount.toString()
+      ];
+
+      await sendTemplateMessage(customerUser.phoneNumber, 'payment_reminder', 'en', parameters);
+    }
+
+    // Log the communication
+    await this.storage.createWhatsappMessage({
+      recipientType: 'customer',
+      recipientId: customerUser.id,
+      phoneNumber: customerUser.phoneNumber,
+      messageType: 'template',
+      templateName: 'payment_reminder',
+      messageContent: { invoice, daysUntilDue },
+      whatsappMessageId: `reminder_${invoiceId}_${Date.now()}`,
+      status: 'sent',
+      relatedEntityType: 'invoice',
+      relatedEntityId: invoiceId,
+      sentAt: new Date(),
+    });
+  }
+
+  // Send feedback request after service completion (PRD 4.7.1)
+  async sendFeedbackRequest(serviceRequestId: string): Promise<void> {
+    const serviceRequest = await this.storage.getServiceRequest(serviceRequestId);
+    if (!serviceRequest || serviceRequest.status !== 'completed') return;
+
+    const customer = await this.storage.getCustomer(serviceRequest.customerId);
+    if (!customer) return;
+
+    const customerUser = await this.storage.getUser(customer.userId);
+    if (!customerUser) return;
+
+    const technician = await this.storage.getTechnician(serviceRequest.assignedTechnicianId);
+    if (!technician) return;
+
+    // Check if feedback already exists
+    const existingFeedback = await this.storage.getFeedbackByServiceRequest(serviceRequestId);
+    if (existingFeedback) return;
+
+    const message = `⭐ *Service Completed!*\n\nContainer: ${serviceRequest.containerId}\nTechnician: ${technician.name}\nCompleted: ${serviceRequest.actualEndTime?.toLocaleString() || 'Recently'}\n\nPlease rate your experience:`;
+
+    await sendInteractiveButtons(
+      customerUser.phoneNumber,
+      message,
+      [
+        { id: 'rate_5', title: '⭐⭐⭐⭐⭐ Excellent' },
+        { id: 'rate_4', title: '⭐⭐⭐⭐ Good' },
+        { id: 'rate_3', title: '⭐⭐⭐ Average' },
+        { id: 'rate_2', title: '⭐⭐ Poor' },
+        { id: 'rate_1', title: '⭐ Very Poor' }
+      ]
+    );
+
+    // Log the communication
+    await this.storage.createWhatsappMessage({
+      recipientType: 'customer',
+      recipientId: customerUser.id,
+      phoneNumber: customerUser.phoneNumber,
+      messageType: 'interactive',
+      messageContent: { serviceRequest, technician },
+      whatsappMessageId: `feedback_${serviceRequestId}_${Date.now()}`,
+      status: 'sent',
+      relatedEntityType: 'service_request',
+      relatedEntityId: serviceRequestId,
+      sentAt: new Date(),
+    });
+  }
+
+  // Send welcome message to new customers (PRD 4.3.3)
+  async sendWelcomeMessage(customerId: string): Promise<void> {
+    const customer = await this.storage.getCustomer(customerId);
+    if (!customer) return;
+
+    const customerUser = await this.storage.getUser(customer.userId);
+    if (!customerUser) return;
+
+    const parameters = [customerUser.name];
+
+    await sendTemplateMessage(customerUser.phoneNumber, 'welcome_client', 'en', parameters);
+
+    // Log the communication
+    await this.storage.createWhatsappMessage({
+      recipientType: 'customer',
+      recipientId: customerUser.id,
+      phoneNumber: customerUser.phoneNumber,
+      messageType: 'template',
+      templateName: 'welcome_client',
+      messageContent: { customer, parameters },
+      whatsappMessageId: `welcome_${customerId}_${Date.now()}`,
+      status: 'sent',
+      relatedEntityType: 'customer',
+      relatedEntityId: customerId,
+      sentAt: new Date(),
+    });
+  }
+
+  // Send status update for container (PRD 4.1.2)
+  async sendContainerStatusUpdate(containerId: string, customerId: string): Promise<void> {
+    const container = await this.storage.getContainer(containerId);
+    if (!container || container.currentCustomerId !== customerId) return;
+
+    const customer = await this.storage.getCustomer(customerId);
+    if (!customer) return;
+
+    const customerUser = await this.storage.getUser(customer.userId);
+    if (!customerUser) return;
+
+    // Get recent alerts for this container
+    const alerts = await this.storage.getAlertsByContainer(containerId);
+    const activeAlerts = alerts.filter(a => !a.resolvedAt);
+
+    const parameters = [
+      container.containerCode,
+      container.status.toUpperCase(),
+      container.currentLocation?.address || 'Unknown',
+      new Date().toLocaleString()
+    ];
+
+    await sendTemplateMessage(customerUser.phoneNumber, 'container_status_update', 'en', parameters);
+
+    // Log the communication
+    await this.storage.createWhatsappMessage({
+      recipientType: 'customer',
+      recipientId: customerUser.id,
+      phoneNumber: customerUser.phoneNumber,
+      messageType: 'template',
+      templateName: 'container_status_update',
+      messageContent: { container, activeAlerts, parameters },
+      whatsappMessageId: `status_${containerId}_${Date.now()}`,
+      status: 'sent',
+      relatedEntityType: 'container',
+      relatedEntityId: containerId,
+      sentAt: new Date(),
+    });
+  }
+}
+
+// Global instance for easy access
+export const customerCommunicationService = new CustomerCommunicationService();
+
 // Export the service as an object for easier importing
 export const whatsappService = {
-  handleWebhook
+  handleWebhook,
+  customerCommunicationService
 };

@@ -50,6 +50,14 @@ interface Container {
     address?: string;
     depot?: string;
   };
+  currentCustomerId?: string;
+  customer?: {
+    id: string;
+    companyName: string;
+    contactPerson: string;
+    phone?: string;
+    email?: string;
+  };
   excelMetadata: {
     productType: string;
     size: string;
@@ -96,6 +104,21 @@ export default function ContainerDetail() {
       return res.json();
     },
     enabled: !!id,
+  });
+
+  // Fetch customer data if container has currentCustomerId
+  const { data: customer, isLoading: customerLoading, error: customerError } = useQuery({
+    queryKey: [`/api/customers/${container?.currentCustomerId}`],
+    queryFn: async () => {
+      if (!container?.currentCustomerId) return null;
+      const res = await fetch(`/api/customers/${container.currentCustomerId}`, {
+        headers: { "x-user-id": authToken || "" },
+      });
+      if (!res.ok) return null; // Don't throw error, just return null
+      return res.json();
+    },
+    enabled: !!container?.currentCustomerId && !!container,
+    retry: 1,
   });
 
   const getStatusBadge = (status: string) => {
@@ -280,6 +303,16 @@ export default function ContainerDetail() {
                 {getStatusBadge(metadata.status || container.status)}
               </div>
               <div className="flex items-center gap-2">
+                {customer && !customerError && (
+                  <Button 
+                    variant="secondary" 
+                    size="sm"
+                    onClick={() => setLocation(`/clients/${customer.id}`)}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    View Client
+                  </Button>
+                )}
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -416,6 +449,41 @@ export default function ContainerDetail() {
                         <label className="text-sm font-medium text-muted-foreground">GKU Product Name</label>
                         <p className="text-sm">{metadata.gkuProductName || 'N/A'}</p>
                       </div>
+                      {customer && !customerError && (
+                        <>
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">Current Owner</label>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium">{customer.companyName}</p>
+                              <Button
+                                variant="outline"
+                                size="xs"
+                                className="h-6 px-2"
+                                onClick={() => setLocation(`/clients/${customer.id}`)}
+                              >
+                                <ExternalLink className="h-3 w-3 mr-1" />
+                                Profile
+                              </Button>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">Contact Person</label>
+                            <p className="text-sm">{customer.contactPerson}</p>
+                          </div>
+                          {customer.phone && (
+                            <div>
+                              <label className="text-sm font-medium text-muted-foreground">Phone</label>
+                              <p className="text-sm">{customer.phone}</p>
+                            </div>
+                          )}
+                          {customer.email && (
+                            <div>
+                              <label className="text-sm font-medium text-muted-foreground">Email</label>
+                              <p className="text-sm">{customer.email}</p>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

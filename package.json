@@ -7,6 +7,7 @@
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "build": "npx vite build && npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && cp -r dist/public dist/client",
     "build:deploy": "npm run build",
+    "import:rentals": "tsx server/tools/import-rentals.ts",
     "db:push": "echo 'Database migrations should be run manually with proper DATABASE_URL'",
     "db:deploy": "echo 'Database migrations should be run manually in production'",
     "start": "NODE_ENV=production node dist/index.js",

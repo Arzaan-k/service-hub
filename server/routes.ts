@@ -28,29 +28,102 @@ import { simpleSeed } from "./simple-seed";
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
-  // WebSocket for real-time updates
+  // Enhanced WebSocket for real-time updates with user authentication
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
-  const clients = new Set<WebSocket>();
+  interface AuthenticatedWebSocket extends WebSocket {
+    userId?: string;
+    userRole?: string;
+    isAuthenticated?: boolean;
+  }
 
-  wss.on("connection", (ws) => {
-    clients.add(ws);
+  const clients = new Map<string, AuthenticatedWebSocket>();
+
+  wss.on("connection", (ws: AuthenticatedWebSocket) => {
+    ws.isAuthenticated = false;
     console.log("WebSocket client connected");
 
+    ws.on("message", async (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+
+        if (message.type === 'authenticate') {
+          // Authenticate WebSocket connection
+          const { token } = message;
+          if (token) {
+            // Verify JWT token (simplified for demo)
+            const user = await storage.getUser(token);
+            if (user) {
+              ws.userId = user.id;
+              ws.userRole = user.role;
+              ws.isAuthenticated = true;
+              clients.set(user.id, ws);
+
+              console.log(`WebSocket authenticated for user: ${user.name} (${user.role})`);
+
+              // Send authentication success
+              ws.send(JSON.stringify({
+                type: 'authenticated',
+                user: { id: user.id, name: user.name, role: user.role }
+              }));
+
+              // Send recent WhatsApp messages for this user
+              const recentMessages = await storage.getRecentWhatsAppMessages(user.id, 50);
+              ws.send(JSON.stringify({
+                type: 'recent_messages',
+                messages: recentMessages
+              }));
+            } else {
+              ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid token' }));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('WebSocket message error:', error);
+      }
+    });
+
     ws.on("close", () => {
-      clients.delete(ws);
+      if (ws.userId) {
+        clients.delete(ws.userId);
+      }
       console.log("WebSocket client disconnected");
     });
+
+    // Send heartbeat every 30 seconds
+    const heartbeat = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'heartbeat' }));
+      } else {
+        clearInterval(heartbeat);
+      }
+    }, 30000);
   });
 
-  // Broadcast function for real-time updates
-  function broadcast(data: any) {
-    clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
+  // Enhanced broadcast function with role-based filtering
+  function broadcast(data: any, targetUserId?: string, targetRole?: string) {
+    clients.forEach((client, userId) => {
+      if (client.readyState === WebSocket.OPEN && client.isAuthenticated) {
+        // Filter by user or role if specified
+        if (targetUserId && userId !== targetUserId) return;
+        if (targetRole && client.userRole !== targetRole) return;
+
         client.send(JSON.stringify(data));
       }
     });
   }
+
+  // Broadcast WhatsApp message to specific user or role
+  function broadcastWhatsAppMessage(messageData: any, targetUserId?: string, targetRole?: string) {
+    broadcast({
+      type: 'whatsapp_message',
+      timestamp: new Date(),
+      data: messageData
+    }, targetUserId, targetRole);
+  }
+
+  // Global reference for WhatsApp service to use
+  ;(global as any).broadcastWhatsAppMessage = broadcastWhatsAppMessage;
 
   // Auth routes
   app.post("/api/auth/login", async (req, res) => {
@@ -842,13 +915,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Orbcomm connection status endpoint
-  app.get("/api/orbcomm/status", authenticateUser, async (req, res) => {
+  app.get("/api/orbcomm/status", async (req, res) => {
     try {
       const { getOrbcommClient } = await import("./services/orbcomm");
       const client = getOrbcommClient();
       res.json({ 
         connected: client.isConnected,
-        url: process.env.ORBCOMM_URL || 'wss://integ.tms-orbcomm.com:44355/cdh'
+        url: process.env.ORBCOMM_URL || 'wss://integ.tms-orbcomm.com:44355/cdh',
+        subprotocol: 'cdh.orbcomm.com'
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get connection status" });
@@ -856,7 +930,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Orbcomm data refresh endpoint
-  app.post("/api/orbcomm/refresh", authenticateUser, async (req, res) => {
+  app.post("/api/orbcomm/refresh", async (req, res) => {
     try {
       const { getOrbcommClient } = await import("./services/orbcomm");
       const client = getOrbcommClient();
@@ -879,7 +953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Enhanced Orbcomm test endpoint
-  app.post("/api/orbcomm/test", authenticateUser, async (req, res) => {
+  app.post("/api/orbcomm/test", async (req, res) => {
     try {
       const { getEnhancedOrbcommClient } = await import("./services/orbcomm");
       const client = getEnhancedOrbcommClient();
@@ -899,7 +973,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Orbcomm INTEG test endpoint
-  app.post("/api/orbcomm/integ-test", authenticateUser, async (req, res) => {
+  app.post("/api/orbcomm/integ-test", async (req, res) => {
     try {
       const { getOrbcommIntegClient } = await import("./services/orbcomm");
       const client = getOrbcommIntegClient();
@@ -1053,6 +1127,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Containers for current user's customer
+  app.get("/api/customers/me/containers", authenticateUser, async (req: any, res) => {
+    try {
+      const customer = await storage.getCustomerByUserId(req.user.id);
+      if (!customer) return res.json([]);
+      const containers = await storage.getContainersByCustomer(customer.id);
+      res.json(containers);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch customer containers" });
+    }
+  });
+
   app.get("/api/customers/:id", authenticateUser, async (req: any, res) => {
     try {
       const role = (req.user?.role || '').toLowerCase();
@@ -1077,12 +1163,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Containers for a given customer (RBAC)
+  app.get("/api/customers/:id/containers", authenticateUser, async (req: any, res) => {
+    try {
+      const role = (req.user?.role || '').toLowerCase();
+
+      if (["admin","coordinator","super_admin"].includes(role)) {
+        const list = await storage.getContainersByCustomer(req.params.id);
+        return res.json(list);
+      }
+
+      if (role === 'client') {
+        const self = await storage.getCustomerByUserId(req.user.id);
+        if (!self) return res.json([]);
+        if (self.id !== req.params.id) return res.status(403).json({ error: "Forbidden" });
+        const list = await storage.getContainersByCustomer(self.id);
+        return res.json(list);
+      }
+
+      return res.status(403).json({ error: "Forbidden" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch customer containers" });
+    }
+  });
+
   app.post("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
       const customer = await storage.createCustomer(req.body);
       res.json(customer);
     } catch (error) {
       res.status(500).json({ error: "Failed to create customer" });
+    }
+  });
+
+  app.put("/api/customers/:id", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+    try {
+      const customer = await storage.updateCustomer(req.params.id, req.body);
+      if (!customer) {
+        return res.status(404).json({ error: "Customer not found" });
+      }
+      res.json(customer);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update customer" });
     }
   });
 
@@ -1552,6 +1674,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('WhatsApp webhook error:', error);
       res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
+
+  // WhatsApp template management routes
+  app.post("/api/whatsapp/templates/register-all", authenticateUser, requireRole("admin"), async (req, res) => {
+    try {
+      const { registerAllTemplates, WHATSAPP_TEMPLATES } = await import('./services/whatsapp');
+      const results = await registerAllTemplates();
+      res.json({ message: "Template registration completed", results, templates: WHATSAPP_TEMPLATES });
+    } catch (error) {
+      res.status(500).json({ error: "Template registration failed" });
+    }
+  });
+
+  app.get("/api/whatsapp/templates", authenticateUser, async (req, res) => {
+    try {
+      const { getWhatsAppTemplates, WHATSAPP_TEMPLATES } = await import('./services/whatsapp');
+      const templates = await getWhatsAppTemplates();
+      res.json({ templates, localTemplates: WHATSAPP_TEMPLATES });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch templates" });
+    }
+  });
+
+  app.post("/api/whatsapp/templates/register", authenticateUser, requireRole("admin"), async (req, res) => {
+    try {
+      const { registerWhatsAppTemplate } = await import('./services/whatsapp');
+      const result = await registerWhatsAppTemplate(req.body);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Template registration failed" });
+    }
+  });
+
+  app.delete("/api/whatsapp/templates/:name", authenticateUser, requireRole("admin"), async (req, res) => {
+    try {
+      const { deleteWhatsAppTemplate } = await import('./services/whatsapp');
+      const result = await deleteWhatsAppTemplate(req.params.name);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Template deletion failed" });
     }
   });
 

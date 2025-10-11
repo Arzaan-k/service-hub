@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import {
   users,
   customers,
@@ -25,7 +26,7 @@ import {
   type ScheduledService,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, sql, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, gte, sql, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -82,6 +83,7 @@ export interface IStorage {
   completeServiceRequest(serviceRequestId: string, resolutionNotes: string, usedParts: string[], beforePhotos: string[], afterPhotos: string[]): Promise<ServiceRequest>;
   cancelServiceRequest(serviceRequestId: string, reason: string): Promise<ServiceRequest>;
   getServiceRequestTimeline(serviceRequestId: string): Promise<any[]>;
+  getScheduledService(id: string): Promise<ScheduledService | undefined>;
 
   // Technician operations
   getAllTechnicians(): Promise<Technician[]>;
@@ -101,18 +103,25 @@ export interface IStorage {
   createWhatsappSession(session: any): Promise<WhatsappSession>;
   updateWhatsappSession(id: string, session: any): Promise<WhatsappSession>;
   createWhatsappMessage(message: any): Promise<any>;
+  getWhatsAppMessageById(messageId: string): Promise<any | undefined>;
+  getRecentWhatsAppMessages(userId: string, limit?: number): Promise<any[]>;
+
+  // Audit logs
+  createAuditLog(entry: { userId?: string; action: string; entityType: string; entityId?: string; changes?: any; source: string; ipAddress?: string; timestamp?: Date }): Promise<any>;
 
   // Invoice operations
   getAllInvoices(): Promise<Invoice[]>;
   getInvoice(id: string): Promise<Invoice | undefined>;
   createInvoice(invoice: any): Promise<Invoice>;
   updateInvoice(id: string, invoice: any): Promise<Invoice>;
+  getInvoicesByCustomer(customerId: string): Promise<Invoice[]>;
 
   // Feedback operations
   getAllFeedback(): Promise<any[]>;
   getFeedback(id: string): Promise<any | undefined>;
   createFeedback(feedback: any): Promise<any>;
   updateFeedback(id: string, feedback: any): Promise<any>;
+  getFeedbackByServiceRequest(serviceRequestId: string): Promise<any | undefined>;
 
   // Dashboard stats
   getDashboardStats(): Promise<any>;
@@ -122,6 +131,8 @@ export interface IStorage {
   getScheduledServicesByTechnician(technicianId: string, date?: string): Promise<ScheduledService[]>;
   createScheduledService(service: any): Promise<ScheduledService>;
   updateScheduledService(id: string, service: any): Promise<ScheduledService>;
+  getNextScheduledService(technicianId: string): Promise<ScheduledService | undefined>;
+  getUsersByRole(role: string): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -257,7 +268,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(serviceRequests)
-      .where(eq(serviceRequests.clientId, customerId))
+      .where(eq(serviceRequests.customerId, customerId))
       .orderBy(desc(serviceRequests.createdAt));
   }
 
@@ -344,6 +355,40 @@ export class DatabaseStorage implements IStorage {
     return newMessage;
   }
 
+  async getWhatsAppMessageById(messageId: string): Promise<any | undefined> {
+    const [message] = await db
+      .select()
+      .from(whatsappMessages)
+      .where(eq(whatsappMessages.whatsappMessageId, messageId));
+    return message;
+  }
+
+  async getRecentWhatsAppMessages(userId: string, limit: number = 50): Promise<any[]> {
+    return await db
+      .select()
+      .from(whatsappMessages)
+      .where(eq(whatsappMessages.recipientId, userId))
+      .orderBy(desc(whatsappMessages.sentAt))
+      .limit(limit);
+  }
+
+  async createAuditLog(entry: { userId?: string; action: string; entityType: string; entityId?: string; changes?: any; source: string; ipAddress?: string; timestamp?: Date }): Promise<any> {
+    const [log] = await db
+      .insert(auditLogs)
+      .values({
+        userId: entry.userId || null,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId || null,
+        changes: entry.changes || null,
+        source: entry.source,
+        ipAddress: entry.ipAddress || null,
+        timestamp: entry.timestamp || new Date(),
+      })
+      .returning();
+    return log;
+  }
+
   async getAllCustomers(): Promise<Customer[]> {
     return await db.select().from(customers).orderBy(customers.companyName);
   }
@@ -392,6 +437,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(feedback.id, id))
       .returning();
     return updated;
+  }
+
+  async getFeedbackByServiceRequest(serviceRequestId: string): Promise<any | undefined> {
+    const [feedbackRecord] = await db
+      .select()
+      .from(feedback)
+      .where(eq(feedback.serviceRequestId, serviceRequestId));
+    return feedbackRecord;
   }
 
   async getDashboardStats(): Promise<any> {
@@ -670,6 +723,15 @@ export class DatabaseStorage implements IStorage {
     return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }
 
+  async getScheduledService(id: string): Promise<ScheduledService | undefined> {
+    const [svc] = await db
+      .select()
+      .from(scheduledServices)
+      .where(eq(scheduledServices.id, id))
+      .limit(1);
+    return svc;
+  }
+
   // Enhanced Technician Management Methods according to PRD
   async getTechnicianPerformance(technicianId: string): Promise<any> {
     const technician = await this.getTechnician(technicianId);
@@ -819,6 +881,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(invoices.id, invoiceId))
       .returning();
     return updated;
+  }
+
+  async getInvoicesByCustomer(customerId: string): Promise<Invoice[]> {
+    return await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.customerId, customerId))
+      .orderBy(desc(invoices.createdAt));
   }
 
   // Feedback management methods
@@ -1003,6 +1073,32 @@ export class DatabaseStorage implements IStorage {
       .where(eq(scheduledServices.id, id))
       .returning();
     return updated;
+  }
+
+  async getNextScheduledService(technicianId: string): Promise<ScheduledService | undefined> {
+    const services = await db
+      .select()
+      .from(scheduledServices)
+      .where(and(
+        eq(scheduledServices.technicianId, technicianId),
+        eq(scheduledServices.status, 'scheduled'),
+        gte(scheduledServices.scheduledDate, new Date())
+      ))
+      .orderBy(asc(scheduledServices.sequenceNumber))
+      .limit(1);
+
+    return services[0];
+  }
+
+  async getUsersByRole(role: string): Promise<User[]> {
+    return await db
+      .select()
+      .from(users)
+      .where(and(
+        eq(users.role, role as any),
+        eq(users.isActive, true)
+      ))
+      .orderBy(users.name);
   }
 }
 

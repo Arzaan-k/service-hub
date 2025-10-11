@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Phone, Mail, MapPin, CreditCard, Plus, Edit, Trash2, Package } from "lucide-react";
+import { Link } from "wouter";
 import { getCurrentUser } from "@/lib/auth";
 
 interface Customer {
@@ -52,6 +53,11 @@ export default function Clients() {
 
   const { data: clients, isLoading } = useQuery({
     queryKey: ["/api/clients"],
+  });
+
+  // Fetch all containers so we can map them to clients by currentCustomerId
+  const { data: containers } = useQuery({
+    queryKey: ["/api/containers"],
   });
 
   const createClient = useMutation({
@@ -195,16 +201,31 @@ export default function Clients() {
               <h2 className="text-2xl font-bold text-foreground">Clients</h2>
               <p className="text-sm text-muted-foreground">Manage your client relationships and accounts</p>
             </div>
-            {canManage && (
-              <Button onClick={() => setIsAddDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Client
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+                }}
+              >
+                Refresh
               </Button>
-            )}
+              {canManage && (
+                <Button onClick={() => setIsAddDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Client
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {clients?.map((client: Customer) => (
+            {clients?.map((client: Customer) => {
+              const owned = (containers || []).filter((c: any) => c.currentCustomerId === client.id);
+              const sample = owned.slice(0, 5);
+              const remaining = Math.max(0, owned.length - sample.length);
+              return (
               <Card key={client.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -242,9 +263,26 @@ export default function Clients() {
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Package className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{client.containerCount || 0} containers</span>
+                    <span className="text-foreground">{owned.length} containers</span>
                   </div>
+                  {owned.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {sample.map((c: any) => (
+                        <Badge key={c.id} variant="outline" className="text-xs">
+                          {c.containerCode}
+                        </Badge>
+                      ))}
+                      {remaining > 0 && (
+                        <Badge variant="secondary" className="text-xs">+{remaining} more</Badge>
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-2 pt-2 border-t border-border">
+                    <Link href={`/clients/${client.id}`}>
+                      <Button size="sm" variant="secondary" className="flex-1">
+                        View Profile
+                      </Button>
+                    </Link>
                     {canManage && (
                       <Button
                         size="sm"
@@ -268,7 +306,7 @@ export default function Clients() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            );})}
           </div>
 
           {(!clients || clients.length === 0) && (

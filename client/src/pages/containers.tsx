@@ -69,9 +69,10 @@ export default function Containers() {
         metadata.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         metadata.depot?.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = statusFilter === "all" || 
+      const matchesStatus = statusFilter === "all" ||
         (statusFilter === "deployed" && metadata.status === "DEPLOYED") ||
         (statusFilter === "sale" && metadata.status === "SALE") ||
+        (statusFilter === "sold" && metadata.status === "SOLD") ||
         (statusFilter === "maintenance" && container.status === "maintenance");
       
       const matchesType = typeFilter === "all" || 
@@ -109,6 +110,7 @@ export default function Containers() {
     const statusMap = {
       "DEPLOYED": { color: "bg-green-100 text-green-800", label: "Deployed" },
       "SALE": { color: "bg-blue-100 text-blue-800", label: "For Sale" },
+      "SOLD": { color: "bg-red-100 text-red-800", label: "Sold" },
       "MAINTENANCE": { color: "bg-yellow-100 text-yellow-800", label: "Maintenance" },
       "STOCK": { color: "bg-gray-100 text-gray-800", label: "In Stock" },
     };
@@ -238,6 +240,7 @@ export default function Containers() {
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="deployed">Deployed</SelectItem>
                     <SelectItem value="sale">For Sale</SelectItem>
+                    <SelectItem value="sold">Sold</SelectItem>
                     <SelectItem value="maintenance">Maintenance</SelectItem>
                   </SelectContent>
                 </Select>

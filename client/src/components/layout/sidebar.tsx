@@ -12,6 +12,8 @@ export default function Sidebar() {
     { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250", color: "containers", roles: ["admin","coordinator","technician","client","super_admin"] },
     { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", color: "alerts", roles: ["admin","coordinator","technician","client","super_admin"] },
     { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench", color: "service", roles: ["admin","coordinator","technician","client","super_admin"] },
+    // Client self profile quick link
+    { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", color: "clients", roles: ["client"] },
     // Admin/Coordinator only
     { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat", color: "technicians", roles: ["admin","coordinator","super_admin"] },
     { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", color: "scheduling", roles: ["admin","coordinator","super_admin"] },
@@ -52,57 +54,57 @@ export default function Sidebar() {
               href={item.path}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth group ${
                 location === item.path
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "text-white"
+                  : "text-slate-300 hover:bg-muted hover:text-white"
               }`}
               style={location === item.path ? {
-                backgroundColor: item.color === 'containers' ? 'rgba(74, 222, 128, 0.1)' :
+                backgroundColor: item.color === 'containers' ? 'rgba(115, 200, 210, 0.1)' :
                                 item.color === 'alerts' ? 'rgba(239, 68, 68, 0.1)' :
-                                item.color === 'service' ? 'rgba(249, 115, 22, 0.1)' :
-                                item.color === 'technicians' ? 'rgba(168, 85, 247, 0.1)' :
-                                item.color === 'scheduling' ? 'rgba(6, 182, 212, 0.1)' :
-                                item.color === 'clients' ? 'rgba(20, 184, 166, 0.1)' :
-                                item.color === 'whatsapp' ? 'rgba(34, 197, 94, 0.1)' :
-                                item.color === 'inventory' ? 'rgba(234, 179, 8, 0.1)' :
-                                item.color === 'analytics' ? 'rgba(217, 70, 239, 0.1)' :
-                                'rgba(59, 130, 246, 0.1)',
-                borderLeftColor: item.color === 'containers' ? '#4ade80' :
+                                item.color === 'service' ? 'rgba(255, 144, 19, 0.1)' :
+                                item.color === 'technicians' ? 'rgba(0, 70, 255, 0.1)' :
+                                item.color === 'scheduling' ? 'rgba(115, 200, 210, 0.1)' :
+                                item.color === 'clients' ? 'rgba(115, 200, 210, 0.1)' :
+                                item.color === 'whatsapp' ? 'rgba(115, 200, 210, 0.1)' :
+                                item.color === 'inventory' ? 'rgba(255, 144, 19, 0.1)' :
+                                item.color === 'analytics' ? 'rgba(0, 70, 255, 0.1)' :
+                                'rgba(0, 70, 255, 0.1)',
+                borderLeftColor: item.color === 'containers' ? '#73C8D2' :
                                 item.color === 'alerts' ? '#ef4444' :
-                                item.color === 'service' ? '#f97316' :
-                                item.color === 'technicians' ? '#a855f7' :
-                                item.color === 'scheduling' ? '#06b6d4' :
-                                item.color === 'clients' ? '#14b8a6' :
-                                item.color === 'whatsapp' ? '#22c55e' :
-                                item.color === 'inventory' ? '#eab308' :
-                                item.color === 'analytics' ? '#d946ef' :
-                                '#3b82f6',
+                                item.color === 'service' ? '#FF9013' :
+                                item.color === 'technicians' ? '#0046FF' :
+                                item.color === 'scheduling' ? '#73C8D2' :
+                                item.color === 'clients' ? '#73C8D2' :
+                                item.color === 'whatsapp' ? '#73C8D2' :
+                                item.color === 'inventory' ? '#FF9013' :
+                                item.color === 'analytics' ? '#0046FF' :
+                                '#0046FF',
                 borderLeftWidth: '4px',
-                color: item.color === 'containers' ? '#4ade80' :
+                color: item.color === 'containers' ? '#73C8D2' :
                        item.color === 'alerts' ? '#ef4444' :
-                       item.color === 'service' ? '#f97316' :
-                       item.color === 'technicians' ? '#a855f7' :
-                       item.color === 'scheduling' ? '#06b6d4' :
-                       item.color === 'clients' ? '#14b8a6' :
-                       item.color === 'whatsapp' ? '#22c55e' :
-                       item.color === 'inventory' ? '#eab308' :
-                       item.color === 'analytics' ? '#d946ef' :
-                       '#3b82f6'
+                       item.color === 'service' ? '#FF9013' :
+                       item.color === 'technicians' ? '#0046FF' :
+                       item.color === 'scheduling' ? '#73C8D2' :
+                       item.color === 'clients' ? '#73C8D2' :
+                       item.color === 'whatsapp' ? '#73C8D2' :
+                       item.color === 'inventory' ? '#FF9013' :
+                       item.color === 'analytics' ? '#0046FF' :
+                       '#0046FF'
               } : {}}
               data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
             >
               <i 
                 className={`${item.icon} w-5`}
                 style={location === item.path ? {
-                  color: item.color === 'containers' ? '#4ade80' :
+                  color: item.color === 'containers' ? '#73C8D2' :
                          item.color === 'alerts' ? '#ef4444' :
-                         item.color === 'service' ? '#f97316' :
-                         item.color === 'technicians' ? '#a855f7' :
-                         item.color === 'scheduling' ? '#06b6d4' :
-                         item.color === 'clients' ? '#14b8a6' :
-                         item.color === 'whatsapp' ? '#22c55e' :
-                         item.color === 'inventory' ? '#eab308' :
-                         item.color === 'analytics' ? '#d946ef' :
-                         '#3b82f6'
+                         item.color === 'service' ? '#FF9013' :
+                         item.color === 'technicians' ? '#0046FF' :
+                         item.color === 'scheduling' ? '#73C8D2' :
+                         item.color === 'clients' ? '#73C8D2' :
+                         item.color === 'whatsapp' ? '#73C8D2' :
+                         item.color === 'inventory' ? '#FF9013' :
+                         item.color === 'analytics' ? '#0046FF' :
+                         '#0046FF'
                 } : {}}
               ></i>
               <span className="font-medium">{item.label}</span>
@@ -110,16 +112,16 @@ export default function Sidebar() {
                 <span
                   className="ml-auto text-white text-xs px-2 py-0.5 rounded-full"
                   style={{
-                    backgroundColor: item.color === 'containers' ? '#4ade80' :
+                    backgroundColor: item.color === 'containers' ? '#73C8D2' :
                                     item.color === 'alerts' ? '#ef4444' :
-                                    item.color === 'service' ? '#f97316' :
-                                    item.color === 'technicians' ? '#a855f7' :
-                                    item.color === 'scheduling' ? '#06b6d4' :
-                                    item.color === 'clients' ? '#14b8a6' :
-                                    item.color === 'whatsapp' ? '#22c55e' :
-                                    item.color === 'inventory' ? '#eab308' :
-                                    item.color === 'analytics' ? '#d946ef' :
-                                    '#3b82f6'
+                                    item.color === 'service' ? '#FF9013' :
+                                    item.color === 'technicians' ? '#0046FF' :
+                                    item.color === 'scheduling' ? '#73C8D2' :
+                                    item.color === 'clients' ? '#73C8D2' :
+                                    item.color === 'whatsapp' ? '#73C8D2' :
+                                    item.color === 'inventory' ? '#FF9013' :
+                                    item.color === 'analytics' ? '#0046FF' :
+                                    '#0046FF'
                   }}
                 >
                   {item.badge}
@@ -129,7 +131,7 @@ export default function Sidebar() {
                 <span 
                   className="ml-auto w-2 h-2 rounded-full pulse-dot"
                   style={{
-                    backgroundColor: item.color === 'whatsapp' ? '#22c55e' : '#3b82f6'
+                    backgroundColor: item.color === 'whatsapp' ? '#73C8D2' : '#0046FF'
                   }}
                 ></span>
               )}
@@ -140,7 +142,7 @@ export default function Sidebar() {
         <div className="mt-6 pt-6 border-t border-border space-y-1">
           <Link 
             href="/settings"
-            className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-smooth"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-muted hover:text-white transition-smooth"
           >
             <i className="fas fa-cog w-5"></i>
             <span className="font-medium">Settings</span>
@@ -156,11 +158,11 @@ export default function Sidebar() {
           </div>
           <div className="flex-1">
             <p className="text-sm font-semibold text-foreground">{user?.name || "User"}</p>
-            <p className="text-xs text-muted-foreground">{user?.phoneNumber}</p>
+            <p className="text-xs text-slate-400">{user?.phoneNumber}</p>
           </div>
           <button
             onClick={handleLogout}
-            className="text-muted-foreground hover:text-foreground"
+            className="text-slate-400 hover:text-white"
             data-testid="button-logout"
           >
             <i className="fas fa-sign-out-alt"></i>

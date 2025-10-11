@@ -12,10 +12,10 @@ export default function KPICards({ stats }: KPICardsProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       {/* Total Fleet */}
-      <div className="bg-card border border-containers/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#4ade80', borderLeftWidth: '4px' }}>
+      <div className="bg-card border border-containers/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#73C8D2', borderLeftWidth: '4px' }}>
         <div className="flex items-center justify-between mb-4">
-          <div className="p-3 bg-containers/10 rounded-lg" style={{ backgroundColor: 'rgba(74, 222, 128, 0.1)' }}>
-            <i className="fas fa-box text-containers text-xl" style={{ color: '#4ade80' }}></i>
+          <div className="p-3 bg-containers/10 rounded-lg" style={{ backgroundColor: 'rgba(115, 200, 210, 0.1)' }}>
+            <i className="fas fa-box text-containers text-xl" style={{ color: '#73C8D2' }}></i>
           </div>
           <span className="text-xs text-success font-medium">+12% vs last month</span>
         </div>
@@ -47,10 +47,10 @@ export default function KPICards({ stats }: KPICardsProps) {
       </div>
 
       {/* Service Requests */}
-      <div className="bg-card border border-service/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#f97316', borderLeftWidth: '4px' }}>
+      <div className="bg-card border border-service/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#FF9013', borderLeftWidth: '4px' }}>
         <div className="flex items-center justify-between mb-4">
-          <div className="p-3 bg-service/10 rounded-lg" style={{ backgroundColor: 'rgba(249, 115, 22, 0.1)' }}>
-            <i className="fas fa-wrench text-service text-xl" style={{ color: '#f97316' }}></i>
+          <div className="p-3 bg-service/10 rounded-lg" style={{ backgroundColor: 'rgba(255, 144, 19, 0.1)' }}>
+            <i className="fas fa-wrench text-service text-xl" style={{ color: '#FF9013' }}></i>
           </div>
           <span className="text-xs text-success font-medium">95% on-time</span>
         </div>
@@ -62,10 +62,10 @@ export default function KPICards({ stats }: KPICardsProps) {
       </div>
 
       {/* Fleet Utilization */}
-      <div className="bg-card border border-dashboard/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#3b82f6', borderLeftWidth: '4px' }}>
+      <div className="bg-card border border-dashboard/20 rounded-lg p-6 hover-lift transition-smooth" style={{ borderLeftColor: '#0046FF', borderLeftWidth: '4px' }}>
         <div className="flex items-center justify-between mb-4">
-          <div className="p-3 bg-dashboard/10 rounded-lg" style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)' }}>
-            <i className="fas fa-chart-pie text-dashboard text-xl" style={{ color: '#3b82f6' }}></i>
+          <div className="p-3 bg-dashboard/10 rounded-lg" style={{ backgroundColor: 'rgba(0, 70, 255, 0.1)' }}>
+            <i className="fas fa-chart-pie text-dashboard text-xl" style={{ color: '#0046FF' }}></i>
           </div>
           <span className="text-xs text-success font-medium">+8% efficiency</span>
         </div>

@@ -58,10 +58,10 @@ export default function FleetMap({ containers }: FleetMapProps) {
         
         if (healthScore >= 80) {
           status = "active";
-          color = "#22c55e"; // Green
+          color = "#73C8D2"; // Light cyan
         } else if (healthScore >= 60) {
           status = "maintenance";
-          color = "#f97316"; // Orange
+          color = "#FF9013"; // Orange
         } else {
           status = "critical";
           color = "#ef4444"; // Red

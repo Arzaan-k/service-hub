@@ -55,7 +55,8 @@ class EnhancedOrbcommClient {
         // Try different connection methods
         const connectionOptions = this.getConnectionOptions();
         
-        this.ws = new WebSocket(this.url, connectionOptions);
+        // Always include required subprotocol 'cdh.orbcomm.com'
+        this.ws = new WebSocket(this.url, 'cdh.orbcomm.com', connectionOptions);
 
         this.ws.on('open', () => {
           console.log('✅ Connected to Orbcomm CDH API');

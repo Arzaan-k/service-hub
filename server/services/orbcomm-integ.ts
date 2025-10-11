@@ -68,15 +68,20 @@ class OrbcommIntegClient {
         console.log('ℹ️  Note: INTEG environment uses sample data only');
         
         // Create WebSocket connection with INTEG-specific options
-        this.ws = new WebSocket(this.url, {
-          headers: {
-            'User-Agent': 'ContainerGenie-INTEG/1.0',
-            'Origin': 'https://container-genie.com',
-            'Sec-WebSocket-Protocol': 'orbcomm-cdh-v1'
-          },
-          handshakeTimeout: 30000, // 30 second timeout
-          perMessageDeflate: false // Disable compression for INTEG
-        });
+        // Use required subprotocol 'cdh.orbcomm.com' even in INTEG to match Postman config
+        this.ws = new WebSocket(
+          this.url,
+          'cdh.orbcomm.com',
+          {
+            headers: {
+              'Authorization': `Basic ${Buffer.from(`${this.username}:${this.password}`).toString('base64')}`,
+              'User-Agent': 'ContainerGenie-INTEG/1.0',
+              'Origin': 'https://container-genie.com'
+            },
+            handshakeTimeout: 30000, // 30 second timeout
+            perMessageDeflate: false // Disable compression for INTEG
+          }
+        );
 
         this.ws.on('open', () => {
           console.log('✅ Connected to Orbcomm INTEG Environment');
@@ -102,12 +107,27 @@ class OrbcommIntegClient {
 
         this.ws.on('message', (data) => {
           try {
-            const message = JSON.parse(data.toString());
+            const rawMessage = data.toString();
+            let cleanMessage = this.sanitizeJsonString(rawMessage);
+
+            // Try to extract valid JSON if the message contains mixed content
+            if (cleanMessage.includes('}{')) {
+              console.log('📨 Multi-part message detected, extracting JSON parts');
+              const jsonMatches = cleanMessage.match(/\{[^}]*\}/g);
+              if (jsonMatches && jsonMatches.length > 0) {
+                cleanMessage = jsonMatches[0]; // Use the first valid JSON object
+              }
+            }
+
+            const message = JSON.parse(cleanMessage);
             console.log('📨 Received INTEG message:', JSON.stringify(message, null, 2));
             this.handleMessage(message);
           } catch (error) {
-            console.error('❌ Error parsing INTEG message:', error);
+            console.error('❌ Error parsing INTEG message after sanitization:', error);
             console.log('Raw message:', data.toString());
+
+            // Try to handle common error response patterns
+            this.handleErrorResponse(data.toString());
           }
         });
 
@@ -208,6 +228,40 @@ class OrbcommIntegClient {
     console.error('❌ INTEG API error:', data.error || data.message);
   }
 
+  private handleErrorResponse(rawMessage: string): void {
+    console.log('🔧 Attempting to extract error information from malformed message');
+
+    // Try to extract common error patterns
+    const faultMatch = rawMessage.match(/"faultText":\s*"([^"]+)"/);
+    const exceptionMatch = rawMessage.match(/"exceptionText":\s*"([^"]+)"/);
+    const faultCodeMatch = rawMessage.match(/"faultCode":\s*(\d+)/);
+    const messageMatch = rawMessage.match(/"message":\s*"([^"]+)"/);
+    const faultIdMatch = rawMessage.match(/"faultId":\s*"([^"]+)"/);
+    const faultSeverityMatch = rawMessage.match(/"faultSeverity":\s*"([^"]+)"/);
+
+    if (faultMatch || exceptionMatch || faultCodeMatch || faultIdMatch) {
+      console.log('📋 Extracted error information:');
+      if (faultIdMatch) console.log(`   Fault ID: ${faultIdMatch[1]}`);
+      if (faultSeverityMatch) console.log(`   Severity: ${faultSeverityMatch[1]}`);
+      if (faultCodeMatch) console.log(`   Code: ${faultCodeMatch[1]}`);
+      if (faultMatch) console.log(`   Fault: ${faultMatch[1]}`);
+      if (exceptionMatch) console.log(`   Exception: ${exceptionMatch[1].substring(0, 100)}...`); // Limit length
+      if (messageMatch) console.log(`   Message: ${messageMatch[1]}`);
+
+      // Handle as error message type
+      this.handleError({
+        error: faultMatch ? faultMatch[1] : 'Unknown error',
+        message: exceptionMatch ? exceptionMatch[1] : messageMatch ? messageMatch[1] : 'Malformed response from Orbcomm INTEG',
+        code: faultCodeMatch ? parseInt(faultCodeMatch[1]) : undefined,
+        faultId: faultIdMatch ? faultIdMatch[1] : undefined,
+        severity: faultSeverityMatch ? faultSeverityMatch[1] : undefined
+      });
+    } else {
+      console.log('❓ Could not extract meaningful error information from malformed message');
+      console.log('🔍 Raw message sample:', rawMessage.substring(0, 200) + '...');
+    }
+  }
+
   private handleHeartbeat(data: any): void {
     console.log('💓 INTEG heartbeat received');
     // Respond to heartbeat
@@ -221,6 +275,18 @@ class OrbcommIntegClient {
 
   private handleStatus(data: any): void {
     console.log('📊 INTEG status update:', data);
+  }
+
+  private sanitizeJsonString(jsonString: string): string {
+    // Remove or escape control characters that break JSON parsing
+    // Control characters are 0x00-0x1F except for \t, \r, \n
+    return jsonString
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters except tab, carriage return, newline
+      .replace(/\t/g, '\\t') // Escape tabs
+      .replace(/\r/g, '\\r') // Escape carriage returns
+      .replace(/\n/g, '\\n') // Escape newlines
+      .replace(/\\\\/g, '\\\\') // Escape backslashes first to avoid double escaping
+      .trim();
   }
 
   private requestDeviceList(): void {

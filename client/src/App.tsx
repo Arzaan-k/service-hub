@@ -18,6 +18,7 @@ import WhatsAppHub from "@/pages/whatsapp-hub";
 import Clients from "@/pages/clients";
 import Inventory from "@/pages/inventory";
 import Analytics from "@/pages/analytics";
+import ClientProfile from "@/pages/client-profile";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -70,6 +71,12 @@ function Router() {
       </Route>
       <Route path="/clients">
         {() => <ProtectedRoute component={Clients} roles={["admin", "coordinator", "super_admin"]} />}
+      </Route>
+      <Route path="/clients/:id">
+        {() => <ProtectedRoute component={ClientProfile} roles={["admin", "coordinator", "super_admin"]} />}
+      </Route>
+      <Route path="/my-profile">
+        {() => <ProtectedRoute component={ClientProfile} roles={["client", "admin", "coordinator", "super_admin"]} />}
       </Route>
       <Route path="/inventory">
         {() => <ProtectedRoute component={Inventory} roles={["admin", "coordinator", "technician", "super_admin"]} />}

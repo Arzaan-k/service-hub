@@ -52,7 +52,7 @@ export default function Sidebar() {
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth ${
                   location === item.path
                     ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "text-gray-300 hover:bg-muted hover:text-white"
                 }`}
                 data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
               >
@@ -63,6 +63,9 @@ export default function Sidebar() {
                     className={`ml-auto ${item.badgeColor || "bg-primary"} text-${
                       item.badgeColor ? "destructive-" : "primary-"
                     }foreground text-xs px-2 py-0.5 rounded-full`}
+                    style={{
+                      backgroundColor: item.badgeColor === 'bg-destructive' ? '#ef4444' : '#0046FF'
+                    }}
                   >
                     {item.badge}
                   </span>
@@ -75,7 +78,7 @@ export default function Sidebar() {
 
         <div className="mt-6 pt-6 border-t border-border space-y-1">
           <Link href="/settings">
-            <a className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-smooth">
+            <a className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-muted hover:text-white transition-smooth">
               <i className="fas fa-cog w-5"></i>
               <span className="font-medium">Settings</span>
             </a>
@@ -91,9 +94,9 @@ export default function Sidebar() {
           </div>
           <div className="flex-1">
             <p className="text-sm font-semibold text-foreground">{user?.name || "User"}</p>
-            <p className="text-xs text-muted-foreground">{user?.phoneNumber}</p>
+            <p className="text-xs text-slate-400">{user?.phoneNumber}</p>
           </div>
-          <button onClick={handleLogout} className="text-muted-foreground hover:text-foreground" data-testid="button-logout">
+          <button onClick={handleLogout} className="text-slate-400 hover:text-white" data-testid="button-logout">
             <i className="fas fa-sign-out-alt"></i>
           </button>
         </div>

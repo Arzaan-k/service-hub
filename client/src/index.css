@@ -4,95 +4,95 @@
 
 :root {
   /* Base Colors */
-  --background: hsl(222, 47%, 11%);
-  --foreground: hsl(210, 40%, 98%);
-  --card: hsl(222, 47%, 15%);
-  --card-foreground: hsl(210, 40%, 98%);
-  --popover: hsl(222, 47%, 28%);
+  --background: hsl(225, 100%, 5%);
+  --foreground: hsl(0, 0%, 100%);
+  --card: hsl(225, 100%, 8%);
+  --card-foreground: hsl(0, 0%, 100%);
+  --popover: hsl(225, 100%, 10%);
   --popover-foreground: hsl(0, 0%, 100%);
-  --border: hsl(217, 33%, 35%);
-  --input: hsl(217, 33%, 25%);
-  --ring: hsl(217, 91%, 60%);
+  --border: hsl(225, 50%, 20%);
+  --input: hsl(225, 100%, 8%);
+  --ring: hsl(225, 100%, 50%);
   --radius: 0.5rem;
   --font-sans: 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
   /* Semantic Colors - Primary Actions */
-  --primary: hsl(217, 91%, 60%);
-  --primary-foreground: hsl(222, 47%, 11%);
-  --primary-light: hsl(217, 91%, 70%);
-  --primary-dark: hsl(217, 91%, 50%);
+  --primary: hsl(225, 100%, 50%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --primary-light: hsl(225, 100%, 60%);
+  --primary-dark: hsl(225, 100%, 40%);
 
   /* Semantic Colors - Secondary/Neutral */
-  --secondary: hsl(217, 33%, 17%);
-  --secondary-foreground: hsl(210, 40%, 98%);
-  --muted: hsl(217, 33%, 17%);
-  --muted-foreground: hsl(215, 20%, 65%);
+  --secondary: hsl(225, 50%, 15%);
+  --secondary-foreground: hsl(0, 0%, 100%);
+  --muted: hsl(225, 50%, 15%);
+  --muted-foreground: hsl(225, 30%, 70%);
 
   /* Functional Area Colors */
-  --dashboard: hsl(200, 100%, 50%); /* Blue - Dashboard/Overview */
-  --dashboard-foreground: hsl(222, 47%, 11%);
-  --dashboard-light: hsl(200, 100%, 60%);
-  --dashboard-dark: hsl(200, 100%, 40%);
+  --dashboard: hsl(225, 100%, 50%); /* Primary Blue - Dashboard/Overview */
+  --dashboard-foreground: hsl(0, 0%, 100%);
+  --dashboard-light: hsl(225, 100%, 60%);
+  --dashboard-dark: hsl(225, 100%, 40%);
 
-  --containers: hsl(120, 60%, 50%); /* Green - Containers/Fleet */
-  --containers-foreground: hsl(222, 47%, 11%);
-  --containers-light: hsl(120, 60%, 60%);
-  --containers-dark: hsl(120, 60%, 40%);
+  --containers: hsl(187, 52%, 67%); /* Light Cyan - Containers/Fleet */
+  --containers-foreground: hsl(225, 100%, 5%);
+  --containers-light: hsl(187, 52%, 75%);
+  --containers-dark: hsl(187, 52%, 55%);
 
   --alerts: hsl(0, 84%, 60%); /* Red - Alerts/Issues */
-  --alerts-foreground: hsl(210, 40%, 98%);
+  --alerts-foreground: hsl(0, 0%, 100%);
   --alerts-light: hsl(0, 84%, 70%);
   --alerts-dark: hsl(0, 84%, 50%);
 
-  --service: hsl(30, 100%, 50%); /* Orange - Service Requests */
-  --service-foreground: hsl(222, 47%, 11%);
-  --service-light: hsl(30, 100%, 60%);
-  --service-dark: hsl(30, 100%, 40%);
+  --service: hsl(32, 100%, 54%); /* Orange - Service Requests */
+  --service-foreground: hsl(225, 100%, 5%);
+  --service-light: hsl(32, 100%, 64%);
+  --service-dark: hsl(32, 100%, 44%);
 
-  --technicians: hsl(280, 60%, 50%); /* Purple - Technicians */
-  --technicians-foreground: hsl(210, 40%, 98%);
-  --technicians-light: hsl(280, 60%, 60%);
-  --technicians-dark: hsl(280, 60%, 40%);
+  --technicians: hsl(225, 100%, 50%); /* Primary Blue - Technicians */
+  --technicians-foreground: hsl(0, 0%, 100%);
+  --technicians-light: hsl(225, 100%, 60%);
+  --technicians-dark: hsl(225, 100%, 40%);
 
-  --scheduling: hsl(200, 60%, 50%); /* Cyan - Scheduling */
-  --scheduling-foreground: hsl(222, 47%, 11%);
-  --scheduling-light: hsl(200, 60%, 60%);
-  --scheduling-dark: hsl(200, 60%, 40%);
+  --scheduling: hsl(187, 52%, 67%); /* Light Cyan - Scheduling */
+  --scheduling-foreground: hsl(225, 100%, 5%);
+  --scheduling-light: hsl(187, 52%, 75%);
+  --scheduling-dark: hsl(187, 52%, 55%);
 
-  --clients: hsl(160, 60%, 50%); /* Teal - Clients */
-  --clients-foreground: hsl(222, 47%, 11%);
-  --clients-light: hsl(160, 60%, 60%);
-  --clients-dark: hsl(160, 60%, 40%);
+  --clients: hsl(187, 52%, 67%); /* Light Cyan - Clients */
+  --clients-foreground: hsl(225, 100%, 5%);
+  --clients-light: hsl(187, 52%, 75%);
+  --clients-dark: hsl(187, 52%, 55%);
 
-  --whatsapp: hsl(120, 100%, 40%); /* WhatsApp Green */
-  --whatsapp-foreground: hsl(210, 40%, 98%);
-  --whatsapp-light: hsl(120, 100%, 50%);
-  --whatsapp-dark: hsl(120, 100%, 30%);
+  --whatsapp: hsl(187, 52%, 67%); /* Light Cyan - WhatsApp */
+  --whatsapp-foreground: hsl(0, 0%, 100%);
+  --whatsapp-light: hsl(187, 52%, 75%);
+  --whatsapp-dark: hsl(187, 52%, 55%);
 
-  --inventory: hsl(45, 100%, 50%); /* Yellow - Inventory */
-  --inventory-foreground: hsl(222, 47%, 11%);
-  --inventory-light: hsl(45, 100%, 60%);
-  --inventory-dark: hsl(45, 100%, 40%);
+  --inventory: hsl(32, 100%, 54%); /* Orange - Inventory */
+  --inventory-foreground: hsl(225, 100%, 5%);
+  --inventory-light: hsl(32, 100%, 64%);
+  --inventory-dark: hsl(32, 100%, 44%);
 
-  --analytics: hsl(270, 60%, 50%); /* Magenta - Analytics */
-  --analytics-foreground: hsl(210, 40%, 98%);
-  --analytics-light: hsl(270, 60%, 60%);
-  --analytics-dark: hsl(270, 60%, 40%);
+  --analytics: hsl(225, 100%, 50%); /* Primary Blue - Analytics */
+  --analytics-foreground: hsl(0, 0%, 100%);
+  --analytics-light: hsl(225, 100%, 60%);
+  --analytics-dark: hsl(225, 100%, 40%);
 
   /* Status Colors */
-  --success: hsl(160, 84%, 39%);
-  --success-foreground: hsl(210, 40%, 98%);
-  --warning: hsl(38, 92%, 50%);
-  --warning-foreground: hsl(222, 47%, 11%);
+  --success: hsl(187, 52%, 67%);
+  --success-foreground: hsl(225, 100%, 5%);
+  --warning: hsl(32, 100%, 54%);
+  --warning-foreground: hsl(225, 100%, 5%);
   --destructive: hsl(0, 84%, 60%);
-  --destructive-foreground: hsl(210, 40%, 98%);
-  --info: hsl(200, 100%, 50%);
-  --info-foreground: hsl(222, 47%, 11%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --info: hsl(225, 100%, 50%);
+  --info-foreground: hsl(0, 0%, 100%);
 
   /* Legacy support */
-  --accent: hsl(262, 83%, 58%);
-  --accent-foreground: hsl(210, 40%, 98%);
+  --accent: hsl(225, 100%, 50%);
+  --accent-foreground: hsl(0, 0%, 100%);
 }
 
 * {
@@ -133,22 +133,127 @@ body {
   border-radius: 4px;
 }
 
-/* Enhanced dropdown visibility */
-[data-radix-select-content] {
-  background-color: hsl(222, 47%, 28%) !important;
-  border: 1px solid hsl(217, 33%, 35%) !important;
+/* Enhanced dropdown visibility - All dropdown types */
+[data-radix-select-content],
+[data-radix-popover-content],
+[data-radix-dropdown-menu-content],
+[data-radix-context-menu-content],
+[data-radix-menubar-content] {
+  background-color: hsl(225, 100%, 8%) !important;
+  background: hsl(225, 100%, 8%) !important;
+  border: 1px solid hsl(225, 50%, 20%) !important;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3) !important;
+  opacity: 1 !important;
 }
 
-[data-radix-select-item] {
+/* All dropdown items - White text */
+[data-radix-select-item],
+[data-radix-popover-item],
+[data-radix-dropdown-menu-item],
+[data-radix-context-menu-item],
+[data-radix-menubar-item] {
   color: hsl(0, 0%, 100%) !important;
   font-weight: 400;
 }
 
+/* Hover states for all dropdown items */
 [data-radix-select-item]:hover,
-[data-radix-select-item][data-highlighted] {
-  background-color: hsl(217, 91%, 60%) !important;
-  color: hsl(222, 47%, 11%) !important;
+[data-radix-select-item][data-highlighted],
+[data-radix-popover-item]:hover,
+[data-radix-popover-item][data-highlighted],
+[data-radix-dropdown-menu-item]:hover,
+[data-radix-dropdown-menu-item][data-highlighted],
+[data-radix-context-menu-item]:hover,
+[data-radix-context-menu-item][data-highlighted],
+[data-radix-menubar-item]:hover,
+[data-radix-menubar-item][data-highlighted] {
+  background-color: hsl(225, 100%, 50%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+/* Dropdown labels and separators */
+[data-radix-dropdown-menu-label],
+[data-radix-context-menu-label],
+[data-radix-menubar-label],
+[cmdk-group-heading] {
+  color: hsl(0, 0%, 100%) !important;
+}
+
+[data-radix-dropdown-menu-separator],
+[data-radix-context-menu-separator],
+[data-radix-menubar-separator] {
+  background-color: hsl(225, 50%, 20%) !important;
+}
+
+/* Command palette components */
+[cmdk-root] {
+  background-color: hsl(225, 100%, 8%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+[cmdk-input] {
+  background-color: hsl(225, 100%, 8%) !important;
+  color: hsl(0, 0%, 100%) !important;
+  border-color: hsl(225, 50%, 20%) !important;
+}
+
+[cmdk-input]::placeholder {
+  color: hsl(225, 30%, 70%) !important;
+}
+
+[cmdk-item] {
+  color: hsl(0, 0%, 100%) !important;
+}
+
+[cmdk-item]:hover,
+[cmdk-item][data-selected='true'] {
+  background-color: hsl(225, 100%, 50%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+[cmdk-empty] {
+  color: hsl(225, 30%, 70%) !important;
+}
+
+[cmdk-separator] {
+  background-color: hsl(225, 50%, 20%) !important;
+}
+
+/* Inputs within dropdowns */
+[data-radix-select-content] input,
+[data-radix-popover-content] input,
+[data-radix-dropdown-menu-content] input,
+[data-radix-context-menu-content] input,
+[data-radix-menubar-content] input,
+[cmdk-root] input {
+  background-color: hsl(225, 100%, 8%) !important;
+  color: hsl(0, 0%, 100%) !important;
+  border-color: hsl(225, 50%, 20%) !important;
+}
+
+[data-radix-select-content] input::placeholder,
+[data-radix-popover-content] input::placeholder,
+[data-radix-dropdown-menu-content] input::placeholder,
+[data-radix-context-menu-content] input::placeholder,
+[data-radix-menubar-content] input::placeholder,
+[cmdk-root] input::placeholder {
+  color: hsl(225, 30%, 70%) !important;
+}
+
+/* Fix select element text visibility */
+select option {
+  background-color: hsl(225, 100%, 8%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+select option:checked {
+  background-color: hsl(225, 100%, 50%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+select:focus option:checked {
+  background-color: hsl(225, 100%, 50%) !important;
+  color: hsl(0, 0%, 100%) !important;
 }
 
 /* Pulse animation */

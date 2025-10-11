@@ -6,7 +6,7 @@ import { z } from "zod";
 
 // Enums according to PRD
 export const userRoleEnum = pgEnum("user_role", ["admin", "client", "technician", "coordinator", "super_admin"]);
-export const containerStatusEnum = pgEnum("container_status", ["active", "in_service", "maintenance", "retired", "in_transit"]);
+export const containerStatusEnum = pgEnum("container_status", ["active", "in_service", "maintenance", "retired", "in_transit", "for_sale", "sold"]);
 // Use existing enum from database
 export const containerTypeEnum = pgEnum("container_type", ["refrigerated", "dry", "special", "iot_enabled", "manual"]);
 export const alertSeverityEnum = pgEnum("alert_severity", ["critical", "high", "medium", "low"]);

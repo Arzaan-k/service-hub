@@ -28,7 +28,7 @@ import {
   Package,
 } from "lucide-react";
 
-const COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#a855f7"];
+const COLORS = ["#ef4444", "#FF9013", "#73C8D2", "#73C8D2", "#0046FF", "#0046FF"];
 
 export default function Analytics() {
   const { data: stats } = useQuery({
