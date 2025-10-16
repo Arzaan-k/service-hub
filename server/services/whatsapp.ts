@@ -836,7 +836,7 @@ export async function sendCustomerFeedbackRequest(customer: any, service: any): 
 }
 
 // WhatsApp authorization function
-export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{authorized: boolean, user?: any, error?: string}> {
+export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{authorized: boolean, user?: any, roleData?: any, error?: string}> {
   try {
     // Normalize phone: keep digits only
     const digitsOnly = (phoneNumber || '').replace(/\D/g, '');
@@ -877,7 +877,27 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
       };
     }
 
-    return { authorized: true, user };
+    // Get role-specific data based on user role
+    let roleData = null;
+    if (user.role === 'client') {
+      roleData = await storage.getCustomerByUserId(user.id);
+      if (!roleData) {
+        return {
+          authorized: false,
+          error: "Client profile not found. Please contact support to complete your registration."
+        };
+      }
+    } else if (user.role === 'technician') {
+      roleData = await storage.getTechnicianByUserId(user.id);
+      if (!roleData) {
+        return {
+          authorized: false,
+          error: "Technician profile not found. Please contact support to complete your registration."
+        };
+      }
+    }
+
+    return { authorized: true, user, roleData };
 
   } catch (error) {
     console.error('Error authorizing WhatsApp message:', error);
@@ -925,6 +945,7 @@ export async function handleWebhook(body: any): Promise<any> {
             }
 
             const user = authResult.user;
+            const roleData = authResult.roleData;
 
             // Get or create session
             let session = await storage.getWhatsappSession(from);
@@ -955,7 +976,7 @@ export async function handleWebhook(body: any): Promise<any> {
             });
 
             // Process the message based on type and user role
-            await processIncomingMessage(message, user, session);
+            await processIncomingMessage(message, user, roleData, session);
 
             // Update session timestamp
             await storage.updateWhatsappSession(session.id, {
@@ -989,17 +1010,17 @@ export async function handleWebhook(body: any): Promise<any> {
 }
 
 // Process incoming WhatsApp messages based on user role and message type
-async function processIncomingMessage(message: any, user: any, session: any): Promise<void> {
+async function processIncomingMessage(message: any, user: any, roleData: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
   const from = message.from;
 
   try {
     if (message.type === 'text') {
-      await handleTextMessage(message, user, session);
+      await handleTextMessage(message, user, roleData, session);
             } else if (message.type === 'interactive') {
-      await handleInteractiveMessage(message, user, session);
+      await handleInteractiveMessage(message, user, roleData, session);
     } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
-      await handleMediaMessage(message, user, session);
+      await handleMediaMessage(message, user, roleData, session);
     }
   } catch (error) {
     console.error('Error processing message:', error);
@@ -1008,23 +1029,24 @@ async function processIncomingMessage(message: any, user: any, session: any): Pr
 }
 
 // Handle text messages based on user role and conversation state
-async function handleTextMessage(message: any, user: any, session: any): Promise<void> {
+async function handleTextMessage(message: any, user: any, roleData: any, session: any): Promise<void> {
   const text = message.text?.body?.toLowerCase().trim();
   const from = message.from;
 
   if (user.role === 'client') {
-    await handleClientTextMessage(text, from, user, session);
+    await handleClientTextMessage(text, from, user, roleData, session);
   } else if (user.role === 'technician') {
-    await handleTechnicianTextMessage(text, from, user, session);
+    await handleTechnicianTextMessage(text, from, user, roleData, session);
   } else {
     await sendTextMessage(from, 'Your role is not recognized. Please contact support.');
   }
 }
 
-// Handle client text messages
-async function handleClientTextMessage(text: string, from: string, user: any, session: any): Promise<void> {
+// Handle client text messages with enhanced role-based features
+async function handleClientTextMessage(text: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
   const conversationState = session.conversationState || {};
+  const customer = roleData; // roleData is the customer data for clients
 
   // Handle service request flow steps
   if (conversationState.flow === 'service_request') {
@@ -1032,81 +1054,413 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
     return;
   }
 
-  // Handle general commands
+  // Enhanced command handling with detailed client-specific information
   if (text.includes('status') || text.includes('container')) {
-    const customer = await storage.getCustomerByUserId(user.id);
-    if (customer) {
-      const containers = await storage.getContainersByCustomer(customer.id);
-      const activeContainers = containers.filter((c: any) => c.status === 'active');
-      const alerts = await storage.getOpenAlerts();
-
-      await sendTextMessage(
-        from,
-        `📊 *Container Status Summary*\n\nTotal Containers: ${containers.length}\nActive: ${activeContainers.length}\nAlerts: ${alerts.length}\n\nFor detailed status, please check your dashboard.`
-      );
-    }
+    await handleClientContainerStatus(from, customer, storage);
   } else if (text.includes('service') || text.includes('help') || text.includes('request')) {
-    // Start service request flow
-    await initiateServiceRequestFlow(from, user, session);
-  } else if (text.includes('invoice') || text.includes('bill')) {
-    const customer = await storage.getCustomerByUserId(user.id);
-    if (customer) {
-      const invoices = await storage.getInvoicesByCustomer(customer.id);
-      const pendingInvoices = invoices.filter((inv: any) => inv.paymentStatus === 'pending');
-
-      if (pendingInvoices.length > 0) {
-        await sendTextMessage(
-          from,
-          `💰 *Pending Invoices*\n\nYou have ${pendingInvoices.length} pending invoice(s). Please check your dashboard for payment details.`
-        );
-      } else {
-        await sendTextMessage(from, '✅ All invoices are up to date!');
-      }
-    }
+    await handleClientServiceRequests(from, customer, user, session, storage);
+  } else if (text.includes('invoice') || text.includes('bill') || text.includes('payment')) {
+    await handleClientInvoices(from, customer, storage);
+  } else if (text.includes('alert') || text.includes('notification')) {
+    await handleClientAlerts(from, customer, storage);
+  } else if (text.includes('location') || text.includes('track')) {
+    await handleClientContainerTracking(from, customer, storage);
+  } else if (text.includes('history') || text.includes('service history')) {
+    await handleClientServiceHistory(from, customer, storage);
   } else {
-    // Default response with available commands
+    // Enhanced default response with comprehensive options
     await sendInteractiveButtons(
       from,
-      '👋 Welcome! How can I help you today?\n\nAvailable commands:\n• "status" - Check container status\n• "service" - Request service\n• "invoice" - Check billing',
+      `👋 Welcome ${customer.contactPerson}!\n\n🏢 ${customer.companyName}\n\nHow can I help you today?`,
       [
-        { id: 'check_status', title: 'Check Status' },
-        { id: 'request_service', title: 'Request Service' },
-        { id: 'check_invoices', title: 'Check Invoices' },
+        { id: 'check_status', title: '📊 Container Status' },
+        { id: 'view_alerts', title: '🚨 View Alerts' },
+        { id: 'request_service', title: '🔧 Request Service' },
+        { id: 'check_invoices', title: '💰 Check Invoices' },
+        { id: 'track_containers', title: '📍 Track Containers' },
+        { id: 'service_history', title: '📋 Service History' },
       ]
     );
   }
 }
 
-// Handle technician text messages
-async function handleTechnicianTextMessage(text: string, from: string, user: any, session: any): Promise<void> {
-  if (text.includes('schedule')) {
-    await sendTextMessage(from, '📋 Your daily schedule is sent at 7 PM. Use the WhatsApp buttons to acknowledge or report issues.');
+// Helper function to handle client container status requests
+async function handleClientContainerStatus(from: string, customer: any, storage: any): Promise<void> {
+      const containers = await storage.getContainersByCustomer(customer.id);
+  const containersByStatus = containers.reduce((acc: any, container: any) => {
+    acc[container.status] = (acc[container.status] || 0) + 1;
+    return acc;
+  }, {});
+
+      const alerts = await storage.getOpenAlerts();
+  const criticalAlerts = alerts.filter((alert: any) => alert.severity === 'critical' && 
+    containers.some((c: any) => c.id === alert.containerId));
+
+  let statusMessage = `📊 *Container Status for ${customer.companyName}*\n\n`;
+  statusMessage += `📦 Total Containers: ${containers.length}\n\n`;
+  
+  Object.entries(containersByStatus).forEach(([status, count]) => {
+    const emoji = getStatusEmoji(status);
+    statusMessage += `${emoji} ${status.charAt(0).toUpperCase() + status.slice(1)}: ${count}\n`;
+  });
+
+  if (criticalAlerts.length > 0) {
+    statusMessage += `\n🚨 Critical Alerts: ${criticalAlerts.length}\n`;
+  }
+
+  statusMessage += `\n📅 Last Updated: ${new Date().toLocaleString()}`;
+
+  await sendTextMessage(from, statusMessage);
+}
+
+// Helper function to handle client service requests
+async function handleClientServiceRequests(from: string, customer: any, user: any, session: any, storage: any): Promise<void> {
+  const serviceRequests = await storage.getServiceRequestsByCustomer(customer.id);
+  const pendingRequests = serviceRequests.filter((sr: any) => 
+    ['pending', 'approved', 'scheduled', 'in_progress'].includes(sr.status));
+  const recentCompleted = serviceRequests.filter((sr: any) => sr.status === 'completed')
+    .sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
+    .slice(0, 3);
+
+  let message = `🔧 *Service Requests for ${customer.companyName}*\n\n`;
+  
+  if (pendingRequests.length > 0) {
+    message += `⏳ Active Requests: ${pendingRequests.length}\n`;
+    pendingRequests.slice(0, 3).forEach((sr: any) => {
+      message += `• ${sr.requestNumber} - ${sr.status.toUpperCase()}\n`;
+    });
+  }
+
+  if (recentCompleted.length > 0) {
+    message += `\n✅ Recent Completed: ${recentCompleted.length}\n`;
+    recentCompleted.forEach((sr: any) => {
+      message += `• ${sr.requestNumber} - Completed\n`;
+    });
+  }
+
+  message += `\nWould you like to create a new service request?`;
+
+  await sendInteractiveButtons(from, message, [
+    { id: 'create_service_request', title: '➕ New Request' },
+    { id: 'view_request_details', title: '👁️ View Details' }
+  ]);
+}
+
+// Helper function to handle client invoices
+async function handleClientInvoices(from: string, customer: any, storage: any): Promise<void> {
+      const invoices = await storage.getInvoicesByCustomer(customer.id);
+      const pendingInvoices = invoices.filter((inv: any) => inv.paymentStatus === 'pending');
+  const overdueInvoices = invoices.filter((inv: any) => inv.paymentStatus === 'overdue');
+  const totalPending = pendingInvoices.reduce((sum: number, inv: any) => sum + parseFloat(inv.totalAmount), 0);
+
+  let message = `💰 *Invoice Summary for ${customer.companyName}*\n\n`;
+  
+  if (overdueInvoices.length > 0) {
+    message += `🚨 Overdue Invoices: ${overdueInvoices.length}\n`;
+  }
+
+      if (pendingInvoices.length > 0) {
+    message += `⏳ Pending Invoices: ${pendingInvoices.length}\n`;
+    message += `💳 Total Pending: ₹${totalPending.toFixed(2)}\n\n`;
+    
+    message += `Recent Pending:\n`;
+    pendingInvoices.slice(0, 3).forEach((inv: any) => {
+      message += `• ${inv.invoiceNumber} - ₹${inv.totalAmount}\n`;
+    });
+      } else {
+    message += `✅ All invoices are up to date!\n`;
+  }
+
+  message += `\n📊 Payment Terms: ${customer.paymentTerms.toUpperCase()}`;
+
+  await sendTextMessage(from, message);
+}
+
+// Helper function to handle client alerts
+async function handleClientAlerts(from: string, customer: any, storage: any): Promise<void> {
+  const containers = await storage.getContainersByCustomer(customer.id);
+  const containerIds = containers.map((c: any) => c.id);
+  const alerts = await storage.getOpenAlerts();
+  const clientAlerts = alerts.filter((alert: any) => containerIds.includes(alert.containerId));
+  
+  const alertsByType = clientAlerts.reduce((acc: any, alert: any) => {
+    acc[alert.alertType] = (acc[alert.alertType] || 0) + 1;
+    return acc;
+  }, {});
+
+  let message = `🚨 *Active Alerts for ${customer.companyName}*\n\n`;
+  
+  if (clientAlerts.length === 0) {
+    message += `✅ No active alerts for your containers!`;
+  } else {
+    message += `Total Alerts: ${clientAlerts.length}\n\n`;
+    
+    Object.entries(alertsByType).forEach(([type, count]) => {
+      const emoji = getAlertEmoji(type);
+      message += `${emoji} ${type.charAt(0).toUpperCase() + type.slice(1)}: ${count}\n`;
+    });
+    
+    const criticalAlerts = clientAlerts.filter((a: any) => a.severity === 'critical');
+    if (criticalAlerts.length > 0) {
+      message += `\n🆘 Critical Issues Requiring Immediate Attention: ${criticalAlerts.length}`;
+    }
+  }
+
+  await sendTextMessage(from, message);
+}
+
+// Helper function to handle container tracking
+async function handleClientContainerTracking(from: string, customer: any, storage: any): Promise<void> {
+  const containers = await storage.getContainersByCustomer(customer.id);
+  const activeContainers = containers.filter((c: any) => c.status === 'active');
+  
+  let message = `📍 *Container Tracking for ${customer.companyName}*\n\n`;
+  
+  if (activeContainers.length === 0) {
+    message += `No active containers to track.`;
+  } else {
+    message += `Active Containers: ${activeContainers.length}\n\n`;
+    
+    for (const container of activeContainers.slice(0, 5)) {
+      message += `📦 ${container.containerCode}\n`;
+      if (container.currentLocation) {
+        message += `   📍 Last Location: Available\n`;
+      } else {
+        message += `   📍 Location: Not Available\n`;
+      }
+      message += `   📊 Status: ${container.status}\n\n`;
+    }
+    
+    if (activeContainers.length > 5) {
+      message += `... and ${activeContainers.length - 5} more containers`;
+    }
+  }
+
+  await sendTextMessage(from, message);
+}
+
+// Helper function to handle service history
+async function handleClientServiceHistory(from: string, customer: any, storage: any): Promise<void> {
+  const serviceRequests = await storage.getServiceRequestsByCustomer(customer.id);
+  const completedServices = serviceRequests.filter((sr: any) => sr.status === 'completed')
+    .sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
+    .slice(0, 10);
+
+  let message = `📋 *Service History for ${customer.companyName}*\n\n`;
+  
+  if (completedServices.length === 0) {
+    message += `No completed services found.`;
+  } else {
+    message += `Recent Services (${completedServices.length}):NN`;
+    
+    completedServices.forEach((sr: any, index: number) => {
+      message += `${index + 1}. ${sr.requestNumber}\n`;
+      message += `   📅 ${new Date(sr.completedAt).toLocaleDateString()}\n`;
+      message += `   💰 Cost: ₹${sr.totalCost || 'TBD'}\n\n`;
+    });
+  }
+
+  await sendTextMessage(from, message);
+}
+
+// Helper function to get status emojis
+function getStatusEmoji(status: string): string {
+  const emojis: { [key: string]: string } = {
+    'active': '🟢',
+    'in_service': '🔧',
+    'maintenance': '⚠️',
+    'retired': '🔴',
+    'in_transit': '🚚',
+    'for_sale': '💰',
+    'sold': '✅'
+  };
+  return emojis[status] || '⚪';
+}
+
+// Helper function to get alert emojis
+function getAlertEmoji(type: string): string {
+  const emojis: { [key: string]: string } = {
+    'temperature': '🌡️',
+    'power': '🔋',
+    'connectivity': '📶',
+    'door': '🚪',
+    'error': '❌',
+    'warning': '⚠️',
+    'info': 'ℹ️',
+    'system': '⚙️'
+  };
+  return emojis[type] || '🚨';
+}
+
+// Handle technician text messages with enhanced role-based features
+async function handleTechnicianTextMessage(text: string, from: string, user: any, roleData: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  const technician = roleData; // roleData is the technician data for technicians
+
+  if (text.includes('schedule') || text.includes('today')) {
+    await handleTechnicianSchedule(from, technician, storage);
+  } else if (text.includes('performance') || text.includes('stats')) {
+    await handleTechnicianPerformance(from, technician, storage);
+  } else if (text.includes('location') || text.includes('route')) {
+    await handleTechnicianLocation(from, technician, storage);
+  } else if (text.includes('inventory') || text.includes('parts')) {
+    await handleTechnicianInventory(from, technician, storage);
   } else if (text.includes('help')) {
-    await sendTextMessage(
+    await sendInteractiveButtons(
       from,
-      '🤖 *Technician Commands*\n\n• "schedule" - View schedule info\n• Use WhatsApp buttons for workflow:\n  - Acknowledge Schedule\n  - Start Travel\n  - Arrived at Location\n  - Start/Complete Service\n\nFor emergencies, call support directly.'
+      '🤖 *Technician Commands*\n\n• "schedule" - View daily schedule\n• "performance" - View performance stats\n• "location" - Location & route info\n• "inventory" - Check parts inventory',
+      [
+        { id: 'view_schedule', title: '📋 Today\'s Schedule' },
+        { id: 'view_performance', title: '📊 Performance' },
+        { id: 'update_location', title: '📍 Update Location' },
+        { id: 'check_inventory', title: '📦 Check Inventory' }
+      ]
     );
   } else {
-    await sendTextMessage(from, 'Use the WhatsApp buttons for your daily workflow. Type "help" for more information.');
+    // Enhanced default response for technicians
+    await sendInteractiveButtons(
+      from,
+      `👋 Hello ${user.name}!\n\n🔧 Employee Code: ${technician.employeeCode}\n📍 Status: ${technician.status.toUpperCase()}\n\nWhat would you like to do?`,
+      [
+        { id: 'view_schedule', title: '📋 View Schedule' },
+        { id: 'start_service', title: '🔧 Start Service' },
+        { id: 'update_status', title: '📊 Update Status' },
+        { id: 'emergency_help', title: '🆘 Emergency' }
+      ]
+    );
   }
 }
 
+// Helper function to handle technician schedule
+async function handleTechnicianSchedule(from: string, technician: any, storage: any): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const todaySchedule = await storage.getScheduledServicesByTechnician(technician.id, today);
+  const nextService = await storage.getNextScheduledService(technician.id);
+  
+  let message = `📋 *Schedule for ${new Date().toLocaleDateString()}*\n\n`;
+  message += `👤 ${technician.employeeCode} - ${technician.status.toUpperCase()}\n\n`;
+  
+  if (todaySchedule.length === 0) {
+    message += `✅ No scheduled services for today!\n`;
+  } else {
+    message += `📋 Today's Services: ${todaySchedule.length}\n\n`;
+    
+    todaySchedule.forEach((service: any, index: number) => {
+      message += `${index + 1}. ${service.serviceRequest?.requestNumber || 'Service'}\n`;
+      message += `   🕐 Time: ${new Date(service.estimatedStartTime).toLocaleTimeString()}\n`;
+      message += `   📍 Location: Available in app\n`;
+      message += `   ⏱️ Duration: ${service.estimatedServiceDuration}min\n`;
+      message += `   📊 Status: ${service.status.toUpperCase()}\n\n`;
+    });
+  }
+  
+  if (nextService && nextService.scheduledDate !== today) {
+    message += `⏭️ Next Service: ${new Date(nextService.scheduledDate).toLocaleDateString()}`;
+  }
+
+  await sendTextMessage(from, message);
+}
+
+// Helper function to handle technician performance
+async function handleTechnicianPerformance(from: string, technician: any, storage: any): Promise<void> {
+  const performance = await storage.getTechnicianPerformance(technician.id);
+  
+  let message = `📊 *Performance Stats*\n\n`;
+  message += `👤 ${technician.employeeCode}\n`;
+  message += `⭐ Rating: ${technician.averageRating ? technician.averageRating.toFixed(1) : 'N/A'}/5\n`;
+  message += `✅ Jobs Completed: ${technician.totalJobsCompleted || 0}\n`;
+  message += `🎯 Experience: ${technician.experienceLevel}\n`;
+  message += `🛠️ Skills: ${technician.skills?.join(', ') || 'Not specified'}\n\n`;
+  
+  if (performance) {
+    message += `📈 This Month:\n`;
+    message += `• Services: ${performance.servicesThisMonth || 0}\n`;
+    message += `• Avg Response Time: ${performance.avgResponseTime || 'N/A'}\n`;
+    message += `• Customer Satisfaction: ${performance.customerSatisfaction || 'N/A'}%\n`;
+  }
+  
+  message += `\n📅 Last Updated: ${new Date().toLocaleString()}`;
+
+  await sendTextMessage(from, message);
+}
+
+// Helper function to handle technician location
+async function handleTechnicianLocation(from: string, technician: any, storage: any): Promise<void> {
+  let message = `📍 *Location & Route Information*\n\n`;
+  message += `👤 ${technician.employeeCode}\n`;
+  
+  if (technician.baseLocation) {
+    message += `🏠 Base Location: Configured\n`;
+  } else {
+    message += `🏠 Base Location: Not set\n`;
+  }
+  
+  if (technician.serviceAreas && technician.serviceAreas.length > 0) {
+    message += `🗺️ Service Areas: ${technician.serviceAreas.join(', ')}\n`;
+  } else {
+    message += `🗺️ Service Areas: Not configured\n`;
+  }
+  
+  const today = new Date().toISOString().split('T')[0];
+  const todaySchedule = await storage.getScheduledServicesByTechnician(technician.id, today);
+  
+  if (todaySchedule.length > 0) {
+    message += `\n📋 Today's Route:\n`;
+    todaySchedule.forEach((service: any, index: number) => {
+      message += `${index + 1}. ${service.estimatedStartTime ? new Date(service.estimatedStartTime).toLocaleTimeString() : 'TBD'}\n`;
+    });
+    
+    const totalDistance = todaySchedule.reduce((sum: number, s: any) => sum + (parseFloat(s.totalDistance) || 0), 0);
+    message += `\n📏 Total Distance: ${totalDistance.toFixed(1)} km`;
+  }
+
+  await sendTextMessage(from, message);
+}
+
+// Helper function to handle technician inventory
+async function handleTechnicianInventory(from: string, technician: any, storage: any): Promise<void> {
+  // Get inventory items that might be relevant to the technician
+  const inventory = await storage.getAllInventoryItems();
+  const lowStockItems = inventory.filter((item: any) => item.quantityInStock <= item.reorderLevel);
+  
+  let message = `📦 *Inventory Status*\n\n`;
+  
+  if (lowStockItems.length > 0) {
+    message += `⚠️ Low Stock Items: ${lowStockItems.length}\n\n`;
+    lowStockItems.slice(0, 5).forEach((item: any) => {
+      message += `• ${item.partName}\n`;
+      message += `  Stock: ${item.quantityInStock}/${item.reorderLevel}\n`;
+      message += `  Price: ₹${item.unitPrice}\n\n`;
+    });
+    
+    if (lowStockItems.length > 5) {
+      message += `... and ${lowStockItems.length - 5} more items\n\n`;
+    }
+  } else {
+    message += `✅ All inventory levels are adequate\n\n`;
+  }
+  
+  message += `💡 Use the mobile app to request parts for specific jobs.`;
+
+  await sendTextMessage(from, message);
+}
+
 // Handle interactive messages (button clicks, list selections)
-async function handleInteractiveMessage(message: any, user: any, session: any): Promise<void> {
+async function handleInteractiveMessage(message: any, user: any, roleData: any, session: any): Promise<void> {
               const interactiveData = message.interactive;
   const from = message.from;
 
               if (interactiveData.type === 'button_reply') {
                 const buttonId = interactiveData.button_reply.id;
-    await handleButtonClick(buttonId, from, user, session);
+    await handleButtonClick(buttonId, from, user, roleData, session);
   } else if (interactiveData.type === 'list_reply') {
     const listId = interactiveData.list_reply.id;
-    await handleListSelection(listId, from, user, session);
+    await handleListSelection(listId, from, user, roleData, session);
   }
 }
 
 // Handle button clicks based on user role and context
-async function handleButtonClick(buttonId: string, from: string, user: any, session: any): Promise<void> {
+async function handleButtonClick(buttonId: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
 
   // Update conversation state based on button click
@@ -1418,7 +1772,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
 }
 
 // Handle list selections
-async function handleListSelection(listId: string, from: string, user: any, session: any): Promise<void> {
+async function handleListSelection(listId: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const conversationState = session.conversationState || {};
 
   // Handle service request container selection
@@ -1429,10 +1783,19 @@ async function handleListSelection(listId: string, from: string, user: any, sess
   }
 }
 
-// Handle media messages (photos, videos, documents)
-async function handleMediaMessage(message: any, user: any, session: any): Promise<void> {
+// Handle media messages (photos, videos, documents) with role-based handling
+async function handleMediaMessage(message: any, user: any, roleData: any, session: any): Promise<void> {
   const from = message.from;
 
+  if (user.role === 'technician') {
+    // Technicians can send media for service documentation
+    await sendTextMessage(from, '📷 Media received! Please use the mobile app to properly attach photos to specific service requests.');
+  } else if (user.role === 'client') {
+    // Clients can send media for service requests
+    await sendTextMessage(from, '📷 Media received! If this is related to a service request, please use the mobile app or mention the request number.');
+  } else {
+    await sendTextMessage(from, 'Media received. Please contact support for assistance.');
+  }
   // For now, acknowledge media receipt
   await sendTextMessage(from, '📎 Media received. Thank you for the documentation.');
 
