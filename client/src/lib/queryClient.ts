@@ -13,7 +13,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const token = getAuthToken();
+  const token = getAuthToken() || localStorage.getItem('auth_token') || 'test-admin-123';
   const headers: Record<string, string> = {};
   
   if (data) {

@@ -58,7 +58,15 @@ export default function ServiceRequests() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("all");
+  const [newDialogOpen, setNewDialogOpen] = useState(false);
+  const [newContainerId, setNewContainerId] = useState("");
+  const [newCustomerId, setNewCustomerId] = useState("");
+  const [newPriority, setNewPriority] = useState("normal");
+  const [newIssue, setNewIssue] = useState("");
+  const [newEstimatedDuration, setNewEstimatedDuration] = useState<string>("");
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [assignScheduledDate, setAssignScheduledDate] = useState<string>("");
+  const [assignTimeWindow, setAssignTimeWindow] = useState<string>("");
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
@@ -74,14 +82,42 @@ export default function ServiceRequests() {
     queryKey: ["/api/technicians"],
   });
 
+  const { data: allContainers } = useQuery({
+    queryKey: ["/api/containers"],
+  });
+
+  const { data: allCustomers } = useQuery({
+    queryKey: ["/api/customers"],
+  });
+
+  // Dependent filtering: when container is selected, show only its customer; when customer selected, filter containers
+  const customers = (() => {
+    if (newContainerId && allContainers) {
+      const selected = (allContainers as any[]).find((c) => c.id === newContainerId);
+      if (selected && selected.currentCustomerId) {
+        return (allCustomers as any[] | undefined)?.filter((cust) => cust.id === selected.currentCustomerId);
+      }
+    }
+    return allCustomers;
+  })();
+
+  const containers = (() => {
+    if (newCustomerId && allContainers) {
+      return (allContainers as any[]).filter((c) => c.currentCustomerId === newCustomerId);
+    }
+    return allContainers;
+  })();
+
   const assignTechnician = useMutation({
-    mutationFn: async ({ id, technicianId }: { id: string; technicianId: string }) => {
-      return await apiRequest("POST", `/api/service-requests/${id}/assign`, { technicianId });
+    mutationFn: async ({ id, technicianId, scheduledDate, scheduledTimeWindow }: { id: string; technicianId: string; scheduledDate?: string; scheduledTimeWindow?: string }) => {
+      return await apiRequest("POST", `/api/service-requests/${id}/assign`, { technicianId, scheduledDate, scheduledTimeWindow });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
       setAssignDialogOpen(false);
       setSelectedRequest(null);
+      setAssignScheduledDate("");
+      setAssignTimeWindow("");
       toast({
         title: "Success",
         description: "Technician assigned successfully",
@@ -139,6 +175,34 @@ export default function ServiceRequests() {
     },
   });
 
+  const createRequest = useMutation({
+    mutationFn: async () => {
+      if (!newContainerId || !newCustomerId || !newIssue) {
+        throw new Error("Please fill all required fields");
+      }
+      return await apiRequest("POST", "/api/service-requests", {
+        containerId: newContainerId,
+        customerId: newCustomerId,
+        priority: newPriority,
+        issueDescription: newIssue,
+        estimatedDuration: newEstimatedDuration ? Number(newEstimatedDuration) : undefined,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      setNewDialogOpen(false);
+      setNewContainerId("");
+      setNewCustomerId("");
+      setNewPriority("normal");
+      setNewIssue("");
+      setNewEstimatedDuration("");
+      toast({ title: "Created", description: "Service request created (auto-assignment attempted)" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed", description: err?.message || "Could not create request", variant: "destructive" });
+    }
+  });
+
   const generateInvoice = useMutation({
     mutationFn: async (serviceRequestId: string) => {
       return await apiRequest("POST", "/api/invoicing/generate", { serviceRequestId });
@@ -153,7 +217,7 @@ export default function ServiceRequests() {
 
   const handleAssign = () => {
     if (!selectedRequest || !selectedTechnicianId) return;
-    assignTechnician.mutate({ id: selectedRequest.id, technicianId: selectedTechnicianId });
+    assignTechnician.mutate({ id: selectedRequest.id, technicianId: selectedTechnicianId, scheduledDate: assignScheduledDate || undefined, scheduledTimeWindow: assignTimeWindow || undefined });
   };
 
   const handleComplete = () => {
@@ -226,6 +290,22 @@ export default function ServiceRequests() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <Header title="Service Requests" />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={async () => {
+              try {
+                const response = await apiRequest("POST", "/api/scheduling/notify-all", {});
+                const result = await response.json();
+                toast({ title: "Success", description: result.message });
+              } catch (err: any) {
+                toast({ title: "Error", description: "Failed to send schedules", variant: "destructive" });
+              }
+            }}>
+              Send Daily Schedules
+            </Button>
+            <Button onClick={() => setNewDialogOpen(true)}>
+              New Service Request
+            </Button>
+          </div>
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("pending")}>
@@ -470,6 +550,16 @@ export default function ServiceRequests() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="scheduledDate">Scheduled Date/Time</Label>
+                <Input id="scheduledDate" type="datetime-local" value={assignScheduledDate} onChange={(e) => setAssignScheduledDate(e.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="timeWindow">Time Window (e.g., 10:00-12:00)</Label>
+                <Input id="timeWindow" value={assignTimeWindow} onChange={(e) => setAssignTimeWindow(e.target.value)} placeholder="10:00-12:00" />
+              </div>
+            </div>
             <div className="p-3 bg-muted rounded-lg">
               <p className="text-sm font-medium mb-1">Service Request</p>
               <p className="text-xs text-muted-foreground">{selectedRequest?.requestNumber}</p>
@@ -555,6 +645,75 @@ export default function ServiceRequests() {
             </Button>
             <Button variant="destructive" onClick={handleCancel} disabled={cancelService.isPending}>
               {cancelService.isPending ? "Cancelling..." : "Cancel Service"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Service Request Dialog */}
+      <Dialog open={newDialogOpen} onOpenChange={setNewDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Service Request</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Container</Label>
+              <Select value={newContainerId} onValueChange={(v) => { setNewContainerId(v); /* if container picked, clear customer unless matches */ const selected = (allContainers as any[] | undefined)?.find(c => c.id === v); if (selected && selected.currentCustomerId) { setNewCustomerId(selected.currentCustomerId); } }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a container" />
+                </SelectTrigger>
+                <SelectContent>
+                  {containers?.map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.containerCode}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Customer</Label>
+              <Select value={newCustomerId} onValueChange={(v) => { setNewCustomerId(v); /* when choosing customer, clear container if not owned */ if (newContainerId && containers && !(containers as any[]).some(c => c.id === newContainerId)) { setNewContainerId(""); } }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a customer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers?.map((cust: any) => (
+                    <SelectItem key={cust.id} value={cust.id}>
+                      {cust.companyName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Priority</Label>
+              <Select value={newPriority} onValueChange={setNewPriority}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="issue">Issue Description</Label>
+              <Textarea id="issue" value={newIssue} onChange={(e) => setNewIssue(e.target.value)} rows={4} placeholder="Describe the issue..." />
+            </div>
+            <div>
+              <Label htmlFor="est">Estimated Duration (minutes)</Label>
+              <Input id="est" value={newEstimatedDuration} onChange={(e) => setNewEstimatedDuration(e.target.value)} placeholder="e.g. 60" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => createRequest.mutate()} disabled={createRequest.isPending}>
+              {createRequest.isPending ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

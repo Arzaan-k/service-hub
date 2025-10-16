@@ -12,8 +12,11 @@ export default function SignUp() {
     phoneNumber: "",
     name: "",
     email: "",
+    password: "",
     role: "client" as "client" | "technician" | "admin",
   });
+  const [step, setStep] = useState<"form" | "verify">("form");
+  const [otp, setOtp] = useState("");
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -23,12 +26,8 @@ export default function SignUp() {
       return await res.json();
     },
     onSuccess: (data) => {
-      saveAuth(data.token, data.user);
-      toast({
-        title: "Success",
-        description: "Account created successfully! Welcome to ContainerGenie.",
-      });
-      setLocation("/");
+      toast({ title: "Verify your email", description: "We sent a 6-digit code to your email." });
+      setStep("verify");
     },
     onError: (error: Error) => {
       toast({
@@ -37,6 +36,31 @@ export default function SignUp() {
         variant: "destructive",
       });
     },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: async (payload: { email: string; code: string }) => {
+      const res = await apiRequest("POST", "/api/auth/verify-email", payload);
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      saveAuth(data.token, data.user);
+      toast({ title: "Email verified", description: "Your account is now active." });
+      setLocation("/");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const resendMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await apiRequest("POST", "/api/auth/resend-email", { email });
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Code resent", description: "Please check your inbox" });
+    }
   });
 
   const validateForm = () => {
@@ -60,6 +84,12 @@ export default function SignUp() {
       newErrors.email = "Please enter a valid email address";
     }
 
+    if (!formData.password.trim()) {
+      newErrors.password = "Password is required";
+    } else if (formData.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -68,6 +98,13 @@ export default function SignUp() {
     e.preventDefault();
     if (validateForm()) {
       signupMutation.mutate(formData);
+    }
+  };
+
+  const handleVerify = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp.trim().length === 6) {
+      verifyMutation.mutate({ email: formData.email, code: otp.trim() });
     }
   };
 
@@ -93,7 +130,9 @@ export default function SignUp() {
             <p className="text-muted-foreground text-sm">Join ContainerGenie today</p>
           </div>
 
-          {/* Registration Form */}
+        {step === "form" && (
+        <>
+        {/* Registration Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -154,6 +193,25 @@ export default function SignUp() {
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
+                <i className="fas fa-lock mr-2 text-primary"></i>Password
+              </label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                className={`w-full px-4 py-3 bg-background border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
+                  errors.password ? "border-destructive" : "border-border"
+                }`}
+                value={formData.password}
+                onChange={(e) => handleInputChange("password", e.target.value)}
+                data-testid="input-password"
+              />
+              {errors.password && (
+                <p className="mt-1 text-xs text-destructive">{errors.password}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
                 <i className="fas fa-briefcase mr-2 text-primary"></i>Role
               </label>
               <select
@@ -185,8 +243,46 @@ export default function SignUp() {
               Create Account
             </button>
           </form>
+        </>
+        )}
 
-          {/* Sign In Link */}
+        {step === "verify" && (
+          <form onSubmit={handleVerify} className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-lg font-semibold text-foreground">Verify your email</h2>
+              <p className="text-sm text-muted-foreground">We sent a 6-digit code to <strong>{formData.email}</strong></p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                <i className="fas fa-key mr-2 text-primary"></i>Verification Code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="123456"
+                className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground text-center text-xl font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                data-testid="input-otp"
+              />
+              <div className="mt-2 text-sm">
+                <button type="button" className="text-primary hover:underline" onClick={() => resendMutation.mutate(formData.email)}>Resend code</button>
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={verifyMutation.isPending}
+              className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+              data-testid="button-verify"
+            >
+              {verifyMutation.isPending ? <i className="fas fa-spinner fa-spin mr-2"></i> : <i className="fas fa-check mr-2"></i>}
+              Verify Email
+            </button>
+          </form>
+        )}
+
+        {/* Sign In Link */}
           <div className="mt-6 text-center">
             <p className="text-sm text-muted-foreground">
               Already have an account?{" "}

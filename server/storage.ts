@@ -26,14 +26,16 @@ import {
   type ScheduledService,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, gte, sql, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, gte, sql, isNull, leftJoin } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
   getUserByPhoneNumber(phoneNumber: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User>;
+  getAllUsers(): Promise<User[]>;
 
   // Customer operations
   getAllCustomers(): Promise<Customer[]>;
@@ -45,9 +47,12 @@ export interface IStorage {
   getAllContainers(): Promise<Container[]>;
   getContainer(id: string): Promise<Container | undefined>;
   getContainerByContainerId(containerId: string): Promise<Container | undefined>;
+  getContainerByOrbcommId(orbcommDeviceId: string): Promise<Container | undefined>;
+  getContainerByCode(containerCode: string): Promise<Container | undefined>;
   getContainersByCustomer(customerId: string): Promise<Container[]>;
   createContainer(container: any): Promise<Container>;
   updateContainer(id: string, container: any): Promise<Container>;
+  updateContainerLocation(containerId: string, locationData: { lat: number; lng: number; timestamp: string; source: string }): Promise<void>;
   getContainerLocationHistory(containerId: string): Promise<any[]>;
   getContainerServiceHistory(containerId: string): Promise<any[]>;
   getContainerMetrics(containerId: string): Promise<any[]>;
@@ -78,7 +83,7 @@ export interface IStorage {
   updateServiceRequest(id: string, request: any): Promise<ServiceRequest>;
   getServiceRequestsByStatus(status: string): Promise<ServiceRequest[]>;
   getServiceRequestsByPriority(priority: string): Promise<ServiceRequest[]>;
-  assignServiceRequest(serviceRequestId: string, technicianId: string, scheduledDate: Date, scheduledTimeWindow: string): Promise<ServiceRequest>;
+  assignServiceRequest(serviceRequestId: string, technicianId: string, scheduledDate?: Date, scheduledTimeWindow?: string): Promise<ServiceRequest>;
   startServiceRequest(serviceRequestId: string): Promise<ServiceRequest>;
   completeServiceRequest(serviceRequestId: string, resolutionNotes: string, usedParts: string[], beforePhotos: string[], afterPhotos: string[]): Promise<ServiceRequest>;
   cancelServiceRequest(serviceRequestId: string, reason: string): Promise<ServiceRequest>;
@@ -143,6 +148,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByPhoneNumber(phoneNumber: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.phoneNumber, phoneNumber));
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
   }
 
@@ -224,6 +234,27 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async getContainerByOrbcommId(orbcommDeviceId: string): Promise<Container | undefined> {
+    const [container] = await db.select().from(containers).where(eq(containers.orbcommDeviceId, orbcommDeviceId));
+    return container;
+  }
+
+  async getContainerByCode(containerCode: string): Promise<Container | undefined> {
+    const [container] = await db.select().from(containers).where(eq(containers.containerCode, containerCode));
+    return container;
+  }
+
+  async updateContainerLocation(containerId: string, locationData: { lat: number; lng: number; timestamp: string; source: string }): Promise<void> {
+    await db
+      .update(containers)
+      .set({ 
+        currentLocation: { lat: locationData.lat, lng: locationData.lng },
+        lastOrbcommAt: new Date(locationData.timestamp),
+        updatedAt: new Date()
+      })
+      .where(eq(containers.id, containerId));
+  }
+
   async getAllAlerts(): Promise<Alert[]> {
     return await db.select().from(alerts).orderBy(desc(alerts.detectedAt));
   }
@@ -280,6 +311,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(serviceRequests.createdAt));
   }
 
+  async getServiceRequestsByStatus(status: string): Promise<ServiceRequest[]> {
+    return await db
+      .select()
+      .from(serviceRequests)
+      .where(eq(serviceRequests.status, status))
+      .orderBy(desc(serviceRequests.createdAt));
+  }
+
   async getPendingServiceRequests(): Promise<ServiceRequest[]> {
     return await db
       .select()
@@ -306,16 +345,47 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllTechnicians(): Promise<Technician[]> {
-    return await db.select().from(technicians);
+    // Return technicians enriched with linked user fields for UI display
+    const rows = await db
+      .select({
+        tech: technicians,
+        userName: users.name,
+        userEmail: users.email,
+        userPhone: users.phoneNumber,
+      })
+      .from(technicians)
+      .leftJoin(users, eq(technicians.userId, users.id));
+
+    return rows.map((r: any) => ({
+      ...r.tech,
+      name: r.userName,
+      email: r.userEmail,
+      phone: r.userPhone,
+    }));
   }
 
   async getTechnician(id: string): Promise<Technician | undefined> {
-    const [technician] = await db.select().from(technicians).where(eq(technicians.id, id));
-    return technician;
+    const [row] = await db
+      .select({
+        tech: technicians,
+        userName: users.name,
+        userEmail: users.email,
+        userPhone: users.phoneNumber,
+      })
+      .from(technicians)
+      .leftJoin(users, eq(technicians.userId, users.id))
+      .where(eq(technicians.id, id));
+    if (!row) return undefined as any;
+    return { ...row.tech, name: row.userName, email: row.userEmail, phone: row.userPhone } as any;
   }
 
   async getAvailableTechnicians(): Promise<Technician[]> {
-    return await db.select().from(technicians).where(eq(technicians.status, "available"));
+    // Get technicians that are available or on_duty
+    const techs = await db.select().from(technicians).where(
+      sql`${technicians.status} IN ('available', 'on_duty')`
+    );
+    console.log('[Storage] Available technicians found:', techs.length);
+    return techs;
   }
 
   async updateTechnicianStatus(id: string, status: string): Promise<Technician> {
@@ -613,16 +683,21 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(serviceRequests.createdAt));
   }
 
-  async assignServiceRequest(serviceRequestId: string, technicianId: string, scheduledDate: Date, scheduledTimeWindow: string): Promise<ServiceRequest> {
+  async assignServiceRequest(serviceRequestId: string, technicianId: string, scheduledDate?: Date, scheduledTimeWindow?: string): Promise<ServiceRequest> {
+    const updateFields: any = {
+      assignedTechnicianId: technicianId,
+      status: "scheduled",
+      updatedAt: new Date(),
+    };
+    if (scheduledDate instanceof Date && !isNaN(scheduledDate.getTime())) {
+      updateFields.scheduledDate = scheduledDate;
+    }
+    if (scheduledTimeWindow) {
+      updateFields.scheduledTimeWindow = scheduledTimeWindow;
+    }
     const [updated] = await db
       .update(serviceRequests)
-      .set({
-        assignedTechnicianId: technicianId,
-        scheduledDate,
-        scheduledTimeWindow,
-        status: "scheduled",
-        updatedAt: new Date()
-      })
+      .set(updateFields)
       .where(eq(serviceRequests.id, serviceRequestId))
       .returning();
     return updated;
@@ -840,7 +915,25 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(technicians.id, technicianId))
       .returning();
-    return updated;
+
+    // Enrich with user fields for consistency in responses
+    const user = await this.getUser(updated.userId);
+    return { ...updated, name: user?.name, email: user?.email, phone: user?.phoneNumber } as any;
+  }
+
+  async getTechnicianByUserId(userId: string): Promise<Technician | undefined> {
+    const [row] = await db
+      .select({
+        tech: technicians,
+        userName: users.name,
+        userEmail: users.email,
+        userPhone: users.phoneNumber,
+      })
+      .from(technicians)
+      .leftJoin(users, eq(technicians.userId, users.id))
+      .where(eq(technicians.userId, userId));
+    if (!row) return undefined as any;
+    return { ...row.tech, name: row.userName, email: row.userEmail, phone: row.userPhone } as any;
   }
 
   // Invoice management methods
@@ -1099,6 +1192,10 @@ export class DatabaseStorage implements IStorage {
         eq(users.isActive, true)
       ))
       .orderBy(users.name);
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
   }
 }
 

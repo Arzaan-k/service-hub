@@ -1,10 +1,26 @@
 import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { initializeOrbcommIntegConnection, populateOrbcommIntegDevices } from "./services/orbcomm";
+import { initializeOrbcommConnection, populateOrbcommDevices } from "./services/orbcomm";
 
 const app = express();
+
+// Enable CORS (allow custom auth header)
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-user-id']
+}));
+// Handle preflight
+app.options('*', cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-user-id']
+}));
 
 declare module 'http' {
   interface IncomingMessage {
@@ -59,20 +75,20 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // Initialize Orbcomm INTEG Environment connection
+  // Initialize Orbcomm Production connection
   try {
-    await initializeOrbcommIntegConnection();
-    
-    // Populate database with INTEG sample devices
+    await initializeOrbcommConnection();
+
+    // Populate database with production devices
     setTimeout(async () => {
       try {
-        await populateOrbcommIntegDevices();
+        await populateOrbcommDevices();
       } catch (error) {
-        console.error('❌ Error populating INTEG sample devices:', error);
+        console.error('❌ Error populating Orbcomm devices:', error);
       }
     }, 5000); // Wait 5 seconds after server start
   } catch (error) {
-    console.error('❌ Error initializing Orbcomm INTEG connection:', error);
+    console.error('❌ Error initializing Orbcomm connection:', error);
   }
 
   // importantly only setup vite in development and after

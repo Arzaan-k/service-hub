@@ -27,6 +27,24 @@ export default function Dashboard() {
   const { data: technicians } = useQuery({ queryKey: ["/api/technicians"] });
 
   useEffect(() => {
+    // Live updates for device→container location
+    const onDeviceUpdate = (payload: any) => {
+      // Optimistically update containers cache
+      try {
+        const { queryClient } = require("@/lib/queryClient");
+        queryClient.setQueryData(["/api/containers"], (prev: any[] | undefined) => {
+          if (!Array.isArray(prev)) return prev;
+          const { deviceId, lat, lng } = payload || {};
+          if (!deviceId || lat == null || lng == null) return prev;
+          return prev.map((c: any) =>
+            c.orbcommDeviceId === deviceId
+              ? { ...c, currentLocation: { ...(c.currentLocation || {}), lat, lng } }
+              : c
+          );
+        });
+      } catch {}
+    };
+
     websocket.on("alert_created", () => {
       refetchAlerts();
       refetchStats();
@@ -36,9 +54,12 @@ export default function Dashboard() {
       refetchStats();
     });
 
+    websocket.on("device_update", onDeviceUpdate);
+
     return () => {
       websocket.off("alert_created", () => {});
       websocket.off("container_created", () => {});
+      websocket.off("device_update", onDeviceUpdate);
     };
   }, [refetchAlerts, refetchStats]);
 

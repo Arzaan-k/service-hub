@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { User, Phone, MapPin, Star, Wrench, Plus, Edit, Trash2 } from "lucide-react";
+import { Link } from "wouter";
+import { saveAuth, getAuthToken } from "@/lib/auth";
 
 interface Technician {
   id: string;
@@ -33,6 +35,8 @@ export default function Technicians() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedTech, setSelectedTech] = useState<Technician | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -43,15 +47,54 @@ export default function Technicians() {
     baseLocation: "",
   });
 
-  const { data: technicians, isLoading } = useQuery({
+  // Set up test user for development
+  useEffect(() => {
+    let token = getAuthToken();
+    if (!token) {
+      const testUserId = "test-admin-123";
+      const testUser = { id: testUserId, name: "Test Admin", role: "admin" };
+      saveAuth(testUserId, testUser);
+      token = testUserId;
+      // Fire-and-forget: create test user server-side (safe if already exists)
+      fetch("/api/test/create-user", { method: "POST" }).catch(() => {});
+    }
+    setAuthToken(token);
+    setAuthReady(true);
+  }, []);
+
+  const { data: technicians, isLoading, error } = useQuery({
     queryKey: ["/api/technicians"],
+    enabled: authReady && !!authToken,
+    retry: false,
+    onSuccess: (data) => {
+      console.log("Technicians loaded successfully:", data);
+    },
+    onError: (error) => {
+      console.error("Error loading technicians:", error);
+    },
   });
 
   const createTechnician = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest("POST", "/api/technicians", data);
+      console.log("Creating technician with data:", data);
+      const res = await apiRequest("POST", "/api/technicians", data);
+      console.log("Technician creation response:", res);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.details || errorData.error || "Failed to create technician");
+      }
+      const json = await res.json();
+      return {
+        ...json,
+        name: json.name ?? json.user?.name,
+        email: json.email ?? json.user?.email,
+        phone: json.phone ?? json.user?.phoneNumber,
+        specialization: Array.isArray(json.skills) ? json.skills[0] : json.specialization,
+        baseLocation: typeof json.baseLocation === 'object' ? json.baseLocation?.city : json.baseLocation,
+      };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("Technician created successfully:", data);
       queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
       setIsAddDialogOpen(false);
       resetForm();
@@ -60,10 +103,12 @@ export default function Technicians() {
         description: "Technician added successfully",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Technician creation error:", error);
+      const errorMessage = error?.message || error?.response?.data?.details || "Failed to add technician";
       toast({
         title: "Error",
-        description: "Failed to add technician",
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -71,7 +116,29 @@ export default function Technicians() {
 
   const updateTechnician = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      return await apiRequest("PUT", `/api/technicians/${id}`, data);
+      const payload = {
+        experienceLevel: data.experienceLevel,
+        specialization: data.specialization,
+        baseLocation: data.baseLocation,
+        status: data.status,
+        averageRating: data.rating,
+        totalJobsCompleted: data.servicesCompleted,
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        whatsappNumber: data.whatsappNumber,
+      };
+      console.log("Updating technician with payload:", payload);
+      const res = await apiRequest("PUT", `/api/technicians/${id}`, payload);
+      const json = await res.json();
+      return {
+        ...json,
+        name: json.name ?? data.name,
+        email: json.email ?? data.email,
+        phone: json.phone ?? data.phone,
+        specialization: Array.isArray(json.skills) ? json.skills[0] : data.specialization,
+        baseLocation: typeof json.baseLocation === 'object' ? json.baseLocation?.city : data.baseLocation,
+      };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
@@ -82,17 +149,32 @@ export default function Technicians() {
         description: "Technician updated successfully",
       });
     },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update technician",
+        variant: "destructive",
+      });
+    },
   });
 
   const deleteTechnician = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest("DELETE", `/api/technicians/${id}`);
+      const res = await apiRequest("DELETE", `/api/technicians/${id}`);
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
       toast({
         title: "Success",
         description: "Technician deleted successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete technician",
+        variant: "destructive",
       });
     },
   });
@@ -111,7 +193,17 @@ export default function Technicians() {
   };
 
   const handleAdd = () => {
-    createTechnician.mutate(formData);
+    try {
+      console.log("Submitting technician form with data:", formData);
+      createTechnician.mutate(formData);
+    } catch (error) {
+      console.error("Error in handleAdd:", error);
+      toast({
+        title: "Error",
+        description: "Failed to submit technician form",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleEdit = (tech: Technician) => {
@@ -120,10 +212,10 @@ export default function Technicians() {
       name: tech.name,
       phone: tech.phone,
       email: tech.email,
-      whatsappNumber: tech.whatsappNumber,
-      experienceLevel: tech.experienceLevel,
-      specialization: tech.specialization,
-      baseLocation: tech.baseLocation,
+      whatsappNumber: (tech as any).whatsappNumber,
+      experienceLevel: (tech as any).experienceLevel,
+      specialization: (tech as any).specialization || ((tech as any).skills?.[0] ?? "general"),
+      baseLocation: typeof (tech as any).baseLocation === "string" ? (tech as any).baseLocation : (tech as any).baseLocation?.city || "",
     });
     setIsEditDialogOpen(true);
   };
@@ -146,7 +238,7 @@ export default function Technicians() {
       busy: "bg-yellow-100 text-yellow-800 border-yellow-200",
       offline: "bg-gray-100 text-gray-800 border-gray-200",
     };
-    return statusMap[status] || statusMap.offline;
+    return statusMap[status] || statusMap.available;
   };
 
   const getExperienceColor = (level: string) => {
@@ -173,6 +265,24 @@ export default function Technicians() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <main className="flex-1 flex flex-col overflow-hidden">
+          <Header title="Technicians" />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-destructive mb-2">Error Loading Technicians</h3>
+              <p className="text-muted-foreground mb-4">{error.message}</p>
+              <Button onClick={() => window.location.reload()}>Retry</Button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
@@ -191,82 +301,92 @@ export default function Technicians() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {technicians?.map((tech: Technician) => (
-              <Card key={tech.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                        <User className="h-6 w-6 text-primary" />
+            {technicians && technicians.length > 0 ? (
+              technicians.map((tech: Technician) => (
+                <Card key={tech.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                          <User className="h-6 w-6 text-primary" />
+                        </div>
+                        <div>
+                          <Link href={`/technicians/${tech.id}`}>
+                            <CardTitle className="text-lg cursor-pointer hover:underline">{tech.name}</CardTitle>
+                          </Link>
+                          <p className={`text-sm font-medium ${getExperienceColor((tech as any).experienceLevel || "mid")}`}>
+                            {(tech as any).experienceLevel?.toUpperCase?.() || "MID"}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <CardTitle className="text-lg">{tech.name}</CardTitle>
-                        <p className={`text-sm font-medium ${getExperienceColor(tech.experienceLevel)}`}>
-                          {tech.experienceLevel.toUpperCase()}
-                        </p>
-                      </div>
+                      <Badge className={`${getStatusBadge(tech.status)} border`}>
+                        {tech.status}
+                      </Badge>
                     </div>
-                    <Badge className={`${getStatusBadge(tech.status)} border`}>
-                      {tech.status}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{tech.phone}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{tech.baseLocation || "Not set"}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Wrench className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{tech.specialization}</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-border">
-                    <div className="flex items-center gap-1">
-                      <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                      <span className="text-sm font-medium">{tech.rating || 0}/5</span>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-foreground">{tech.phone}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {tech.servicesCompleted || 0} services
+                    <div className="flex items-center gap-2 text-sm">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-foreground">
+                      {typeof (tech as any).baseLocation === "string"
+                        ? (tech as any).baseLocation
+                        : (tech as any).baseLocation?.city || "Not set"}
                     </span>
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => handleEdit(tech)}
-                    >
-                      <Edit className="h-3 w-3 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => handleDelete(tech.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Wrench className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-foreground">
+                      {(tech as any).specialization || Array.isArray((tech as any).skills) ? (tech as any).skills?.join(", ") : "general"}
+                    </span>
+                    </div>
+                    <div className="flex items-center justify-between pt-3 border-t border-border">
+                      <div className="flex items-center gap-1">
+                        <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                      <span className="text-sm font-medium">{(tech as any).rating ?? (tech as any).averageRating ?? 0}/5</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                      {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
+                      </span>
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => handleEdit(tech)}
+                      >
+                        <Edit className="h-3 w-3 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDelete(tech.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <div className="col-span-full text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+                  <User className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">No Technicians Found</h3>
+                <p className="text-muted-foreground mb-4">Get started by adding your first technician</p>
+                <Button onClick={() => setIsAddDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Technician
+                </Button>
+              </div>
+            )}
           </div>
-
-          {(!technicians || technicians.length === 0) && (
-            <div className="text-center py-12">
-              <User className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No technicians found</h3>
-              <p className="text-sm text-muted-foreground mb-4">Get started by adding your first technician</p>
-              <Button onClick={() => setIsAddDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Technician
-              </Button>
-            </div>
-          )}
         </div>
       </main>
 

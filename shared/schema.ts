@@ -11,8 +11,8 @@ export const containerStatusEnum = pgEnum("container_status", ["active", "in_ser
 export const containerTypeEnum = pgEnum("container_type", ["refrigerated", "dry", "special", "iot_enabled", "manual"]);
 export const alertSeverityEnum = pgEnum("alert_severity", ["critical", "high", "medium", "low"]);
 export const alertStatusEnum = pgEnum("alert_status", ["open", "acknowledged", "resolved", "closed"]);
-export const alertTypeEnum = pgEnum("alert_type", ["error", "warning", "info"]);
-export const alertSourceEnum = pgEnum("alert_source", ["orbcomm", "manual", "predictive"]);
+export const alertTypeEnum = pgEnum("alert_type", ["error", "warning", "info", "temperature", "power", "connectivity", "door", "system"]);
+export const alertSourceEnum = pgEnum("alert_source", ["orbcomm", "manual", "predictive", "simulation"]);
 export const serviceStatusEnum = pgEnum("service_status", ["pending", "approved", "scheduled", "in_progress", "completed", "cancelled"]);
 export const servicePriorityEnum = pgEnum("service_priority", ["urgent", "high", "normal", "low"]);
 export const technicianStatusEnum = pgEnum("technician_status", ["available", "on_duty", "busy", "off_duty"]);
@@ -38,6 +38,7 @@ export const users = pgTable("users", {
   password: text("password"),
   isActive: boolean("is_active").default(true).notNull(),
   whatsappVerified: boolean("whatsapp_verified").default(false).notNull(),
+  emailVerified: boolean("email_verified").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -296,6 +297,16 @@ export const auditLogs = pgTable("audit_logs", {
   source: text("source").notNull(), // dashboard, whatsapp
   ipAddress: text("ip_address"),
   timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+// Email OTP verification (free email verification flow)
+export const emailVerifications = pgTable("email_verifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Inventory Transactions table

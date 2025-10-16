@@ -1,4 +1,5 @@
 import { storage } from '../storage';
+import axios from 'axios';
 
 export interface InventoryItem {
   id: string;
@@ -358,6 +359,125 @@ class InventoryService {
       console.error('Error getting inventory analytics:', error);
       throw error;
     }
+  }
+
+  /**
+   * Import inventory items from an external API that requires X-API-Key header
+   * The external API is expected to expose a products endpoint returning an array of items
+   * Example: GET {baseUrl}/api/products with header { 'X-API-Key': apiKey }
+   */
+  async importFromExternal(params: { apiKey: string; baseUrl: string; endpointPath?: string }): Promise<{ imported: number; updated: number }>
+  {
+    const { apiKey, baseUrl, endpointPath } = params;
+    if (!apiKey || !baseUrl) throw new Error('apiKey and baseUrl are required');
+
+    // Fetch all existing items to support upsert by partNumber
+    const existingItems = await storage.getAllInventoryItems();
+    const partNumberToItem: Record<string, any> = {};
+    for (const it of existingItems) {
+      if (it.partNumber) partNumberToItem[String(it.partNumber).toLowerCase()] = it;
+    }
+
+    // Fetch products from external API
+    const base = baseUrl.replace(/\/$/, '');
+    const path = (endpointPath || '/api/products').replace(/^\//, '');
+    const fullUrl = /^(http|https):\/\//i.test(path) ? path : `${base}/${path}`;
+
+    // Try header-based auth first
+    let data: any = undefined;
+    let debugInfo = '';
+    try {
+      const res = await axios.get(fullUrl, {
+        headers: { 'X-API-Key': apiKey, 'Accept': 'application/json' },
+        timeout: 20000,
+        validateStatus: () => true,
+      });
+      const ct = String(res.headers['content-type'] || '');
+      debugInfo += `Header auth: status=${res.status}, content-type=${ct}\n`;
+
+      if (ct.includes('application/json')) {
+        data = res.data;
+        debugInfo += `✓ Parsed JSON data (${Array.isArray(data) ? data.length : 'object'} items)\n`;
+      } else if (typeof res.data === 'object' && res.data !== null) {
+        data = res.data; // axios may already parse JSON
+        debugInfo += `✓ Parsed object data\n`;
+      } else if (String(res.data).trim().startsWith('<')) {
+        debugInfo += `✗ Received HTML response instead of JSON. Check endpoint path and authentication.\n`;
+        throw new Error(`Server returned HTML page (not JSON). Check endpoint path and API key. Content-type: ${ct}`);
+      } else {
+        debugInfo += `✗ Non-JSON response (content-type=${ct || 'unknown'})\n`;
+        throw new Error(`Non-JSON response (content-type=${ct || 'unknown'})`);
+      }
+    } catch (_err) {
+      // Fallback to query param auth if server didn't accept header
+      const urlWithQuery = `${fullUrl}${fullUrl.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(apiKey)}`;
+      debugInfo += `Trying query param auth: ${urlWithQuery}\n`;
+
+      try {
+        const res2 = await axios.get(urlWithQuery, {
+          headers: { 'Accept': 'application/json' },
+          timeout: 20000,
+          validateStatus: () => true,
+        });
+        const ct2 = String(res2.headers['content-type'] || '');
+        debugInfo += `Query auth: status=${res2.status}, content-type=${ct2}\n`;
+
+        if (ct2.includes('application/json') || typeof res2.data === 'object') {
+          data = res2.data;
+          debugInfo += `✓ Parsed JSON data via query param (${Array.isArray(data) ? data.length : 'object'} items)\n`;
+        } else if (String(res2.data).trim().startsWith('<')) {
+          debugInfo += `✗ Received HTML response instead of JSON via query param.\n`;
+          throw new Error(`Server returned HTML page (not JSON). Check endpoint path and API key. Content-type: ${ct2}`);
+        } else {
+          debugInfo += `✗ Non-JSON response via query param (content-type=${ct2 || 'unknown'})\n`;
+          throw new Error(`External API returned non-JSON response (content-type=${ct2 || 'unknown'})`);
+        }
+      } catch (queryErr) {
+        debugInfo += `✗ Query param auth also failed: ${queryErr.message}\n`;
+        throw new Error(`External API connection failed. ${debugInfo}`);
+      }
+    }
+
+    const products: any[] = Array.isArray(data)
+      ? data
+      : (data?.products || data?.items || data?.results || []);
+
+    let imported = 0;
+    let updated = 0;
+
+    for (const p of products) {
+      // Map fields with sensible fallbacks
+      const partNumber: string = String(p.sku || p.partNumber || p.code || p.id || '').trim();
+      if (!partNumber) continue; // skip if we can't identify
+
+      const payload = {
+        partNumber,
+        partName: String(p.name || p.partName || 'Unnamed Part'),
+        category: String(p.category || 'general'),
+        quantityInStock: Number(p.stock ?? p.quantity ?? 0) || 0,
+        reorderLevel: Number(p.reorderLevel ?? p.reorder_level ?? 0) || 0,
+        unitPrice: Number(p.price ?? p.unitPrice ?? 0) || 0,
+        location: String(p.warehouse || p.location || ''),
+        description: p.description ? String(p.description) : undefined,
+        supplier: p.supplier || p.vendor ? String(p.supplier || p.vendor) : undefined,
+      };
+
+      const key = partNumber.toLowerCase();
+      const existing = partNumberToItem[key];
+      try {
+        if (existing) {
+          await storage.updateInventoryItem(existing.id, payload);
+          updated += 1;
+        } else {
+          await storage.createInventoryItem(payload);
+          imported += 1;
+        }
+      } catch (err) {
+        console.error('Inventory import error for part', partNumber, err);
+      }
+    }
+
+    return { imported, updated };
   }
 
   /**

@@ -47,6 +47,10 @@ export default function Inventory() {
   const [adjustmentReason, setAdjustmentReason] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importApiKey, setImportApiKey] = useState("");
+  const [importBaseUrl, setImportBaseUrl] = useState("http://localhost:5000");
+  const [importEndpoint, setImportEndpoint] = useState("/api/products");
 
   const [formData, setFormData] = useState({
     partNumber: "",
@@ -112,6 +116,63 @@ export default function Inventory() {
         description: "Inventory item deleted successfully",
       });
     },
+  });
+
+  const importInventory = useMutation({
+    mutationFn: async ({ apiKey, baseUrl, endpointPath }: { apiKey: string; baseUrl: string; endpointPath?: string }) => {
+      const res = await apiRequest("POST", "/api/inventory/import", { apiKey, baseUrl, endpointPath });
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      setIsImporting(false);
+      toast({ title: "Imported", description: "Inventory imported successfully" });
+    },
+    onError: (err: any) => {
+      const errorMsg = err?.message || "Unable to import";
+      const suggestions = err?.suggestions || [];
+      const details = err?.details || "";
+
+      let fullMessage = errorMsg;
+      if (details) fullMessage += `\n\nDetails: ${details}`;
+      if (suggestions.length > 0) {
+        fullMessage += `\n\nSuggestions:\n${suggestions.map((s: string) => `• ${s}`).join('\n')}`;
+      }
+
+      toast({
+        title: "Import failed",
+        description: fullMessage,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const debugConnection = useMutation({
+    mutationFn: async ({ apiKey, baseUrl, endpointPath }: { apiKey: string; baseUrl: string; endpointPath?: string }) => {
+      const res = await apiRequest("POST", "/api/inventory/debug", { apiKey, baseUrl, endpointPath });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({
+          title: "Connection successful",
+          description: `Found ${data.totalItems} items. Ready to import!`
+        });
+      } else {
+        toast({
+          title: "Connection failed",
+          description: data.error,
+          variant: "destructive"
+        });
+      }
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Debug failed",
+        description: err?.message || "Unable to test connection",
+        variant: "destructive"
+      });
+    }
   });
 
   const resetForm = () => {
@@ -309,10 +370,15 @@ export default function Inventory() {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={() => setIsAddDialogOpen(true)}>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsImporting(true)}>
+                Import Spares
+              </Button>
+              <Button onClick={() => setIsAddDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Add Item
-            </Button>
+              </Button>
+            </div>
           </div>
 
           {/* Inventory Table */}
@@ -570,6 +636,60 @@ export default function Inventory() {
                 ? "Add Stock"
                 : "Remove Stock"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Inventory Dialog */}
+      <Dialog open={isImporting} onOpenChange={setIsImporting}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import Inventory from External API</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="baseUrl">Base URL</Label>
+              <Input
+                id="baseUrl"
+                value={importBaseUrl}
+                onChange={(e) => setImportBaseUrl(e.target.value)}
+                placeholder="http://localhost:5000"
+              />
+            </div>
+            <div>
+              <Label htmlFor="endpoint">Endpoint Path (optional)</Label>
+              <Input
+                id="endpoint"
+                value={importEndpoint}
+                onChange={(e) => setImportEndpoint(e.target.value)}
+                placeholder="/api/products"
+              />
+            </div>
+            <div>
+              <Label htmlFor="apiKey">X-API-Key</Label>
+              <Input
+                id="apiKey"
+                value={importApiKey}
+                onChange={(e) => setImportApiKey(e.target.value)}
+                placeholder="Enter API key"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">We will call baseUrl + endpoint with X-API-Key header (fallback to api_key query) and upsert by part number.</p>
+          </div>
+          <DialogFooter>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsImporting(false)}>Cancel</Button>
+              <Button
+                variant="outline"
+                onClick={() => debugConnection.mutate({ apiKey: importApiKey, baseUrl: importBaseUrl, endpointPath: importEndpoint })}
+                disabled={debugConnection.isPending || !importApiKey}
+              >
+                {debugConnection.isPending ? "Testing..." : "Test Connection"}
+              </Button>
+              <Button onClick={() => importInventory.mutate({ apiKey: importApiKey, baseUrl: importBaseUrl, endpointPath: importEndpoint })} disabled={importInventory.isPending || !importApiKey}>
+                {importInventory.isPending ? "Importing..." : "Import"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

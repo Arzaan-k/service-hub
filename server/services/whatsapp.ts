@@ -1,7 +1,41 @@
 import axios from "axios";
 
-const WHATSAPP_API_URL = `https://graph.facebook.com/v16.0/${process.env.WA_PHONE_NUMBER_ID}/messages`;
+const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || "v20.0";
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID || "";
+const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WABA_ID || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "";
 const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
+
+let RESOLVED_WABA_ID: string | null = WHATSAPP_BUSINESS_ACCOUNT_ID || null;
+
+async function resolveWabaId(): Promise<string> {
+  if (RESOLVED_WABA_ID) return RESOLVED_WABA_ID;
+  if (!WHATSAPP_PHONE_NUMBER_ID) throw new Error("WA_PHONE_NUMBER_ID is not set");
+  if (!WHATSAPP_TOKEN) throw new Error("CLOUD_API_ACCESS_TOKEN is not set");
+
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}?fields=whatsapp_business_account`;
+  const resp = await axios.get(url, {
+    headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+  });
+  const id = resp.data?.whatsapp_business_account?.id;
+  if (!id) throw new Error("Unable to resolve WhatsApp Business Account ID from phone number");
+  RESOLVED_WABA_ID = id;
+  return id;
+}
+
+const WHATSAPP_MESSAGES_URL = `https://graph.facebook.com/${GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+
+function ensureWhatsAppConfig() {
+  if (!WHATSAPP_PHONE_NUMBER_ID) {
+    throw new Error('WA_PHONE_NUMBER_ID is not configured');
+  }
+  if (!WHATSAPP_TOKEN) {
+    throw new Error('CLOUD_API_ACCESS_TOKEN is not configured');
+  }
+}
+
+function cleanPhone(number: string): string {
+  return String(number || '').replace(/\D/g, '');
+}
 
 export interface WhatsAppMessage {
   to: string;
@@ -29,11 +63,13 @@ export interface WhatsAppFlowData {
 
 export async function sendTextMessage(to: string, text: string): Promise<any> {
   try {
+    ensureWhatsAppConfig();
+    const toClean = cleanPhone(to);
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      WHATSAPP_MESSAGES_URL,
       {
         messaging_product: "whatsapp",
-        to: to,
+        to: toClean,
         type: "text",
         text: { body: text },
       },
@@ -44,6 +80,7 @@ export async function sendTextMessage(to: string, text: string): Promise<any> {
         },
       }
     );
+    console.log('WhatsApp text send success:', response.data);
     return response.data;
   } catch (error: any) {
     console.error("WhatsApp send error:", error.response?.data || error.message);
@@ -57,11 +94,13 @@ export async function sendInteractiveButtons(
   buttons: Array<{ id: string; title: string }>
 ): Promise<any> {
   try {
+    ensureWhatsAppConfig();
+    const toClean = cleanPhone(to);
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      WHATSAPP_MESSAGES_URL,
       {
         messaging_product: "whatsapp",
-        to: to,
+        to: toClean,
         type: "interactive",
         interactive: {
           type: "button",
@@ -81,6 +120,7 @@ export async function sendInteractiveButtons(
         },
       }
     );
+    console.log('WhatsApp buttons send success:', response.data);
     return response.data;
   } catch (error: any) {
     console.error("WhatsApp send error:", error.response?.data || error.message);
@@ -95,11 +135,13 @@ export async function sendInteractiveList(
   sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>
 ): Promise<any> {
   try {
+    ensureWhatsAppConfig();
+    const toClean = cleanPhone(to);
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      WHATSAPP_MESSAGES_URL,
       {
         messaging_product: "whatsapp",
-        to: to,
+        to: toClean,
         type: "interactive",
         interactive: {
           type: "list",
@@ -117,6 +159,7 @@ export async function sendInteractiveList(
         },
       }
     );
+    console.log('WhatsApp list send success:', response.data);
     return response.data;
   } catch (error: any) {
     console.error("WhatsApp send error:", error.response?.data || error.message);
@@ -126,11 +169,13 @@ export async function sendInteractiveList(
 
 export async function sendTemplate(to: string, templateName: string, languageCode = "en_US"): Promise<any> {
   try {
+    ensureWhatsAppConfig();
+    const toClean = cleanPhone(to);
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      WHATSAPP_MESSAGES_URL,
       {
         messaging_product: "whatsapp",
-        to: to,
+        to: toClean,
         type: "template",
         template: {
           name: templateName,
@@ -144,6 +189,7 @@ export async function sendTemplate(to: string, templateName: string, languageCod
         },
       }
     );
+    console.log('WhatsApp template send success:', response.data);
     return response.data;
   } catch (error: any) {
     console.error("WhatsApp send error:", error.response?.data || error.message);
@@ -193,7 +239,7 @@ export async function sendListMessage(
 ): Promise<any> {
   try {
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      WHATSAPP_MESSAGES_URL,
       {
         messaging_product: "whatsapp",
         to: to,
@@ -238,14 +284,15 @@ export async function sendMediaMessage(
 ): Promise<any> {
   try {
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      WHATSAPP_MESSAGES_URL,
       {
         messaging_product: "whatsapp",
         to: to,
-        type: "media",
+        // WhatsApp expects type to match the media block name
+        type: mediaType,
         [mediaType]: {
           link: mediaUrl,
-          caption: caption || ""
+          ...(caption ? { caption } : {})
         }
       },
       {
@@ -267,11 +314,13 @@ export async function sendFlowMessage(
   flowData: WhatsAppFlowData
 ): Promise<any> {
   try {
+    ensureWhatsAppConfig();
+    const toClean = cleanPhone(to);
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      WHATSAPP_MESSAGES_URL,
       {
         messaging_product: "whatsapp",
-        to: to,
+        to: toClean,
         type: "interactive",
         interactive: {
           type: "flow",
@@ -295,6 +344,7 @@ export async function sendFlowMessage(
         },
       }
     );
+    console.log('WhatsApp flow send success:', response.data);
     return response.data;
   } catch (error: any) {
     console.error("WhatsApp flow send error:", error.response?.data || error.message);
@@ -310,7 +360,7 @@ export async function sendTemplateMessage(
 ): Promise<any> {
   try {
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      WHATSAPP_MESSAGES_URL,
       {
         messaging_product: "whatsapp",
         to: to,
@@ -366,14 +416,14 @@ Reply URGENT for immediate callback`;
 export const WHATSAPP_TEMPLATES = {
   // Alert Notifications
   CRITICAL_ALERT: {
-    name: "critical_alert_notification",
-    category: "ALERT_UPDATE",
+    name: "critical_alert_notification_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "🚨 CRITICAL ALERT"
+        text: "CRITICAL ALERT"
       },
       {
         type: "BODY",
@@ -394,14 +444,14 @@ export const WHATSAPP_TEMPLATES = {
   },
 
   HIGH_ALERT: {
-    name: "high_alert_notification",
-    category: "ALERT_UPDATE",
+    name: "high_alert_notification_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "⚠️ HIGH PRIORITY ALERT"
+        text: "HIGH PRIORITY ALERT"
       },
       {
         type: "BODY",
@@ -420,14 +470,14 @@ export const WHATSAPP_TEMPLATES = {
 
   // Service Schedule Templates
   SERVICE_SCHEDULE_CLIENT: {
-    name: "service_schedule_client",
-    category: "TRANSACTIONAL",
+    name: "service_schedule_client_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "✅ Service Scheduled"
+        text: "Service Scheduled"
       },
       {
         type: "BODY",
@@ -437,32 +487,32 @@ export const WHATSAPP_TEMPLATES = {
   },
 
   SERVICE_SCHEDULE_TECHNICIAN: {
-    name: "service_schedule_technician",
-    category: "TRANSACTIONAL",
+    name: "service_schedule_technician_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "📋 Tomorrow's Schedule"
+        text: "Tomorrows Schedule"
       },
       {
         type: "BODY",
-        text: "Total Services: {{1}}\n\n1️⃣ {{2}} - {{3}}\n   Container: {{4}}\n   Issue: {{5}}\n   Parts: {{6}}\n\nRoute Map: {{7}}\n\n[Button: Acknowledge]"
+        text: "Total Services: {{1}}\n\nServices scheduled for tomorrow. Check your dashboard for full details.\n\n[Button: Acknowledge]"
       }
     ]
   },
 
   // Invoice Templates
   INVOICE_GENERATED: {
-    name: "invoice_generated",
-    category: "TRANSACTIONAL",
+    name: "invoice_generated_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "📄 Invoice Generated"
+        text: "Invoice Generated"
       },
       {
         type: "BODY",
@@ -472,14 +522,14 @@ export const WHATSAPP_TEMPLATES = {
   },
 
   PAYMENT_REMINDER: {
-    name: "payment_reminder",
-    category: "MARKETING",
+    name: "payment_reminder_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "💳 Payment Reminder"
+        text: "Payment Reminder"
       },
       {
         type: "BODY",
@@ -490,42 +540,42 @@ export const WHATSAPP_TEMPLATES = {
 
   // Feedback Templates
   FEEDBACK_REQUEST: {
-    name: "feedback_request",
-    category: "SURVEY",
+    name: "feedback_request_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "⭐ How was our service?"
+        text: "How was our service?"
       },
       {
         type: "BODY",
-        text: "Service completed for Container {{1}}\n\nPlease rate your experience:\n\n⭐⭐⭐⭐⭐ Excellent\n⭐⭐⭐⭐ Good\n⭐⭐⭐ Average\n⭐⭐ Poor\n⭐ Very Poor"
+        text: "Service completed for Container {{1}}\n\nPlease rate your experience:\n\n5 - Excellent\n4 - Good\n3 - Average\n2 - Poor\n1 - Very Poor"
       }
     ]
   },
 
   // Technician Workflow Templates
   TECHNICIAN_SERVICE_START: {
-    name: "technician_service_start",
-    category: "TRANSACTIONAL",
+    name: "technician_service_start_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "🔧 Service Starting"
+        text: "Service Starting"
       },
       {
         type: "BODY",
-        text: "Container: {{1}}\nLocation: {{2}}\nIssue: {{3}}\n\nPlease confirm parts availability before starting."
+        text: "Service request received. Please check your dashboard for details and confirm parts availability."
       },
       {
         type: "BUTTONS",
         buttons: [
+          { type: "QUICK_REPLY", text: "View Details" },
           { type: "QUICK_REPLY", text: "Start Service" },
-          { type: "QUICK_REPLY", text: "Missing Parts" },
           { type: "QUICK_REPLY", text: "Need Help" }
         ]
       }
@@ -533,25 +583,25 @@ export const WHATSAPP_TEMPLATES = {
   },
 
   TECHNICIAN_SERVICE_COMPLETE: {
-    name: "technician_service_complete",
-    category: "TRANSACTIONAL",
+    name: "technician_service_complete_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "✅ Service Completion"
+        text: "Service Completed"
       },
       {
         type: "BODY",
-        text: "Container: {{1}}\nService Duration: {{2}} minutes\n\nPlease upload photos and complete documentation."
+        text: "Service completed successfully. Please complete documentation in your dashboard."
       },
       {
         type: "BUTTONS",
         buttons: [
-          { type: "QUICK_REPLY", text: "Complete Service" },
+          { type: "QUICK_REPLY", text: "View Details" },
           { type: "QUICK_REPLY", text: "Upload Photos" },
-          { type: "QUICK_REPLY", text: "Add Notes" }
+          { type: "QUICK_REPLY", text: "Complete Report" }
         ]
       }
     ]
@@ -559,36 +609,43 @@ export const WHATSAPP_TEMPLATES = {
 
   // Status Update Templates
   CONTAINER_STATUS_UPDATE: {
-    name: "container_status_update",
-    category: "UPDATE",
+    name: "container_status_update_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "📦 Container Status Update"
+        text: "Status Update"
       },
       {
         type: "BODY",
-        text: "Container {{1}} status: {{2}}\n\nLocation: {{3}}\nLast Update: {{4}}\n\n[Button: View Details]"
+        text: "Container status updated. Check your dashboard for current information."
+      },
+      {
+        type: "BUTTONS",
+        buttons: [
+          { type: "QUICK_REPLY", text: "View Details" },
+          { type: "QUICK_REPLY", text: "Check Status" }
+        ]
       }
     ]
   },
 
   // Welcome and Help Templates
   WELCOME_CLIENT: {
-    name: "welcome_client",
-    category: "MARKETING",
+    name: "welcome_client_v3",
+    category: "UTILITY",
     language: "en",
     components: [
       {
         type: "HEADER",
         format: "TEXT",
-        text: "👋 Welcome to ContainerGenie!"
+        text: "Welcome"
       },
       {
         type: "BODY",
-        text: "Hi {{1}}! Welcome to our container service management system.\n\nAvailable commands:\n• 'status' - Check container status\n• 'service' - Request service\n• 'invoice' - Check billing\n\nType 'help' anytime for assistance."
+        text: "Welcome to ContainerGenie! Use 'status', 'service', or 'invoice' commands to get started."
       }
     ]
   }
@@ -596,12 +653,13 @@ export const WHATSAPP_TEMPLATES = {
 
 // Template Management Functions
 export async function registerWhatsAppTemplate(templateConfig: any): Promise<any> {
-  const WHATSAPP_API_URL = `https://graph.facebook.com/v16.0/${process.env.WA_PHONE_NUMBER_ID}/message_templates`;
-  const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
+  const baseId = await resolveWabaId();
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${baseId}/message_templates`;
+  const token = WHATSAPP_TOKEN;
 
   try {
     const response = await axios.post(
-      WHATSAPP_API_URL,
+      url,
       {
         name: templateConfig.name,
         language: templateConfig.language,
@@ -611,25 +669,30 @@ export async function registerWhatsAppTemplate(templateConfig: any): Promise<any
       {
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          Authorization: `Bearer ${token}`,
         },
       }
     );
     return response.data;
   } catch (error: any) {
-    console.error("WhatsApp template registration error:", error.response?.data || error.message);
+    console.error("WhatsApp template registration error:", error.response?.data || error.message, {
+      url,
+      usingBusinessAccountId: !!baseId,
+      graphVersion: GRAPH_VERSION,
+    });
     throw error;
   }
 }
 
 export async function getWhatsAppTemplates(): Promise<any> {
-  const WHATSAPP_API_URL = `https://graph.facebook.com/v16.0/${process.env.WA_PHONE_NUMBER_ID}/message_templates`;
-  const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
+  const baseId = await resolveWabaId();
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${baseId}/message_templates`;
+  const token = WHATSAPP_TOKEN;
 
   try {
-    const response = await axios.get(WHATSAPP_API_URL, {
+    const response = await axios.get(url, {
       headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        Authorization: `Bearer ${token}`,
       },
     });
     return response.data;
@@ -640,13 +703,14 @@ export async function getWhatsAppTemplates(): Promise<any> {
 }
 
 export async function deleteWhatsAppTemplate(templateName: string): Promise<any> {
-  const WHATSAPP_API_URL = `https://graph.facebook.com/v16.0/${process.env.WA_PHONE_NUMBER_ID}/message_templates`;
-  const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
+  const baseId = await resolveWabaId();
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${baseId}/message_templates`;
+  const token = WHATSAPP_TOKEN;
 
   try {
-    const response = await axios.delete(`${WHATSAPP_API_URL}?name=${templateName}`, {
+    const response = await axios.delete(`${url}?name=${encodeURIComponent(templateName)}`, {
       headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        Authorization: `Bearer ${token}`,
       },
     });
     return response.data;
@@ -769,6 +833,59 @@ export async function sendCustomerFeedbackRequest(customer: any, service: any): 
       { id: "rate_1", title: "⭐ Very Poor" }
     ]
   );
+}
+
+// WhatsApp authorization function
+export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{authorized: boolean, user?: any, error?: string}> {
+  try {
+    // Normalize phone: keep digits only
+    const digitsOnly = (phoneNumber || '').replace(/\D/g, '');
+    const cleanPhone = digitsOnly;
+
+    const { storage } = await import('../storage');
+    let user = await storage.getUserByPhoneNumber(cleanPhone);
+
+    // Try common variants if not found (e.g., India country code 91)
+    if (!user) {
+      if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+        const withoutCountry = cleanPhone.slice(2);
+        user = await storage.getUserByPhoneNumber(withoutCountry);
+      } else if (cleanPhone.length === 10) {
+        const withIndia = `91${cleanPhone}`;
+        user = await storage.getUserByPhoneNumber(withIndia) || user;
+      }
+    }
+
+    if (!user) {
+      return {
+        authorized: false,
+        error: "Your phone number is not registered in our system. Please contact support to get registered."
+      };
+    }
+
+    if (!user.isActive) {
+      return {
+        authorized: false,
+        error: "Your account is not active. Please contact support."
+      };
+    }
+
+    if (!user.whatsappVerified) {
+      return {
+        authorized: false,
+        error: "WhatsApp access not enabled. Please contact support."
+      };
+    }
+
+    return { authorized: true, user };
+
+  } catch (error) {
+    console.error('Error authorizing WhatsApp message:', error);
+    return {
+      authorized: false,
+      error: "Authorization check failed. Please try again later."
+    };
+  }
 }
 
 // Enhanced WhatsApp webhook handler for incoming messages and interactive responses
@@ -1002,7 +1119,7 @@ async function handleButtonClick(buttonId: string, from: string, user: any, sess
   }
 }
 
-// Handle client button interactions
+  // Handle client button interactions
 async function handleClientButtonClick(buttonId: string, from: string, user: any, session: any, conversationState: any): Promise<void> {
   const { storage } = await import('../storage');
 
@@ -1011,9 +1128,80 @@ async function handleClientButtonClick(buttonId: string, from: string, user: any
       const customer = await storage.getCustomerByUserId(user.id);
       if (customer) {
         const containers = await storage.getContainersByCustomer(customer.id);
-        await sendTextMessage(
-                    from,
-          `📦 *Container Status*\n\nYou have ${containers.length} containers assigned. ${containers.filter((c: any) => c.status === 'active').length} are currently active.`
+        const activeContainers = containers.filter((c: any) => c.status === 'active');
+        const alerts = await storage.getOpenAlerts();
+        const customerAlerts = alerts.filter((a: any) => containers.some((c: any) => c.id === a.containerId));
+
+        const message = `📊 *Container Status Summary*
+
+📦 Total Containers: ${containers.length}
+✅ Active: ${activeContainers.length}
+🚨 Alerts: ${customerAlerts.length}
+
+Select an option below:`;
+
+        await sendInteractiveButtons(
+          from,
+          message,
+          [
+            { id: 'view_containers', title: 'View Containers' },
+            { id: 'view_alerts', title: 'View Alerts' },
+            { id: 'request_service', title: 'Request Service' }
+          ]
+        );
+      }
+      break;
+
+    case 'view_containers':
+      const customerContainers = await storage.getCustomerByUserId(user.id);
+      if (customerContainers) {
+        const containers = await storage.getContainersByCustomer(customerContainers.id);
+        const activeContainers = containers.filter((c: any) => c.status === 'active');
+
+        if (activeContainers.length === 0) {
+          await sendTextMessage(from, '❌ No active containers found. Please contact support.');
+          return;
+        }
+
+        const containerOptions = activeContainers.map((container: any) => ({
+          id: container.id,
+          title: `${container.containerCode} - ${container.type}`,
+          description: `Status: ${container.status} | Location: ${container.currentLocation?.address || 'Unknown'}`
+        }));
+
+        await sendInteractiveList(
+          from,
+          '📦 *Select Container to View Details*',
+          'Choose Container',
+          [{ title: 'Active Containers', rows: containerOptions }]
+        );
+      }
+      break;
+
+    case 'view_alerts':
+      const customerAlerts = await storage.getCustomerByUserId(user.id);
+      if (customerAlerts) {
+        const containers = await storage.getContainersByCustomer(customerAlerts.id);
+        const containerIds = containers.map((c: any) => c.id);
+        const alerts = await storage.getAllAlerts();
+        const openAlerts = alerts.filter((a: any) => !a.resolvedAt && containerIds.includes(a.containerId));
+
+        if (openAlerts.length === 0) {
+          await sendTextMessage(from, '✅ No active alerts found. All systems operational.');
+          return;
+        }
+
+        const alertOptions = openAlerts.map((alert: any) => ({
+          id: alert.id,
+          title: `${alert.title} (${alert.severity})`,
+          description: `${alert.description.substring(0, 50)}...`
+        }));
+
+        await sendInteractiveList(
+          from,
+          '🚨 *Active Alerts*',
+          'Select Alert',
+          [{ title: 'Open Alerts', rows: alertOptions }]
         );
       }
       break;
@@ -1029,14 +1217,84 @@ async function handleClientButtonClick(buttonId: string, from: string, user: any
         const pendingInvoices = invoices.filter((inv: any) => inv.paymentStatus === 'pending');
 
         if (pendingInvoices.length > 0) {
-          await sendTextMessage(
+          const totalAmount = pendingInvoices.reduce((sum: number, inv: any) => sum + parseFloat(inv.totalAmount), 0);
+          await sendInteractiveButtons(
             from,
-            `💳 *Payment Status*\n\nYou have ${pendingInvoices.length} pending invoice(s). Total amount: ₹${pendingInvoices.reduce((sum: number, inv: any) => sum + parseFloat(inv.totalAmount), 0).toFixed(2)}`
+            `💳 *Payment Status*
+
+You have ${pendingInvoices.length} pending invoice(s)
+Total amount: ₹${totalAmount.toFixed(2)}
+
+What would you like to do?`,
+            [
+              { id: 'view_invoices', title: 'View Invoices' },
+              { id: 'pay_now', title: 'Pay Now' },
+              { id: 'contact_support', title: 'Contact Support' }
+            ]
           );
         } else {
           await sendTextMessage(from, '✅ All payments are up to date!');
         }
       }
+      break;
+
+    case 'view_invoices':
+      const customerForInvoices = await storage.getCustomerByUserId(user.id);
+      if (customerForInvoices) {
+        const invoices = await storage.getInvoicesByCustomer(customerForInvoices.id);
+        const pendingInvoices = invoices.filter((inv: any) => inv.paymentStatus === 'pending');
+
+        if (pendingInvoices.length > 0) {
+          const invoiceOptions = pendingInvoices.map((invoice: any) => ({
+            id: invoice.id,
+            title: `Invoice #${invoice.invoiceNumber}`,
+            description: `₹${invoice.totalAmount} - Due: ${new Date(invoice.dueDate).toLocaleDateString()}`
+          }));
+
+          await sendInteractiveList(
+            from,
+            '💳 *Pending Invoices*',
+            'Select Invoice',
+            [{ title: 'Pending Invoices', rows: invoiceOptions }]
+          );
+        }
+      }
+      break;
+
+    case 'track_request':
+      await sendTextMessage(from, '📋 *Request Tracking*\n\nTrack your service requests in your dashboard or use the "service" command.');
+      break;
+
+    case 'new_request':
+      await initiateServiceRequestFlow(from, user, session);
+      break;
+
+    case 'help':
+      await sendInteractiveButtons(
+        from,
+        '🤖 *WhatsApp Help*\n\nAvailable commands:\n• "status" - Check container status\n• "service" - Request service\n• "invoice" - Check billing\n• "help" - This help menu\n\nNeed more help?',
+        [
+          { id: 'contact_human', title: 'Contact Support' },
+          { id: 'main_menu', title: 'Main Menu' }
+        ]
+      );
+      break;
+
+    case 'contact_human':
+      await sendTextMessage(from, '📞 *Contact Support*\n\nPhone: +1-800-CONTAINER\nEmail: support@containergenie.com\n\nOur team is available 24/7 for urgent issues.');
+      break;
+
+    case 'main_menu':
+      await sendInteractiveButtons(
+        from,
+        '🏠 *Main Menu*\n\nWhat can I help you with today?',
+        [
+          { id: 'check_status', title: 'Check Status' },
+          { id: 'request_service', title: 'Request Service' },
+          { id: 'check_invoices', title: 'Check Invoices' },
+          { id: 'help', title: 'Help' }
+        ]
+      );
       break;
 
     case 'approve_service':
@@ -1068,14 +1326,21 @@ async function handleClientButtonClick(buttonId: string, from: string, user: any
     case 'priority_normal':
     case 'priority_low':
       if (conversationState.flow === 'service_request') {
-        await serviceRequestViaWhatsApp.handlePrioritySelection(buttonId, from, user, session);
+        await serviceRequestViaWhatsApp.handlePrioritySelectionById(buttonId, from, user, session);
       } else {
         await sendTextMessage(from, 'No active service request flow. Please start a new request.');
       }
       break;
 
     default:
-      await sendTextMessage(from, 'Button action not recognized. Please try again.');
+      await sendInteractiveButtons(
+        from,
+        '🤔 *Command Not Recognized*\n\nI didn\'t understand that command. Please use the buttons below or type "help" for assistance.',
+        [
+          { id: 'main_menu', title: 'Main Menu' },
+          { id: 'help', title: 'Help' }
+        ]
+      );
   }
 }
 
@@ -1084,7 +1349,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
   const { storage } = await import('../storage');
 
   switch (buttonId) {
-    case 'acknowledge':
+    case 'acknowledge_schedule':
       await acknowledgeSchedule(from, user, conversationState);
       break;
 
@@ -1092,7 +1357,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
       await startTravel(from, user, conversationState);
       break;
 
-    case 'arrived':
+    case 'arrived_at_location':
       await confirmArrival(from, user, conversationState);
       break;
 
@@ -1116,8 +1381,39 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
       await requestHelp(from, user, conversationState);
       break;
 
+    case 'start_travel_next':
+      await startNextService(from, user, conversationState);
+      break;
+
+    case 'reschedule_service':
+      await rescheduleService(from, user, conversationState);
+      break;
+
+    case 'skip_service':
+      await skipService(from, user, conversationState);
+      break;
+
+    case 'submit_timesheet':
+      await submitTimesheet(from, user, conversationState);
+      break;
+
+    case 'report_issues':
+      await reportEndOfDayIssues(from, user, conversationState);
+      break;
+
+    case 'end_day':
+      await endDay(from, user, conversationState);
+      break;
+
     default:
-      await sendTextMessage(from, 'Button action not recognized. Please use the workflow buttons.');
+      await sendInteractiveButtons(
+        from,
+        '❓ *Command Not Recognized*\n\nPlease use the workflow buttons or type "help" for assistance.',
+        [
+          { id: 'help', title: 'Help' },
+          { id: 'main_menu', title: 'Main Menu' }
+        ]
+      );
   }
 }
 
@@ -1159,6 +1455,81 @@ export class ServiceRequestViaWhatsApp {
     this.storage = storage;
   }
 
+  // Handle service request priority selection (PRD 4.4.1.3)
+  async handlePrioritySelection(buttonId: string, from: string, user: any, session: any): Promise<void> {
+    const conversationState = session.conversationState || {};
+    const cleanPhone = from.startsWith('+') ? from.slice(1) : from;
+
+    try {
+      // Map button IDs to priorities
+      const priorityMap: Record<string, string> = {
+        'priority_urgent': 'urgent',
+        'priority_high': 'high',
+        'priority_normal': 'normal',
+        'priority_low': 'low'
+      };
+
+      const priority = priorityMap[buttonId];
+      if (!priority) {
+        await sendTextMessage(from, 'Invalid priority selection. Please try again.');
+        return;
+      }
+
+      // Create service request
+      const serviceRequest = await this.storage.createServiceRequest({
+        requestNumber: `SR-${Date.now()}`,
+        containerId: conversationState.selectedContainerId,
+        customerId: user.id,
+        issueDescription: conversationState.issueDescription,
+        priority: priority,
+        status: 'pending',
+        createdBy: user.id,
+        createdAt: new Date(),
+      });
+
+      // Send confirmation with next steps
+      const message = `✅ *Service Request Created!*
+
+📋 Request #${serviceRequest.requestNumber}
+🔥 Priority: ${priority.toUpperCase()}
+🔧 Issue: ${conversationState.issueDescription}
+📦 Container: ${conversationState.containerInfo.containerCode}
+
+Our team will review and assign a technician. You'll receive updates via WhatsApp.
+
+What would you like to do next?`;
+
+      await sendInteractiveButtons(
+        from,
+        message,
+        [
+          { id: 'track_request', title: 'Track Request' },
+          { id: 'new_request', title: 'New Request' },
+          { id: 'help', title: 'Get Help' }
+        ]
+      );
+
+      // Clear conversation state
+      await this.storage.updateWhatsappSession(session.id, {
+        conversationState: {},
+      });
+
+      // Log the service request creation
+      await this.storage.createAuditLog({
+        userId: user.id,
+        action: 'service_request_created_via_whatsapp',
+        entityType: 'service_request',
+        entityId: serviceRequest.id,
+        source: 'whatsapp',
+        timestamp: new Date(),
+      });
+
+    } catch (error) {
+      console.error('Error creating service request:', error);
+      await sendTextMessage(from, '❌ Error creating service request. Please try again or contact support.');
+    }
+  }
+
   // Initiate service request flow for clients
   async initiateServiceRequestFlow(from: string, user: any, session: any): Promise<void> {
     // Update conversation state
@@ -1182,7 +1553,7 @@ export class ServiceRequestViaWhatsApp {
 
       if (activeContainers.length === 1) {
         // Single container - skip selection and go to issue description
-        await this.handleContainerSelected(activeContainers[0].id, from, user, session);
+        await this.handleContainerSelection(activeContainers[0].id, from, user, session);
       } else {
         // Multiple containers - show selection
         const containerOptions = activeContainers.map((container: any) => ({
@@ -1262,8 +1633,8 @@ export class ServiceRequestViaWhatsApp {
     );
   }
 
-  // Handle priority selection and create service request
-  async handlePrioritySelection(priority: string, from: string, user: any, session: any): Promise<void> {
+  // Handle priority selection (by priority id) and create service request
+  async handlePrioritySelectionById(priority: string, from: string, user: any, session: any): Promise<void> {
     const conversationState = session.conversationState || {};
 
     if (conversationState.step !== 'awaiting_priority_selection') {
@@ -1348,6 +1719,81 @@ async function initiateServiceRequestFlow(from: string, user: any, session: any)
   await serviceRequestViaWhatsApp.initiateServiceRequestFlow(from, user, session);
 }
 
+// Additional technician workflow functions for complete PRD compliance
+async function startNextService(from: string, user: any, conversationState: any): Promise<void> {
+  const { storage } = await import('../storage');
+
+  const nextService = await storage.getNextScheduledService(user.id);
+  if (nextService) {
+    const serviceReq = nextService.serviceRequestId ? await storage.getServiceRequest(nextService.serviceRequestId) : undefined;
+    const container = serviceReq?.containerId ? await storage.getContainer(serviceReq.containerId) : undefined;
+    const message = `🔄 *Next Service*
+
+📦 Container: ${container?.containerCode || 'TBD'}
+📍 Location: ${typeof container?.currentLocation === 'object' && container?.currentLocation && (container as any).currentLocation.address ? (container as any).currentLocation.address : 'Unknown'}
+🔧 Issue: ${serviceReq?.issueDescription || 'TBD'}
+
+Ready to proceed?`;
+
+    await sendInteractiveButtons(
+      from,
+      message,
+      [
+        { id: 'start_travel_next', title: 'Start Travel' },
+        { id: 'reschedule_service', title: 'Reschedule' },
+        { id: 'skip_service', title: 'Skip Service' }
+      ]
+    );
+  } else {
+    await sendTextMessage(from, '✅ All services completed for today!');
+  }
+}
+
+async function rescheduleService(from: string, user: any, conversationState: any): Promise<void> {
+  await sendTextMessage(from, '📅 *Service Rescheduled*\n\nPlease contact your coordinator to reschedule this service.');
+}
+
+async function skipService(from: string, user: any, conversationState: any): Promise<void> {
+  await sendTextMessage(from, '⏭️ *Service Skipped*\n\nService has been marked as skipped. Coordinator will follow up.');
+}
+
+async function submitTimesheet(from: string, user: any, conversationState: any): Promise<void> {
+  const message = `📊 *Daily Timesheet*
+
+Please submit your completed timesheet:
+
+• Total services: [Count]
+• Total travel time: [Time]
+• Total work time: [Time]
+
+Upload your timesheet or contact your supervisor.`;
+
+  await sendInteractiveButtons(
+    from,
+    message,
+    [
+      { id: 'upload_timesheet', title: 'Upload Timesheet' },
+      { id: 'contact_supervisor', title: 'Contact Supervisor' }
+    ]
+  );
+}
+
+async function reportEndOfDayIssues(from: string, user: any, conversationState: any): Promise<void> {
+  await sendTextMessage(from, '📝 *End of Day Report*\n\nPlease report any issues or concerns from today\'s services.');
+}
+
+async function endDay(from: string, user: any, conversationState: any): Promise<void> {
+  const message = `🏁 *Day Complete!*
+
+✅ All services completed
+📋 Timesheet submitted
+🔧 Equipment checked
+
+Great job today! See you tomorrow.`;
+
+  await sendTextMessage(from, message);
+}
+
 // Handle service request text input
 async function handleServiceRequestText(text: string, from: string, user: any, session: any): Promise<void> {
   // This would handle text-based service requests
@@ -1361,7 +1807,14 @@ async function approveServiceRequest(serviceRequestId: string, from: string, use
   const serviceRequest = await storage.getServiceRequest(serviceRequestId);
   if (serviceRequest && serviceRequest.customerId === user.id) {
     await storage.updateServiceRequest(serviceRequestId, { status: 'approved' });
-    await sendTextMessage(from, '✅ Service request approved! Our team will schedule this shortly.');
+    await sendInteractiveButtons(
+      from,
+      '✅ *Service Request Approved!*\n\nOur team will schedule this service shortly. You\'ll receive updates via WhatsApp.',
+      [
+        { id: 'track_request', title: 'Track Request' },
+        { id: 'new_request', title: 'New Request' }
+      ]
+    );
   } else {
     await sendTextMessage(from, '❌ Service request not found or not authorized.');
   }
@@ -1374,7 +1827,14 @@ async function scheduleServiceLater(serviceRequestId: string, from: string, user
   const serviceRequest = await storage.getServiceRequest(serviceRequestId);
   if (serviceRequest && serviceRequest.customerId === user.id) {
     await storage.updateServiceRequest(serviceRequestId, { status: 'pending' });
-    await sendTextMessage(from, '⏰ Service request noted for later scheduling. We\'ll be in touch.');
+    await sendInteractiveButtons(
+      from,
+      '⏰ *Service Request Noted*\n\nWe\'ll schedule this service when convenient for you. Our team will be in touch.',
+      [
+        { id: 'track_request', title: 'Track Request' },
+        { id: 'new_request', title: 'New Request' }
+      ]
+    );
   } else {
     await sendTextMessage(from, '❌ Service request not found or not authorized.');
   }
@@ -1452,7 +1912,9 @@ export async function handleTechnicianStartTravel(technicianId: string, serviceI
   // Send next service details
   const nextService = await storage.getNextScheduledService(technicianId);
   if (nextService) {
-    const message = `🚗 Travel started to:\n\n📍 ${nextService.container?.currentLocation?.address || 'Location'}\n🔧 Container: ${nextService.container?.containerCode}\n📋 Issue: ${nextService.serviceRequest?.issueDescription}\n\n⏱️ ETA: ${calculateETA(nextService)}`;
+    const serviceReq = nextService.serviceRequestId ? await storage.getServiceRequest(nextService.serviceRequestId) : undefined;
+    const container = serviceReq?.containerId ? await storage.getContainer(serviceReq.containerId) : undefined;
+    const message = `🚗 Travel started to:\n\n📍 ${typeof container?.currentLocation === 'object' && container?.currentLocation && (container as any).currentLocation.address ? (container as any).currentLocation.address : 'Location'}\n🔧 Container: ${container?.containerCode || 'TBD'}\n📋 Issue: ${serviceReq?.issueDescription || 'TBD'}\n\n⏱️ ETA: ${calculateETA(nextService)}`;
 
     await sendInteractiveButtons(
       from,
@@ -1480,7 +1942,9 @@ export async function handleTechnicianArrival(technicianId: string, serviceId: s
   // Send service start prompt
   const service = await storage.getScheduledService(serviceId);
   if (service) {
-    const message = `📍 *Arrival Confirmed*\n\n🔧 Service: ${service.serviceRequest?.issueDescription}\n📦 Container: ${service.container?.containerCode}\n⚙️ Required Parts: ${service.serviceRequest?.requiredParts?.join(', ') || 'None'}\n\nReady to start service?`;
+    const serviceReq = service.serviceRequestId ? await storage.getServiceRequest(service.serviceRequestId) : undefined;
+    const container = serviceReq?.containerId ? await storage.getContainer(serviceReq.containerId) : undefined;
+    const message = `📍 *Arrival Confirmed*\n\n🔧 Service: ${serviceReq?.issueDescription || 'TBD'}\n📦 Container: ${container?.containerCode || 'TBD'}\n⚙️ Required Parts: ${serviceReq?.requiredParts?.join(', ') || 'None'}\n\nReady to start service?`;
 
     await sendInteractiveButtons(
       from,
@@ -1615,7 +2079,9 @@ async function sendNextServicePrompt(technicianId: string, from: string): Promis
 
   const nextService = await storage.getNextScheduledService(technicianId);
   if (nextService) {
-    const message = `🔄 *Next Service*\n\n📦 Container: ${nextService.container?.containerCode}\n📍 Location: ${nextService.container?.currentLocation?.address}\n🔧 Issue: ${nextService.serviceRequest?.issueDescription}\n\nReady to proceed?`;
+    const serviceReq = nextService.serviceRequestId ? await storage.getServiceRequest(nextService.serviceRequestId) : undefined;
+    const container = serviceReq?.containerId ? await storage.getContainer(serviceReq.containerId) : undefined;
+    const message = `🔄 *Next Service*\n\n📦 Container: ${container?.containerCode || 'TBD'}\n📍 Location: ${typeof container?.currentLocation === 'object' && container?.currentLocation && (container as any).currentLocation.address ? (container as any).currentLocation.address : 'Unknown'}\n🔧 Issue: ${serviceReq?.issueDescription || 'TBD'}\n\nReady to proceed?`;
 
     await sendInteractiveButtons(
       from,
@@ -1790,7 +2256,7 @@ export class CustomerCommunicationService {
       new Date().toISOString().split('T')[0]
     );
 
-    const service = scheduledService.find(s => s.serviceRequestId === serviceRequestId);
+    const service = scheduledService.find((s: any) => s.serviceRequestId === serviceRequestId);
     if (!service) return;
 
     const technician = await this.storage.getTechnician(serviceRequest.assignedTechnicianId);
@@ -1997,7 +2463,7 @@ export class CustomerCommunicationService {
 
     // Get recent alerts for this container
     const alerts = await this.storage.getAlertsByContainer(containerId);
-    const activeAlerts = alerts.filter(a => !a.resolvedAt);
+    const activeAlerts = alerts.filter((a: any) => !a.resolvedAt);
 
     const parameters = [
       container.containerCode,
@@ -2031,5 +2497,12 @@ export const customerCommunicationService = new CustomerCommunicationService();
 // Export the service as an object for easier importing
 export const whatsappService = {
   handleWebhook,
-  customerCommunicationService
+  customerCommunicationService,
+  authorizeWhatsAppMessage,
+  sendMessage: async (phoneNumber: string, message: string) => {
+    return await sendTextMessage(phoneNumber, message);
+  },
+  sendAlertNotification: async (alertId: string, customerId: string) => {
+    return await customerCommunicationService.sendAlertNotification(alertId, customerId);
+  }
 };

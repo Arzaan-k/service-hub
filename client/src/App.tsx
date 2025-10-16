@@ -13,12 +13,14 @@ import ContainerDetail from "@/pages/container-detail";
 import Alerts from "@/pages/alerts";
 import ServiceRequests from "@/pages/service-requests";
 import Technicians from "@/pages/technicians";
+import TechnicianProfile from "@/pages/technician-profile";
 import Scheduling from "@/pages/scheduling";
 import WhatsAppHub from "@/pages/whatsapp-hub";
 import Clients from "@/pages/clients";
 import Inventory from "@/pages/inventory";
 import Analytics from "@/pages/analytics";
 import ClientProfile from "@/pages/client-profile";
+import AdminWhatsApp from "@/pages/admin-whatsapp";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -63,6 +65,9 @@ function Router() {
       <Route path="/technicians">
         {() => <ProtectedRoute component={Technicians} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
+      <Route path="/technicians/:id">
+        {() => <ProtectedRoute component={TechnicianProfile} roles={["admin", "coordinator", "super_admin", "technician"]} />}
+      </Route>
       <Route path="/scheduling">
         {() => <ProtectedRoute component={Scheduling} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
@@ -83,6 +88,9 @@ function Router() {
       </Route>
       <Route path="/analytics">
         {() => <ProtectedRoute component={Analytics} roles={["admin", "super_admin"]} />}
+      </Route>
+      <Route path="/admin/whatsapp">
+        {() => <ProtectedRoute component={AdminWhatsApp} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
     </Switch>
   );

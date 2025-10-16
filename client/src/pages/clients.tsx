@@ -10,9 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Phone, Mail, MapPin, CreditCard, Plus, Edit, Trash2, Package } from "lucide-react";
+import { Building2, Phone, Mail, MapPin, CreditCard, Plus, Edit, Trash2, Package, Shield, ShieldOff } from "lucide-react";
 import { Link } from "wouter";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -56,22 +59,46 @@ export default function Clients() {
   });
 
   // Fetch all containers so we can map them to clients by currentCustomerId
-  const { data: containers } = useQuery({
+  const { data: containers, error: containersError } = useQuery({
     queryKey: ["/api/containers"],
   });
 
+  // Allocation state for assigning containers during client creation
+  const [allocation, setAllocation] = useState<{ type: "dry" | "refrigerated" | ""; containerIds: string[] }>(
+    { type: "", containerIds: [] }
+  );
+  const [containerSearchOpen, setContainerSearchOpen] = useState(false);
+
+  // Show only unassigned containers of the selected type
+  const filteredContainers = allocation.type && containers
+    ? (containers || []).filter((c: any) => 
+        String(c.type).toLowerCase() === allocation.type && !c.currentCustomerId
+      )
+    : [];
+
+  const selectedContainers = filteredContainers.filter((c: any) => 
+    allocation.containerIds.includes(c.id)
+  );
+
   const createClient = useMutation({
     mutationFn: async (data: any) => {
-      const res = await apiRequest("POST", "/api/clients", data);
+      const requestData = {
+        ...data,
+        containerIds: allocation.containerIds.length > 0 ? allocation.containerIds : undefined
+      };
+      const res = await apiRequest("POST", "/api/clients", requestData);
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: async (created: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
       setIsAddDialogOpen(false);
       resetForm();
       toast({
         title: "Success",
-        description: "Client added successfully",
+        description: allocation.containerIds.length > 0 
+          ? `Client added and ${allocation.containerIds.length} container(s) assigned` 
+          : "Client added successfully",
       });
     },
     onError: () => {
@@ -113,6 +140,27 @@ export default function Clients() {
     },
   });
 
+  const toggleAccess = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/customers/${id}/toggle-access`);
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({
+        title: "Success",
+        description: data.message,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to toggle client access",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       companyName: "",
@@ -125,6 +173,8 @@ export default function Clients() {
       billingAddress: "",
     });
     setSelectedClient(null);
+    setAllocation({ type: "", containerIds: [] });
+    setContainerSearchOpen(false);
   };
 
   const handleAdd = () => {
@@ -174,6 +224,15 @@ export default function Clients() {
       suspended: "bg-red-100 text-red-800 border-red-200",
     };
     return statusMap[status] || statusMap.active;
+  };
+
+  const getAccessBadge = (status: string) => {
+    const accessMap: Record<string, string> = {
+      active: "bg-green-100 text-green-800 border-green-200",
+      inactive: "bg-red-100 text-red-800 border-red-200",
+      suspended: "bg-orange-100 text-orange-800 border-orange-200",
+    };
+    return accessMap[status] || accessMap.active;
   };
 
   if (isLoading) {
@@ -246,6 +305,9 @@ export default function Clients() {
                     <Badge className={`${getStatusBadge(client.status)} border text-xs`}>
                       {client.status}
                     </Badge>
+                    <Badge className={`${getAccessBadge(client.status)} border text-xs`}>
+                      Access: {client.status === 'active' ? 'Enabled' : 'Disabled'}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -292,6 +354,18 @@ export default function Clients() {
                       >
                         <Edit className="h-3 w-3 mr-1" />
                         Edit
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button
+                        size="sm"
+                        variant={client.status === 'active' ? "destructive" : "default"}
+                        className="flex-1"
+                        onClick={() => toggleAccess.mutate(client.id)}
+                        disabled={toggleAccess.isPending}
+                      >
+                        {client.status === 'active' ? <ShieldOff className="h-3 w-3 mr-1" /> : <Shield className="h-3 w-3 mr-1" />}
+                        {client.status === 'active' ? 'Disable' : 'Enable'}
                       </Button>
                     )}
                     {canManage && (
@@ -419,6 +493,106 @@ export default function Clients() {
                 placeholder="123 Main St, City, State, ZIP"
                 rows={3}
               />
+            </div>
+            {/* Container Allocation */}
+            <div>
+              <Label>Container Type</Label>
+              <Select
+                value={allocation.type}
+                onValueChange={(value) => {
+                  setAllocation({ type: value as any, containerIds: [] });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select container type (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dry">DRY</SelectItem>
+                  <SelectItem value="refrigerated">REEFER</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Container Numbers</Label>
+              <Popover open={containerSearchOpen} onOpenChange={setContainerSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={containerSearchOpen}
+                    className="w-full justify-between"
+                    disabled={!allocation.type || filteredContainers.length === 0}
+                  >
+                    {selectedContainers.length > 0 ? (
+                      <span>
+                        {selectedContainers.length} container(s) selected
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {allocation.type ? "Search containers..." : "Select type first"}
+                      </span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[400px] p-0 z-[60]" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search containers..." />
+                    <CommandList>
+                      <CommandEmpty>No unassigned containers found.</CommandEmpty>
+                      <CommandGroup>
+                        {filteredContainers.map((c: any) => (
+                          <CommandItem
+                            key={c.id}
+                            value={c.containerCode}
+                            onSelect={() => {
+                              const isSelected = allocation.containerIds.includes(c.id);
+                              if (isSelected) {
+                                setAllocation((a) => ({
+                                  ...a,
+                                  containerIds: a.containerIds.filter(id => id !== c.id)
+                                }));
+                              } else {
+                                setAllocation((a) => ({
+                                  ...a,
+                                  containerIds: [...a.containerIds, c.id]
+                                }));
+                              }
+                            }}
+                          >
+                            <Check
+                              className={`mr-2 h-4 w-4 ${
+                                allocation.containerIds.includes(c.id) ? "opacity-100" : "opacity-0"
+                              }`}
+                            />
+                            <span>{c.containerCode}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {selectedContainers.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {selectedContainers.map((c: any) => (
+                    <Badge key={c.id} variant="secondary" className="text-xs">
+                      {c.containerCode}
+                      <button
+                        className="ml-1 hover:text-destructive"
+                        onClick={() => {
+                          setAllocation((a) => ({
+                            ...a,
+                            containerIds: a.containerIds.filter(id => id !== c.id)
+                          }));
+                        }}
+                      >
+                        ×
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

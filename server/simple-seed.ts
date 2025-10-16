@@ -7,8 +7,8 @@ export async function simpleSeed() {
   try {
     // Create a test user
     const testUser = await db.insert(users).values({
-      phoneNumber: "+1234567890",
-      name: "Test User",
+      phoneNumber: "917021307474",
+      name: "Arzaan Ali Khan",
       email: "test@example.com",
       role: "admin",
       isActive: true,
@@ -21,10 +21,10 @@ export async function simpleSeed() {
     const testCustomer = await db.insert(customers).values({
       userId: testUser[0].id,
       companyName: "Test Company",
-      contactPerson: "Test Person",
+      contactPerson: "Arzaan Ali Khan",
       email: "test@company.com",
-      phone: "+1234567890",
-      whatsappNumber: "+1234567890",
+      phone: "917021307474",
+      whatsappNumber: "917021307474",
       customerTier: "standard",
       paymentTerms: "net30",
       billingAddress: "123 Test St",

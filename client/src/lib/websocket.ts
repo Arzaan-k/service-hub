@@ -4,14 +4,35 @@ export class WebSocketClient {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
+  private authToken: string | null = null;
 
   constructor(private url?: string) {
+    try {
+      this.authToken = localStorage.getItem('auth_token');
+    } catch {}
     this.connect();
   }
 
   private connect() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = this.url || `${protocol}//${window.location.host}/ws`;
+    // Allow explicit URL via env or constructor
+    let wsUrl = this.url;
+    const envUrl = (import.meta as any)?.env?.VITE_WS_URL as string | undefined;
+    if (!wsUrl && envUrl) wsUrl = envUrl;
+
+    if (!wsUrl) {
+      // Derive from location with safe fallback for dev
+      let host = window.location.host;
+      if (!host || host.indexOf(":") < 0) {
+        // No port specified (some embedded setups) → fallback
+        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+          host = "localhost:5000";
+        } else {
+          host = window.location.hostname;
+        }
+      }
+      wsUrl = `${protocol}//${host}/ws`;
+    }
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -19,6 +40,13 @@ export class WebSocketClient {
       this.ws.onopen = () => {
         console.log("WebSocket connected");
         this.reconnectAttempts = 0;
+        // Authenticate socket so server delivers role/user-scoped events
+        try {
+          const token = this.authToken || localStorage.getItem('auth_token');
+          if (token && this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'authenticate', token }));
+          }
+        } catch {}
       };
 
       this.ws.onmessage = (event) => {

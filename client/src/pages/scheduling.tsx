@@ -57,10 +57,18 @@ export default function Scheduling() {
     new Date().toISOString().split("T")[0]
   );
 
-  const { data: schedule, isLoading } = useQuery({
-    queryKey: ["/api/scheduling/daily", selectedDate],
+  const { data: serviceRequests, isLoading } = useQuery({
+    queryKey: ["/api/service-requests"],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/scheduling/daily/${selectedDate}`);
+      const res = await apiRequest("GET", "/api/service-requests");
+      return await res.json();
+    },
+  });
+
+  const { data: technicians } = useQuery({
+    queryKey: ["/api/technicians"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/technicians");
       return await res.json();
     },
   });
@@ -77,30 +85,92 @@ export default function Scheduling() {
 
   const runOptimization = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/scheduling/run");
+      const response = await apiRequest("POST", "/api/scheduling/run");
+      return await response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/scheduling/daily"] });
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
+      
+      const assignedCount = data?.assignments?.filter((a: any) => a.assigned).length || 0;
+      const totalCount = data?.totalRequests || 0;
+      
+      if (assignedCount > 0) {
+        // Show detailed assignment results
+        const assignmentDetails = data.assignments
+          .filter((a: any) => a.assigned)
+          .map((a: any) => `SR #${a.request?.requestNumber} → ${technicians?.find((t: any) => t.id === a.technicianId)?.name || 'Unknown'}`)
+          .join('\n');
+        
+        toast({
+          title: "✅ Auto-Assignment Complete",
+          description: `Successfully assigned ${assignedCount}/${totalCount} requests:\n${assignmentDetails}`,
+        });
+      } else {
+        toast({
+          title: "⚠️ No Assignments Made",
+          description: totalCount > 0 ? "No available technicians found for pending requests" : "No pending requests to assign",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: () => {
       toast({
-        title: "Optimization Complete",
-        description: `Scheduled ${data?.assignedCount || 0} services for tomorrow`,
+        title: "Auto-Scheduling Failed",
+        description: "Failed to run auto-assignment",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendSchedules = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/scheduling/notify-all", { date: selectedDate });
+      return await response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Schedules Sent",
+        description: "Daily schedules sent to all technicians via WhatsApp",
       });
     },
     onError: () => {
       toast({
-        title: "Optimization Failed",
-        description: "Failed to run scheduling optimization",
+        title: "Failed to Send",
+        description: "Could not send schedules to technicians",
         variant: "destructive",
       });
     },
   });
 
   const handleRunOptimization = () => {
-    if (confirm("Run AI-powered scheduling optimization for tomorrow?")) {
+    if (confirm("Run auto-assignment for all pending service requests?")) {
       runOptimization.mutate();
     }
   };
+
+  // Filter service requests by selected date and group by technician
+  const selectedDateObj = new Date(selectedDate);
+  const scheduledRequests = serviceRequests?.filter((req: any) => {
+    if (!req.scheduledDate) return false;
+    const schedDate = new Date(req.scheduledDate);
+    return schedDate.toDateString() === selectedDateObj.toDateString();
+  }) || [];
+
+  // Group by technician
+  const scheduleByTechnician = scheduledRequests.reduce((acc: any, req: any) => {
+    if (!req.assignedTechnicianId) return acc;
+    const techId = req.assignedTechnicianId;
+    if (!acc[techId]) {
+      const tech = technicians?.find((t: any) => t.id === techId);
+      acc[techId] = {
+        technician: tech || { id: techId, name: 'Unknown Technician' },
+        services: [],
+      };
+    }
+    acc[techId].services.push(req);
+    return acc;
+  }, {});
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, string> = {
@@ -122,22 +192,7 @@ export default function Scheduling() {
     return priorityMap[priority] || priorityMap.normal;
   };
 
-  // Group schedule by technician
-  const scheduleByTechnician = schedule?.reduce((acc: any, item: ScheduledService) => {
-    const techId = item.technician.id;
-    if (!acc[techId]) {
-      acc[techId] = {
-        technician: item.technician,
-        services: [],
-      };
-    }
-    acc[techId].services.push(item);
-    return acc;
-  }, {});
-
-  const technicianSchedules = scheduleByTechnician
-    ? Object.values(scheduleByTechnician)
-    : [];
+  const technicianSchedules = Object.values(scheduleByTechnician);
 
   return (
     <div className="flex min-h-screen">
@@ -161,14 +216,25 @@ export default function Scheduling() {
                 className="px-3 py-2 border border-border rounded-lg text-sm"
               />
               {canSchedule && (
-                <Button
-                  onClick={handleRunOptimization}
-                  disabled={runOptimization.isPending}
-                  className="gap-2"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {runOptimization.isPending ? "Optimizing..." : "Run AI Optimization"}
-                </Button>
+                <>
+                  <Button
+                    onClick={handleRunOptimization}
+                    disabled={runOptimization.isPending}
+                    className="gap-2"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {runOptimization.isPending ? "Auto-Assigning..." : "Auto-Assign Pending"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => sendSchedules.mutate()}
+                    disabled={sendSchedules.isPending}
+                    className="gap-2"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    {sendSchedules.isPending ? "Sending..." : "Send Schedules"}
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -183,7 +249,7 @@ export default function Scheduling() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-foreground">
-                      {schedule?.length || 0}
+                      {scheduledRequests.length}
                     </p>
                     <p className="text-xs text-muted-foreground">Scheduled Services</p>
                   </div>
@@ -199,7 +265,7 @@ export default function Scheduling() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-foreground">
-                      {technicianSchedules.length}
+                      {technicians?.filter((t: any) => t.status === 'available' || t.status === 'on_duty').length || 0}
                     </p>
                     <p className="text-xs text-muted-foreground">Active Technicians</p>
                   </div>
@@ -255,12 +321,12 @@ export default function Scheduling() {
                   No Schedule for this Date
                 </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  {canSchedule ? "Run the AI optimization to generate a schedule" : "Schedule will appear here when generated"}
+                  {canSchedule ? "Run auto-assignment to schedule pending requests" : "Schedule will appear here when generated"}
                 </p>
                 {canSchedule && (
                   <Button onClick={handleRunOptimization} disabled={runOptimization.isPending}>
                     <Sparkles className="h-4 w-4 mr-2" />
-                    Generate Schedule
+                    Auto-Assign Requests
                   </Button>
                 )}
               </CardContent>
@@ -284,8 +350,8 @@ export default function Scheduling() {
                       </div>
                       <Badge className="bg-blue-100 text-blue-800 border-blue-200 border">
                         {techSchedule.services.reduce(
-                          (total: number, s: ScheduledService) =>
-                            total + s.estimatedServiceDuration + s.estimatedTravelTime,
+                          (total: number, s: any) =>
+                            total + (s.estimatedDuration || 90),
                           0
                         )}{" "}
                         min
@@ -295,8 +361,8 @@ export default function Scheduling() {
                   <CardContent>
                     <div className="space-y-4">
                       {techSchedule.services
-                        .sort((a: ScheduledService, b: ScheduledService) => a.sequenceNumber - b.sequenceNumber)
-                        .map((service: ScheduledService, index: number) => (
+                        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                        .map((service: any, index: number) => (
                           <div
                             key={service.id}
                             className="flex items-start gap-4 p-4 border border-border rounded-lg hover:bg-muted/20 transition-colors"
@@ -308,15 +374,15 @@ export default function Scheduling() {
                               <div className="flex items-start justify-between">
                                 <div>
                                   <h4 className="font-medium text-foreground">
-                                    {service.container.containerCode}
+                                    {service.container?.containerCode || service.containerId}
                                   </h4>
                                   <p className="text-sm text-muted-foreground">
-                                    SR #{service.serviceRequest.requestNumber}
+                                    SR #{service.requestNumber}
                                   </p>
                                 </div>
                                 <div className="flex gap-2">
-                                  <Badge className={`${getPriorityBadge(service.serviceRequest.priority)} border text-xs`}>
-                                    {service.serviceRequest.priority}
+                                  <Badge className={`${getPriorityBadge(service.priority)} border text-xs`}>
+                                    {service.priority}
                                   </Badge>
                                   <Badge className={`${getStatusBadge(service.status)} border text-xs`}>
                                     {service.status}
@@ -324,20 +390,20 @@ export default function Scheduling() {
                                 </div>
                               </div>
                               <p className="text-sm text-foreground">
-                                {service.serviceRequest.issueDescription}
+                                {service.issueDescription}
                               </p>
                               <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                 <div className="flex items-center gap-1">
                                   <Clock className="h-3 w-3" />
-                                  {service.estimatedStartTime} - {service.estimatedEndTime}
+                                  {service.scheduledTimeWindow || 'ASAP'}
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <Package className="h-3 w-3" />
-                                  {service.estimatedServiceDuration} min
+                                  {service.estimatedDuration || 90} min
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <MapPin className="h-3 w-3" />
-                                  Travel: {service.estimatedTravelTime} min
+                                  {service.scheduledDate ? new Date(service.scheduledDate).toLocaleDateString() : 'Not scheduled'}
                                 </div>
                               </div>
                             </div>

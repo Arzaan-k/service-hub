@@ -4,15 +4,22 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { saveAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [fpEmail, setFpEmail] = useState("");
+  const [rpEmail, setRpEmail] = useState("");
+  const [rpCode, setRpCode] = useState("");
+  const [rpPassword, setRpPassword] = useState("");
 
   const loginMutation = useMutation({
-    mutationFn: async (data: { phoneNumber: string; verificationCode: string }) => {
+    mutationFn: async (data: { email: string; password: string }) => {
       const res = await apiRequest("POST", "/api/auth/login", data);
       return await res.json();
     },
@@ -35,10 +42,41 @@ export default function Login() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (phoneNumber && verificationCode.length === 6) {
-      loginMutation.mutate({ phoneNumber, verificationCode });
+    if (email && password) {
+      loginMutation.mutate({ email, password });
     }
   };
+
+  const forgotMutation = useMutation({
+    mutationFn: async (data: { email: string }) => {
+      const res = await apiRequest("POST", "/api/auth/forgot-password", data);
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "OTP sent", description: "Check your email for the verification code" });
+      setForgotOpen(false);
+      setResetOpen(true);
+      setRpEmail(fpEmail);
+      setRpCode(""); // Clear OTP field
+      setRpPassword(""); // Clear password field
+    },
+    onError: () => toast({ title: "Failed", description: "Could not send OTP", variant: "destructive" })
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: async (data: { email: string; code: string; newPassword: string }) => {
+      const res = await apiRequest("POST", "/api/auth/reset-password", data);
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Password reset", description: "You can login with your new password" });
+      setResetOpen(false);
+      setRpEmail("");
+      setRpCode("");
+      setRpPassword("");
+    },
+    onError: () => toast({ title: "Failed", description: "Could not reset password", variant: "destructive" })
+  });
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
@@ -54,38 +92,33 @@ export default function Login() {
             <p className="text-muted-foreground text-sm">Secure phone-based authentication</p>
           </div>
 
-          {/* Phone Authentication Form */}
+            {/* Email + Password Login */}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
-                <i className="fas fa-phone mr-2 text-primary"></i>Phone Number
+                <i className="fas fa-envelope mr-2 text-primary"></i>Email
               </label>
               <input
-                type="tel"
-                placeholder="+1 (555) 123-4567"
+                type="email"
+                placeholder="john@example.com"
                 className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                data-testid="input-phone"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                data-testid="input-email"
               />
-              <p className="mt-2 text-xs text-muted-foreground">
-                <i className="fas fa-info-circle mr-1"></i>
-                Enter registered phone number for WhatsApp verification
-              </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
-                <i className="fas fa-key mr-2 text-primary"></i>Verification Code
+                <i className="fas fa-lock mr-2 text-primary"></i>Password
               </label>
               <input
-                type="text"
-                maxLength={6}
-                placeholder="123456"
-                className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground text-center text-xl font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-                value={verificationCode}
-                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ""))}
-                data-testid="input-verification-code"
+                type="password"
+                placeholder="••••••••"
+                className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                data-testid="input-password"
               />
             </div>
 
@@ -114,6 +147,8 @@ export default function Login() {
               >
                 Create Account
               </button>
+              <span className="mx-2">•</span>
+              <button onClick={()=>setForgotOpen(true)} className="text-primary hover:underline font-medium">Forgot password?</button>
             </p>
           </div>
 
@@ -131,6 +166,48 @@ export default function Login() {
           </div>
         </div>
       </div>
+      {forgotOpen && (
+        <div className="fixed inset-0 bg-gray-900 flex items-center justify-center p-6 z-50">
+          <div className="bg-white border border-gray-200 rounded-2xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-semibold mb-6 text-gray-900 text-center">Forgot Password</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Email Address</label>
+                <Input placeholder="john@example.com" value={fpEmail} onChange={(e)=>setFpEmail(e.target.value)} />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700" onClick={()=>{setForgotOpen(false); setFpEmail("");}}>Cancel</button>
+                <button className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium" onClick={()=>forgotMutation.mutate({ email: fpEmail })} disabled={forgotMutation.isPending}>{forgotMutation.isPending ? 'Sending...' : 'Send OTP'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {resetOpen && (
+        <div className="fixed inset-0 bg-gray-900 flex items-center justify-center p-6 z-50">
+          <div className="bg-white border border-gray-200 rounded-2xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-semibold mb-6 text-gray-900 text-center">Reset Password</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Email Address</label>
+                <Input placeholder="john@example.com" value={rpEmail} onChange={(e)=>setRpEmail(e.target.value)} disabled />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">OTP Code</label>
+                <Input placeholder="123456" value={rpCode} onChange={(e)=>setRpCode(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">New Password</label>
+                <Input placeholder="••••••••" type="password" value={rpPassword} onChange={(e)=>setRpPassword(e.target.value)} />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700" onClick={()=>{setResetOpen(false); setRpEmail(""); setRpCode(""); setRpPassword("");}}>Cancel</button>
+                <button className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium" onClick={()=>resetMutation.mutate({ email: rpEmail, code: rpCode, newPassword: rpPassword })} disabled={resetMutation.isPending}>{resetMutation.isPending ? 'Resetting...' : 'Reset Password'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

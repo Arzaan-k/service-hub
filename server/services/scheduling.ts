@@ -1,5 +1,6 @@
 import { storage } from "../storage";
-import { generateServiceSchedule } from "./gemini";
+// Fallback to local scheduler (no external AI dependency)
+import { schedulerService } from "./scheduler";
 
 export async function runDailyScheduler(): Promise<any> {
   try {
@@ -40,23 +41,17 @@ export async function runDailyScheduler(): Promise<any> {
       serviceAreas: tech.serviceAreas,
     }));
 
-    // Use Gemini AI to generate optimal schedule
-    const schedule = await generateServiceSchedule(requestsWithDetails, techniciansWithDetails);
-
-    // Update service requests with assignments
-    for (const assignment of schedule.assignments) {
-      for (const service of assignment.services) {
-        await storage.updateServiceRequest(service.serviceRequestId, {
-          assignedTechnicianId: assignment.technicianId,
-          status: "scheduled",
-          scheduledDate: new Date(service.estimatedStartTime),
-        });
-      }
+    // Use local proximity-based auto-assignment for each pending request
+    const results: any[] = [];
+    for (const req of pendingRequests) {
+      const res = await schedulerService.autoAssignBestTechnician(req.id);
+      results.push(res);
     }
 
-    console.log(`Scheduled ${pendingRequests.length} services across ${schedule.assignments.length} technicians`);
+    const assignedCount = results.filter(r => r.assigned).length;
+    console.log(`Scheduled ${assignedCount} services across available technicians`);
 
-    return { success: true, schedule };
+    return { success: true, assignments: results };
   } catch (error) {
     console.error("Scheduler error:", error);
     return { success: false, error: (error as Error).message };
