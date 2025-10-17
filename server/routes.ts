@@ -1438,26 +1438,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // WhatsApp webhook verification (accept both env names for token)
-  app.get("/api/webhook/whatsapp", (req, res) => {
+  // WhatsApp webhook verification (matches ngrok URL path)
+  app.get("/api/whatsapp/webhook", (req, res) => {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
 
-    const verified = !!mode && (
-      token === process.env.WEBHOOK_VERIFICATION_TOKEN ||
-      token === process.env.WHATSAPP_VERIFY_TOKEN
-    );
+    console.log('📱 WhatsApp webhook verification:', {
+      mode,
+      hasToken: !!token,
+      challenge: challenge ? '[PROVIDED]' : '[NONE]',
+      expectedToken: process.env.WHATSAPP_VERIFY_TOKEN ? '[SET]' : '[NOT SET]'
+    });
+
+    // Accept both token names for compatibility
+    const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || process.env.WEBHOOK_VERIFICATION_TOKEN;
+    const verified = mode === 'subscribe' && token === expectedToken;
 
     if (verified) {
+      console.log('✅ WhatsApp webhook verified successfully');
       res.status(200).send(challenge);
     } else {
-      res.sendStatus(403);
+      console.log('❌ WhatsApp webhook verification failed');
+      console.log('Expected token:', expectedToken ? 'is set' : 'is not set');
+      console.log('Received token:', token ? 'provided' : 'not provided');
+      res.status(403).send('Forbidden');
     }
   });
 
-  // WhatsApp webhook for incoming messages (consolidated to core handler)
-  app.post("/api/webhook/whatsapp", async (req, res) => {
+  // WhatsApp webhook for incoming messages (matches ngrok URL path)
+  app.post("/api/whatsapp/webhook", async (req, res) => {
     try {
       const { whatsappService } = await import('./services/whatsapp');
       const result = await whatsappService.handleWebhook(req.body);
@@ -2564,31 +2574,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // WhatsApp webhook verification for initial setup
-  app.get("/api/whatsapp/webhook", (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    console.log('Webhook verification attempt:', {
-      mode,
-      token: token ? '[REDACTED]' : 'none',
-      challenge,
-      expectedToken: process.env.WHATSAPP_VERIFY_TOKEN ? '[SET]' : '[NOT SET]'
-    });
-
-    // Verify the token matches your configured verify token
-    if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-      console.log('✅ WhatsApp webhook verified successfully');
-      res.status(200).send(challenge);
-    } else {
-      console.log('❌ WhatsApp webhook verification failed');
-      console.log('Expected token:', process.env.WHATSAPP_VERIFY_TOKEN ? 'is set' : 'is not set');
-      console.log('Received token:', token ? 'provided' : 'not provided');
-      console.log('Mode:', mode);
-      res.status(403).send('Forbidden');
-    }
-  });
 
   return httpServer;
 }

@@ -936,7 +936,7 @@ export async function handleWebhook(body: any): Promise<any> {
 
             if (!message) continue;
 
-            const from = message.from; // Sender's phone number
+            const from = message.from; // Sender's phone number (digits with country code)
             const messageId = message.id;
             const timestamp = message.timestamp;
 
@@ -986,8 +986,23 @@ export async function handleWebhook(body: any): Promise<any> {
               sentAt: new Date(parseInt(timestamp) * 1000),
             });
 
-            // Process the message based on type and user role
-            await processIncomingMessage(message, user, roleData, session);
+            // Special test number flow: prompt for role selection first
+            const isTestNumber = typeof from === 'string' && from.replace(/\D/g, '') === '917021307474';
+            const testingRole = (session.conversationState as any)?.testingRole;
+            if (isTestNumber && !testingRole) {
+              await sendInteractiveButtons(
+                from,
+                '🧪 Select role to test WhatsApp flow:',
+                [
+                  { id: 'test_role_technician', title: '🔧 Technician' },
+                  { id: 'test_role_client', title: '🏢 Client' }
+                ]
+              );
+              // Do not continue processing until role selected
+            } else {
+              // Process the message based on type and user role (with possible testing override)
+              await processIncomingMessage(message, user, roleData, session);
+            }
 
             // Update session timestamp
             await storage.updateWhatsappSession(session.id, {
@@ -1044,9 +1059,13 @@ async function handleTextMessage(message: any, user: any, roleData: any, session
   const text = message.text?.body?.toLowerCase().trim();
   const from = message.from;
 
-  if (user.role === 'client') {
+  // Testing override for the special number: route by chosen role
+  const isTestNumber = typeof from === 'string' && from.replace(/\D/g, '') === '917021307474';
+  const testingRole = session.conversationState?.testingRole as string | undefined;
+
+  if (user.role === 'client' || (isTestNumber && testingRole === 'client')) {
     await handleClientTextMessage(text, from, user, roleData, session);
-  } else if (user.role === 'technician') {
+  } else if (user.role === 'technician' || (isTestNumber && testingRole === 'technician')) {
     await handleTechnicianTextMessage(text, from, user, roleData, session);
   } else {
     await sendTextMessage(from, 'Your role is not recognized. Please contact support.');
@@ -1592,9 +1611,20 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
   // Update conversation state based on button click
   const conversationState = session.conversationState || {};
 
-  if (user.role === 'client') {
+  // Testing override: let the special number choose a role
+  const isTestNumber = typeof from === 'string' && from.replace(/\D/g, '') === '917021307474';
+  if (isTestNumber && (buttonId === 'test_role_technician' || buttonId === 'test_role_client')) {
+    const testingRole = buttonId === 'test_role_technician' ? 'technician' : 'client';
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: { ...(conversationState || {}), testingRole }
+    });
+    await sendTextMessage(from, `🧪 Testing as ${testingRole}. Continue your flow.`);
+    return;
+  }
+
+  if (user.role === 'client' || (isTestNumber && session.conversationState?.testingRole === 'client')) {
     await handleClientButtonClick(buttonId, from, user, session, conversationState);
-  } else if (user.role === 'technician') {
+  } else if (user.role === 'technician' || (isTestNumber && session.conversationState?.testingRole === 'technician')) {
     await handleTechnicianButtonClick(buttonId, from, user, session, conversationState);
   }
 }
