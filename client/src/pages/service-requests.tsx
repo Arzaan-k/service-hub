@@ -34,6 +34,9 @@ interface ServiceRequest {
   status: string;
   priority: string;
   issueDescription: string;
+  beforePhotos?: string[];
+  afterPhotos?: string[];
+  resolutionNotes?: string;
   container?: {
     id: string;
     containerCode: string;
@@ -431,6 +434,62 @@ export default function ServiceRequests() {
                         )}
                       </div>
                     </div>
+
+                    {/* Technician uploads & report */}
+                    {(request.beforePhotos?.length || request.afterPhotos?.length || request.resolutionNotes) && (
+                      <div className="mt-4 border-t border-border pt-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-muted-foreground mb-2">Before Photos</p>
+                            <div className="flex flex-wrap gap-2">
+                              {request.beforePhotos?.map((ref: string, idx: number) => (
+                                <a
+                                  key={`before-${idx}`}
+                                  className="block w-24 h-24 bg-muted rounded overflow-hidden border"
+                                  href={`/api/whatsapp/media/${encodeURIComponent(ref)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={ref}
+                                >
+                                  <img className="w-full h-full object-cover" src={`/api/whatsapp/media/${encodeURIComponent(ref)}`} />
+                                </a>
+                              ))}
+                              {(!request.beforePhotos || request.beforePhotos.length === 0) && (
+                                <span className="text-xs text-muted-foreground">No photos</span>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-muted-foreground mb-2">After Photos</p>
+                            <div className="flex flex-wrap gap-2">
+                              {request.afterPhotos?.map((ref: string, idx: number) => (
+                                <a
+                                  key={`after-${idx}`}
+                                  className="block w-24 h-24 bg-muted rounded overflow-hidden border"
+                                  href={`/api/whatsapp/media/${encodeURIComponent(ref)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={ref}
+                                >
+                                  <img className="w-full h-full object-cover" src={`/api/whatsapp/media/${encodeURIComponent(ref)}`} />
+                                </a>
+                              ))}
+                              {(!request.afterPhotos || request.afterPhotos.length === 0) && (
+                                <span className="text-xs text-muted-foreground">No photos</span>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-muted-foreground mb-2">Signed Report</p>
+                            {request.resolutionNotes ? (
+                              <pre className="text-xs whitespace-pre-wrap bg-muted rounded p-2 border max-h-40 overflow-auto">{request.resolutionNotes}</pre>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No report</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex flex-wrap gap-2 pt-4 border-t border-border">
                       {request.status === "pending" && (

@@ -432,13 +432,6 @@ export const WHATSAPP_TEMPLATES = {
       {
         type: "FOOTER",
         text: "Reply URGENT for immediate callback"
-      },
-      {
-        type: "BUTTONS",
-        buttons: [
-          { type: "QUICK_REPLY", text: "View Details" },
-          { type: "QUICK_REPLY", text: "Call Support" }
-        ]
       }
     ]
   },
@@ -456,14 +449,6 @@ export const WHATSAPP_TEMPLATES = {
       {
         type: "BODY",
         text: "Container {{1}} needs attention within 24 hours.\n\nIssue: {{2}}\n\nService will be scheduled automatically.\n\nService Request #{{3}}"
-      },
-      {
-        type: "BUTTONS",
-        buttons: [
-          { type: "QUICK_REPLY", text: "Approve Service" },
-          { type: "QUICK_REPLY", text: "Schedule Later" },
-          { type: "QUICK_REPLY", text: "More Info" }
-        ]
       }
     ]
   },
@@ -481,7 +466,7 @@ export const WHATSAPP_TEMPLATES = {
       },
       {
         type: "BODY",
-        text: "Container: {{1}}\nDate: {{2}}\nTime Window: {{3}}\nTechnician: {{4}}\n\nTrack status: {{5}}\n\n[Button: Reschedule] [Button: Cancel]"
+        text: "Container: {{1}}\nDate: {{2}}\nTime Window: {{3}}\nTechnician: {{4}}\n\nTrack status: {{5}}"
       }
     ]
   },
@@ -498,7 +483,7 @@ export const WHATSAPP_TEMPLATES = {
       },
       {
         type: "BODY",
-        text: "Total Services: {{1}}\n\nServices scheduled for tomorrow. Check your dashboard for full details.\n\n[Button: Acknowledge]"
+        text: "Total Services: {{1}}\n\nServices scheduled for tomorrow. Check your dashboard for full details."
       }
     ]
   },
@@ -516,7 +501,7 @@ export const WHATSAPP_TEMPLATES = {
       },
       {
         type: "BODY",
-        text: "Invoice #{{1}}\nService: {{2}}\nAmount: ₹{{3}}\nDue Date: {{4}}\n\nPDF: {{5}}\n\n[Button: Pay Now] [Button: View Details]"
+        text: "Invoice #{{1}}\nService: {{2}}\nAmount: ₹{{3}}\nDue Date: {{4}}\n\nPDF: {{5}}"
       }
     ]
   },
@@ -533,7 +518,7 @@ export const WHATSAPP_TEMPLATES = {
       },
       {
         type: "BODY",
-        text: "Invoice #{{1}} is due on {{2}}\nAmount: ₹{{3}}\n\nPay now to avoid late fees.\n\n[Button: Pay Now]"
+        text: "Invoice #{{1}} is due on {{2}}\nAmount: ₹{{3}}\n\nPay now to avoid late fees."
       }
     ]
   },
@@ -570,14 +555,6 @@ export const WHATSAPP_TEMPLATES = {
       {
         type: "BODY",
         text: "Service request received. Please check your dashboard for details and confirm parts availability."
-      },
-      {
-        type: "BUTTONS",
-        buttons: [
-          { type: "QUICK_REPLY", text: "View Details" },
-          { type: "QUICK_REPLY", text: "Start Service" },
-          { type: "QUICK_REPLY", text: "Need Help" }
-        ]
       }
     ]
   },
@@ -595,14 +572,6 @@ export const WHATSAPP_TEMPLATES = {
       {
         type: "BODY",
         text: "Service completed successfully. Please complete documentation in your dashboard."
-      },
-      {
-        type: "BUTTONS",
-        buttons: [
-          { type: "QUICK_REPLY", text: "View Details" },
-          { type: "QUICK_REPLY", text: "Upload Photos" },
-          { type: "QUICK_REPLY", text: "Complete Report" }
-        ]
       }
     ]
   },
@@ -621,13 +590,6 @@ export const WHATSAPP_TEMPLATES = {
       {
         type: "BODY",
         text: "Container status updated. Check your dashboard for current information."
-      },
-      {
-        type: "BUTTONS",
-        buttons: [
-          { type: "QUICK_REPLY", text: "View Details" },
-          { type: "QUICK_REPLY", text: "Check Status" }
-        ]
       }
     ]
   },
@@ -658,14 +620,33 @@ export async function registerWhatsAppTemplate(templateConfig: any): Promise<any
   const token = WHATSAPP_TOKEN;
 
   try {
+    // Ensure WhatsApp configuration is available
+    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_TOKEN) {
+      throw new Error('WhatsApp configuration missing. Please set WA_PHONE_NUMBER_ID and CLOUD_API_ACCESS_TOKEN environment variables.');
+    }
+
+    // Check if template already exists
+    const existingTemplates = await getWhatsAppTemplates();
+    const existingTemplate = existingTemplates.data?.find((t: any) => t.name === templateConfig.name);
+
+    if (existingTemplate) {
+      console.log(`Template ${templateConfig.name} already exists, skipping registration`);
+      return { message: 'Template already exists', template: existingTemplate };
+    }
+
+    // Filter out button components as WhatsApp Business API doesn't support them in message templates
+    const whatsappTemplate = {
+      name: templateConfig.name,
+      category: templateConfig.category,
+      language: templateConfig.language,
+      components: templateConfig.components.filter((component: any) =>
+        component.type !== 'BUTTONS'
+      )
+    };
+
     const response = await axios.post(
       url,
-      {
-        name: templateConfig.name,
-        language: templateConfig.language,
-        category: templateConfig.category,
-        components: templateConfig.components
-      },
+      whatsappTemplate,
       {
         headers: {
           "Content-Type": "application/json",
@@ -673,13 +654,20 @@ export async function registerWhatsAppTemplate(templateConfig: any): Promise<any
         },
       }
     );
+    console.log('WhatsApp template registration success:', response.data);
     return response.data;
   } catch (error: any) {
-    console.error("WhatsApp template registration error:", error.response?.data || error.message, {
-      url,
-      usingBusinessAccountId: !!baseId,
-      graphVersion: GRAPH_VERSION,
-    });
+    // Handle specific error cases
+    if (error.response?.status === 400 && error.response?.data?.error?.error_subcode === 2388024) {
+      console.log(`Template ${templateConfig.name} already exists with different content, skipping`);
+      return { message: 'Template already exists with different content' };
+    }
+
+    console.error("WhatsApp template registration error:", error.response?.data || error.message);
+    // Provide more detailed error information
+    if (error.response?.data) {
+      console.error("WhatsApp API Error Details:", error.response.data);
+    }
     throw error;
   }
 }
@@ -720,6 +708,24 @@ export async function deleteWhatsAppTemplate(templateName: string): Promise<any>
   }
 }
 
+export async function updateWhatsAppTemplate(templateName: string, templateData: any): Promise<any> {
+  // For WhatsApp Business API, templates cannot be updated directly.
+  // Instead, we need to delete the existing template and create a new one with a new name.
+  // This is a limitation of the WhatsApp Business API.
+
+  // First, delete the existing template
+  await deleteWhatsAppTemplate(templateName);
+
+  // Then create a new template with the updated data
+  const updatedTemplateData = {
+    ...templateData,
+    name: `${templateData.name}_updated_${Date.now()}`, // Create a new unique name
+  };
+
+  const result = await registerWhatsAppTemplate(updatedTemplateData);
+  return result;
+}
+
 // Template Registration Function
 export async function registerAllTemplates(): Promise<any> {
   const results = [];
@@ -727,8 +733,13 @@ export async function registerAllTemplates(): Promise<any> {
   for (const [key, template] of Object.entries(WHATSAPP_TEMPLATES)) {
     try {
       const result = await registerWhatsAppTemplate(template);
-      results.push({ template: key, status: 'success', data: result });
-      console.log(`✅ Template ${key} registered successfully`);
+      if (result.message?.includes('already exists')) {
+        results.push({ template: key, status: 'skipped', message: result.message });
+        console.log(`⏭️ Template ${key} already exists, skipping`);
+      } else {
+        results.push({ template: key, status: 'success', data: result });
+        console.log(`✅ Template ${key} registered successfully`);
+      }
     } catch (error: any) {
       results.push({ template: key, status: 'error', error: error.message });
       console.error(`❌ Failed to register template ${key}:`, error.message);
@@ -1295,8 +1306,78 @@ function getAlertEmoji(type: string): string {
 // Handle technician text messages with enhanced role-based features
 async function handleTechnicianTextMessage(text: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
+  const { classifyTechnicianIntent } = await import('./gemini');
   const technician = roleData; // roleData is the technician data for technicians
 
+  // AI-guided strict-but-flexible intent classification
+  const todays = await storage.getTechnicianSchedule(technician.id, new Date().toISOString());
+  const ai = await classifyTechnicianIntent(text, {
+    hasActiveSelection: Boolean(session.conversationState?.currentServiceId),
+    todaysServices: (todays || []).map((r: any) => ({ id: r.id, requestNumber: r.requestNumber })),
+    step: session.conversationState?.step
+  });
+
+  // Map intents to actions; fallback to rule keywords
+  switch (ai.intent) {
+    case 'view_profile': {
+      await sendTextMessage(from, `👤 Profile\n\nName: ${user.name}\nCode: ${technician.employeeCode}\nStatus: ${technician.status}`);
+      return;
+    }
+    case 'view_schedule': {
+      await handleTechnicianSchedule(from, technician, storage);
+      return;
+    }
+    case 'start_service':
+    case 'select_service': {
+      await presentTechnicianServiceList(from, technician, storage, session);
+      return;
+    }
+    case 'confirm_start_service': {
+      await startService(from, user, session.conversationState);
+      return;
+    }
+    case 'upload_before_photos': {
+      await setAwaitingUploadStep('awaiting_before_photos', from, session, storage);
+      return;
+    }
+    case 'upload_after_photos': {
+      await setAwaitingUploadStep('awaiting_after_photos', from, session, storage);
+      return;
+    }
+    case 'upload_report':
+    case 'upload_photos': {
+      await setAwaitingUploadStep('awaiting_report', from, session, storage);
+      return;
+    }
+    case 'complete_service': {
+      await completeService(from, user, session.conversationState);
+      return;
+    }
+    case 'back': {
+      // Clear current selection and return to main menu
+      await storage.updateWhatsappSession(session.id, { conversationState: {} });
+    await sendInteractiveButtons(
+        from,
+        `👋 Hello ${user.name}!\n\n🔧 Employee Code: ${technician.employeeCode}\n📍 Status: ${technician.status.toUpperCase()}\n\nWhat would you like to do?`,
+        [
+        { id: 'view_profile', title: '👤 View Profile' },
+          { id: 'view_schedule', title: '📋 View Schedule' },
+          { id: 'start_service', title: '🔧 Start Service' },
+        { id: 'update_status', title: '📊 Update Status' },
+          { id: 'emergency_help', title: '🆘 Emergency' }
+        ]
+      );
+      return;
+    }
+    case 'help':
+      // fallthrough to keyword help below
+      break;
+    case 'unknown':
+    default:
+      break;
+  }
+
+  // Keyword fallback
   if (text.includes('schedule') || text.includes('today')) {
     await handleTechnicianSchedule(from, technician, storage);
   } else if (text.includes('performance') || text.includes('stats')) {
@@ -1308,27 +1389,72 @@ async function handleTechnicianTextMessage(text: string, from: string, user: any
   } else if (text.includes('help')) {
     await sendInteractiveButtons(
       from,
-      '🤖 *Technician Commands*\n\n• "schedule" - View daily schedule\n• "performance" - View performance stats\n• "location" - Location & route info\n• "inventory" - Check parts inventory',
+      '🤖 *Technician Commands*\n\n• "schedule" - View daily schedule\n• "start service" - Choose job to start\n• "upload before/after" - Add photos\n• "complete" - Complete service',
       [
         { id: 'view_schedule', title: '📋 Today\'s Schedule' },
-        { id: 'view_performance', title: '📊 Performance' },
-        { id: 'update_location', title: '📍 Update Location' },
-        { id: 'check_inventory', title: '📦 Check Inventory' }
+        { id: 'start_service', title: '🔧 Start Service' },
+        { id: 'upload_photos', title: '📸 Upload Docs' },
+        { id: 'complete_service', title: '✅ Complete' }
       ]
     );
   } else {
-    // Enhanced default response for technicians
+    // Default dynamic menu
     await sendInteractiveButtons(
       from,
       `👋 Hello ${user.name}!\n\n🔧 Employee Code: ${technician.employeeCode}\n📍 Status: ${technician.status.toUpperCase()}\n\nWhat would you like to do?`,
       [
+        { id: 'view_profile', title: '👤 View Profile' },
         { id: 'view_schedule', title: '📋 View Schedule' },
         { id: 'start_service', title: '🔧 Start Service' },
-        { id: 'update_status', title: '📊 Update Status' },
-        { id: 'emergency_help', title: '🆘 Emergency' }
+        { id: 'complete_service', title: '✅ Complete Service' },
+        { id: 'upload_photos', title: '📸 Upload Docs' }
       ]
     );
   }
+}
+
+// Present today's services to select from; supports backtracking
+async function presentTechnicianServiceList(from: string, technician: any, storage: any, session: any): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const todayRequests = await storage.getTechnicianSchedule(technician.id, today);
+
+  if (!todayRequests || todayRequests.length === 0) {
+    await sendTextMessage(from, '✅ No services scheduled today.');
+    return;
+  }
+
+  const listItems = todayRequests.slice(0, 10).map((req: any, idx: number) => ({
+    id: `select_service_${req.id}`,
+    title: `${idx + 1}. ${req.requestNumber || req.id}`,
+    description: (req.issueDescription || 'Service')
+  }));
+
+  await storage.updateWhatsappSession(session.id, {
+    conversationState: {
+      ...(session.conversationState || {}),
+      flow: 'tech_service',
+      step: 'awaiting_service_selection',
+      selectableServiceIds: todayRequests.map((r: any) => r.id)
+    }
+  });
+
+  await sendListMessage(
+    from,
+    'Select the service to begin:',
+    'Select Service',
+    listItems
+  );
+}
+
+async function setAwaitingUploadStep(step: 'awaiting_before_photos' | 'awaiting_after_photos' | 'awaiting_report', from: string, session: any, storage: any): Promise<void> {
+  await storage.updateWhatsappSession(session.id, {
+    conversationState: {
+      ...(session.conversationState || {}),
+      step
+    }
+  });
+  const label = step === 'awaiting_before_photos' ? 'before photos' : step === 'awaiting_after_photos' ? 'after photos' : 'signed report (image or PDF)';
+  await sendTextMessage(from, `📎 Please upload ${label} now.`);
 }
 
 // Helper function to handle technician schedule
@@ -1703,6 +1829,18 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
   const { storage } = await import('../storage');
 
   switch (buttonId) {
+    case 'view_profile':
+      {
+        const technician = await storage.getTechnicianByUserId(user.id);
+        if (technician) {
+          await sendTextMessage(
+            from,
+            `👤 Profile\n\nName: ${user.name}\nCode: ${technician.employeeCode}\nStatus: ${technician.status}\nSkills: ${Array.isArray(technician.skills) ? technician.skills.join(', ') : 'N/A'}`
+          );
+        }
+      }
+      break;
+
     case 'acknowledge_schedule':
       await acknowledgeSchedule(from, user, conversationState);
       break;
@@ -1720,6 +1858,28 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
       break;
 
     case 'complete_service':
+      // Gate completion: require at least one before, one after, and report present
+      if (!conversationState?.currentServiceId) {
+        await sendTextMessage(from, '❌ No active service selected.');
+        break;
+      }
+      {
+        const service = await storage.getServiceRequest(conversationState.currentServiceId);
+        const hasBefore = Array.isArray(service?.beforePhotos) && service!.beforePhotos!.length > 0;
+        const hasAfter = Array.isArray(service?.afterPhotos) && service!.afterPhotos!.length > 0;
+        const hasReport = typeof service?.resolutionNotes === 'string' && service!.resolutionNotes!.toString().toLowerCase().includes('report');
+        if (!hasBefore || !hasAfter || !hasReport) {
+          await sendInteractiveButtons(
+            from,
+            '⛔ Completion requires before photos, after photos, and a signed report. Please upload the missing items.',
+            [
+              { id: 'upload_photos', title: '📸 Upload Docs' },
+              { id: 'back', title: '⬅️ Back' }
+            ]
+          );
+          break;
+        }
+      }
       await completeService(from, user, conversationState);
       break;
 
@@ -1745,6 +1905,20 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
 
     case 'skip_service':
       await skipService(from, user, conversationState);
+      break;
+
+    case 'back':
+      await storage.updateWhatsappSession(session.id, { conversationState: {} });
+      await sendInteractiveButtons(
+        from,
+        'Back to main menu.',
+        [
+          { id: 'view_schedule', title: '📋 View Schedule' },
+          { id: 'start_service', title: '🔧 Start Service' },
+          { id: 'upload_photos', title: '📸 Upload Docs' },
+          { id: 'complete_service', title: '✅ Complete' }
+        ]
+      );
       break;
 
     case 'submit_timesheet':
@@ -1775,34 +1949,101 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
 async function handleListSelection(listId: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const conversationState = session.conversationState || {};
 
-  // Handle service request container selection
+  // Technician service selection via list
+  if (user.role === 'technician' && listId.startsWith('select_service_')) {
+    const { storage } = await import('../storage');
+    const serviceId = listId.replace('select_service_', '');
+
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        currentServiceId: serviceId,
+        step: 'service_selected'
+      }
+    });
+
+    await sendInteractiveButtons(
+      from,
+      'Service selected. What would you like to do?',
+      [
+        { id: 'start_service', title: '🔧 Start Service' },
+        { id: 'upload_photos', title: '📸 Upload Docs' },
+        { id: 'complete_service', title: '✅ Complete' },
+        { id: 'back', title: '⬅️ Back' }
+      ]
+    );
+    return;
+  }
+
+  // Handle service request container selection (client flow)
   if (conversationState.flow === 'service_request' && conversationState.step === 'awaiting_container_selection') {
     await serviceRequestViaWhatsApp.handleContainerListSelection(listId, from, user, session);
-  } else {
-    await sendTextMessage(from, `Selected option: ${listId}`);
+    return;
   }
+
+  await sendTextMessage(from, `Selected option: ${listId}`);
 }
 
 // Handle media messages (photos, videos, documents) with role-based handling
 async function handleMediaMessage(message: any, user: any, roleData: any, session: any): Promise<void> {
   const from = message.from;
 
-  if (user.role === 'technician') {
-    // Technicians can send media for service documentation
-    await sendTextMessage(from, '📷 Media received! Please use the mobile app to properly attach photos to specific service requests.');
-  } else if (user.role === 'client') {
-    // Clients can send media for service requests
-    await sendTextMessage(from, '📷 Media received! If this is related to a service request, please use the mobile app or mention the request number.');
-  } else {
-    await sendTextMessage(from, 'Media received. Please contact support for assistance.');
-  }
-  // For now, acknowledge media receipt
-  await sendTextMessage(from, '📎 Media received. Thank you for the documentation.');
+  const { storage } = await import('../storage');
 
-  // In the future, this could process images for:
-  // - Container damage assessment
-  // - Service completion photos
-  // - Document uploads
+  // WhatsApp media payload structure varies by type
+  const mediaType = message.type; // 'image' | 'video' | 'document'
+  const media = (message as any)[mediaType];
+  const mediaId = media?.id || media?.media_id;
+  const caption = media?.caption || '';
+
+  // If technician is in a specific upload step, attach to current service
+  if (user.role === 'technician' && session.conversationState?.currentServiceId) {
+    const step = session.conversationState?.step;
+    const serviceId = session.conversationState.currentServiceId as string;
+
+    // For MVP, we store the WhatsApp media ID strings in beforePhotos/afterPhotos arrays
+    // A separate job or admin can exchange IDs for CDN links if needed.
+    const service = await storage.getServiceRequest(serviceId);
+    if (!service) {
+      await sendTextMessage(from, '❌ Service not found. Please select the service again.');
+      return;
+    }
+
+    const beforePhotos = Array.isArray(service.beforePhotos) ? service.beforePhotos.slice() : [];
+    const afterPhotos = Array.isArray(service.afterPhotos) ? service.afterPhotos.slice() : [];
+
+    if (step === 'awaiting_before_photos') {
+      if (mediaId) beforePhotos.push(`wa:${mediaId}`);
+      await storage.updateServiceRequest(serviceId, { beforePhotos });
+      await sendTextMessage(from, '✅ Before photo saved. Send more or choose "Upload Docs" to continue.');
+      return;
+    }
+
+    if (step === 'awaiting_after_photos') {
+      if (mediaId) afterPhotos.push(`wa:${mediaId}`);
+      await storage.updateServiceRequest(serviceId, { afterPhotos });
+      await sendTextMessage(from, '✅ After photo saved. Send more or choose "Complete" to finalize.');
+      return;
+    }
+
+    if (step === 'awaiting_report') {
+      // Save report as a text note containing media reference; UI can render link via proxy
+      const existing = typeof service.resolutionNotes === 'string' ? service.resolutionNotes : '';
+      const reportNote = `${existing}\nReport: ${mediaType.toUpperCase()} wa:${mediaId} ${caption}`.trim();
+      await storage.updateServiceRequest(serviceId, { resolutionNotes: reportNote });
+      await sendTextMessage(from, '✅ Report received. You can now complete the service.');
+      return;
+    }
+  }
+
+  // Default acknowledgements
+  if (user.role === 'client') {
+    await sendTextMessage(from, '📷 Media received! Mention the request number to attach it to a service.');
+  } else if (user.role === 'technician') {
+    await sendTextMessage(from, '📷 Media received! Use the buttons to attach to a selected service.');
+  } else {
+    await sendTextMessage(from, '📎 Media received.');
+  }
 }
 
 // Complete Service Request Flow via WhatsApp (PRD Section 4.4.1)
@@ -2555,52 +2796,101 @@ export class CustomerCommunicationService {
 
   // Send alert notification to customer (PRD 4.2.2)
   async sendAlertNotification(alertId: string, customerId: string): Promise<void> {
+    let templateName: string;
+    let parameters: string[];
+
     const alert = await this.storage.getAlert(alertId);
     const container = await this.storage.getContainer(alert.containerId);
     const customer = await this.storage.getCustomer(customerId);
 
-    if (!alert || !container || !customer) return;
-
-    const customerUser = await this.storage.getUser(customer.userId);
-    if (!customerUser) return;
-
-    let templateName: string;
-    let parameters: string[];
-
-    if (['critical', 'high'].includes(alert.severity)) {
-      templateName = 'high_alert_notification';
-      parameters = [
-        container.containerCode,
-        alert.title,
-        container.currentLocation?.address || 'Unknown',
-        alert.serviceRequestId || 'TBD'
-      ];
-    } else {
-      templateName = 'container_status_update';
-      parameters = [
-        container.containerCode,
-        alert.severity.toUpperCase(),
-        container.currentLocation?.address || 'Unknown',
-        new Date(alert.detectedAt).toLocaleString()
-      ];
+    if (!alert || !container || !customer) {
+      console.error(`Missing data for alert notification: alert=${!!alert}, container=${!!container}, customer=${!!customer}`);
+      return;
     }
 
-    await sendTemplateMessage(customerUser.phoneNumber, templateName, 'en', parameters);
+    const customerUser = await this.storage.getUser(customer.userId);
+    if (!customerUser) {
+      console.error(`Customer user not found for customer ${customerId}`);
+      return;
+    }
 
-    // Log the communication
-    await this.storage.createWhatsappMessage({
-      recipientType: 'customer',
-      recipientId: customerUser.id,
-      phoneNumber: customerUser.phoneNumber,
-      messageType: 'template',
-      templateName,
-      messageContent: { alert, container, parameters },
-      whatsappMessageId: `alert_${alertId}_${Date.now()}`,
-      status: 'sent',
-      relatedEntityType: 'alert',
-      relatedEntityId: alertId,
-      sentAt: new Date(),
-    });
+    // Check if customer has WhatsApp enabled
+    if (!customer.whatsappNumber) {
+      console.error(`Customer ${customerId} does not have WhatsApp number configured`);
+      return;
+    }
+
+    try {
+      if (['critical', 'high'].includes(alert.severity)) {
+        templateName = alert.severity === 'critical' ? 'CRITICAL_ALERT' : 'HIGH_ALERT';
+        parameters = [
+          container.containerCode,
+          alert.title,
+          container.currentLocation?.address || 'Unknown Location',
+          alert.id.substring(0, 8) // Short alert ID
+        ];
+      } else {
+        // For other severities, send a text message
+        const textMessage = `⚠️ ${alert.severity.toUpperCase()} ALERT\n\nContainer: ${container.containerCode}\nIssue: ${alert.title}\nLocation: ${container.currentLocation?.address || 'Unknown'}\n\nPlease check your dashboard for details.`;
+
+        try {
+          await sendTemplateMessage(
+            customer.whatsappNumber,
+            'HIGH_ALERT',
+            'en',
+            [
+              container.containerCode,
+              alert.title,
+              container.currentLocation?.address || 'Unknown Location',
+              alert.id.substring(0, 8)
+            ]
+          );
+        } catch (templateError) {
+          console.error('Template message failed, sending text message instead');
+          await sendTextMessage(customer.whatsappNumber, textMessage);
+        }
+        return;
+      }
+
+      await sendTemplateMessage(customer.whatsappNumber, templateName, 'en', parameters);
+
+      // Log the communication
+      await this.storage.createWhatsappMessage({
+        recipientType: 'customer',
+        recipientId: customerUser.id,
+        phoneNumber: customer.whatsappNumber,
+        messageType: 'template',
+        templateName,
+        messageContent: { alert, container, parameters },
+        whatsappMessageId: `alert_${alertId}_${Date.now()}`,
+        status: 'sent',
+        relatedEntityType: 'alert',
+        relatedEntityId: alertId,
+        sentAt: new Date(),
+      });
+
+      console.log(`✅ WhatsApp alert notification sent successfully for alert ${alertId}`);
+    } catch (templateError) {
+      console.error('Template message failed, sending text message instead');
+      const textMessage = `🚨 ${alert.severity.toUpperCase()} ALERT\n\nContainer: ${container.containerCode}\nIssue: ${alert.title}\nLocation: ${container.currentLocation?.address || 'Unknown'}\n\nService will be scheduled shortly.`;
+      await sendTextMessage(customer.whatsappNumber, textMessage);
+    }
+  }
+
+  // Auto-trigger alert notifications when alerts are created (PRD 4.2.2)
+  async triggerAlertNotification(alertId: string): Promise<void> {
+    try {
+      const alert = await this.storage.getAlert(alertId);
+      if (!alert) return;
+
+      const container = await this.storage.getContainer(alert.containerId);
+      if (!container || !container.currentCustomerId) return;
+
+      // Send notification to the customer assigned to this container
+      await this.sendAlertNotification(alertId, container.currentCustomerId);
+    } catch (error) {
+      console.error(`Failed to trigger alert notification for alert ${alertId}:`, error);
+    }
   }
 
   // Send service schedule confirmation to customer (PRD 4.5.2)
@@ -2867,5 +3157,6 @@ export const whatsappService = {
   },
   sendAlertNotification: async (alertId: string, customerId: string) => {
     return await customerCommunicationService.sendAlertNotification(alertId, customerId);
-  }
+  },
+  updateWhatsAppTemplate,
 };

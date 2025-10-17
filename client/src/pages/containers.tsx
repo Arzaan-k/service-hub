@@ -51,12 +51,26 @@ export default function Containers() {
   const [sortBy, setSortBy] = useState("containerCode");
 
   const { data: containers = [], isLoading } = useQuery({
-    queryKey: ["/api/containers"],
+    queryKey: ["/api/containers/all"],
     queryFn: async () => {
-      const res = await fetch("/api/containers", {
-        headers: { "x-user-id": authToken || "" },
-      });
-      return res.json();
+      const pageSize = 500;
+      let offset = 0;
+      let all: any[] = [];
+      let total = Infinity;
+
+      while (offset < total) {
+        const res = await fetch(`/api/containers?limit=${pageSize}&offset=${offset}` , {
+          headers: { "x-user-id": authToken || "" },
+        });
+        const chunk = await res.json();
+        const hdr = res.headers.get('x-total-count');
+        total = hdr ? parseInt(hdr, 10) : (offset + chunk.length);
+        all = all.concat(chunk);
+        if (chunk.length < pageSize) break;
+        offset += pageSize;
+      }
+
+      return all;
     },
   });
 

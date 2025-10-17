@@ -1,0 +1,134 @@
+{
+  "meta": {
+    "project": "Container Service Management System",
+    "date": "2025-10-16",
+    "prepared_by": "Product Management Team"
+  },
+  "product_overview": "The Container Service Management System is an AI-driven, automation-first platform designed to optimize and automate container fleet management, predictive maintenance, and end-to-end service delivery. It provides real-time monitoring of IoT-enabled and manually tracked containers, intelligent scheduling of technicians, and seamless customer communication via WhatsApp Business API integration.",
+  "core_goals": [
+    "Reduce service turnaround time (TAT) by 80% through automation",
+    "Achieve 95% first-time fix rate for service requests",
+    "Automate 90% of service workflows, minimizing manual intervention",
+    "Enhance customer satisfaction with transparent, real-time communication and billing",
+    "Provide end-to-end visibility of container health, alerts, and service lifecycle",
+    "Optimize technician scheduling and resource allocation using AI-driven models",
+    "Integrate with IoT devices, inventory systems, payment gateways, and communication channels",
+    "Ensure system scalability, reliability, security, and compliance with data protection regulations"
+  ],
+  "key_features": [
+    "Comprehensive container registry supporting IoT-enabled and manual tracking",
+    "Real-time container health monitoring with Orbcomm API integration",
+    "AI-powered alert detection and classification with automated resolution workflows",
+    "Client portal with real-time dashboards, service request management, and billing",
+    "Technician management with WhatsApp-based interactive workflows and GPS tracking",
+    "Intelligent scheduling engine that optimizes daily technician assignments via AI algorithms",
+    "Automated invoicing and payment tracking integrated with Razorpay/Stripe",
+    "End-to-end WhatsApp Business API integration using customizable interactive message templates",
+    "Inventory management integration with real-time spare parts tracking and reservation",
+    "Comprehensive admin dashboard with metrics, real-time monitoring, manual overrides, reports, and analytics",
+    "Automated customer feedback collection and issue escalation workflows",
+    "Robust security, performance, scalability, and monitoring infrastructure"
+  ],
+  "user_flow_summary": [
+    "Automated service flow triggered by IoT device alerts with AI classification, auto service request creation, parts availability checks, invoicing, scheduling, and technician dispatch via WhatsApp",
+    "Manual service request flow for non-IoT containers initiated via service coordinator dashboard and following automated workflows",
+    "Client self-service through authenticated portal for monitoring containers, requesting services, and receiving notifications",
+    "Technician daily workflow managed via WhatsApp interactive messages for acknowledging schedules, travel start, arrivals, service start/completion, and documentation uploads",
+    "Invoice and payment flow differentiated for prepaid and postpaid customers with real-time payment gateway integration and automated reminders"
+  ],
+  "validation_criteria": [
+    "90 IoT containers connected and syncing real-time data with at least 80% alert detection accuracy",
+    "End-to-end WhatsApp notifications functioning for clients, technicians, and administrators",
+    "System uptime maintained above 99% with API p95 response times under 500ms",
+    "Successful handling of 1000+ concurrent users and 10,000 daily Orbcomm API calls",
+    "AI alert classification achieving over 85% accuracy and scheduling optimizer performing within 5% of optimal",
+    "Client and admin dashboards responsive with real-time WebSocket updates",
+    "Comprehensive coverage of manual and automated service request workflows tested through UAT",
+    "Security compliance including multi-factor authentication, encrypted data storage, and audit logging implemented"
+  ],
+  "code_summary": {
+    "tech_stack": [
+      "TypeScript",
+      "Express",
+      "Vite + React",
+      "Drizzle ORM (PostgreSQL)",
+      "WebSockets (ws)",
+      "TailwindCSS",
+      "Google Gemini (genai)",
+      "Axios"
+    ],
+    "features": [
+      {
+        "name": "Server bootstrap & routing",
+        "description": "Express server with API routes, WebSocket, webhook, schedulers, and static serving.",
+        "files": [
+          "server/index.ts",
+          "server/routes.ts",
+          "server/vite.ts"
+        ]
+      },
+      {
+        "name": "Database schema",
+        "description": "Drizzle schema for users, customers, technicians, containers, alerts, service requests, WhatsApp sessions/messages.",
+        "files": [
+          "shared/schema.ts",
+          "drizzle.config.ts",
+          "migrations/0000_opposite_anthem.sql"
+        ]
+      },
+      {
+        "name": "Storage layer",
+        "description": "DatabaseStorage implementing CRUD and domain operations for alerts, service requests, technicians, WhatsApp, inventory, schedules.",
+        "files": [
+          "server/storage.ts",
+          "server/db.ts"
+        ]
+      },
+      {
+        "name": "WhatsApp integration",
+        "description": "WhatsApp messaging utilities, webhook processing, role-based flows for clients and technicians, media handling placeholder, customer communications.",
+        "files": [
+          "server/services/whatsapp.ts"
+        ]
+      },
+      {
+        "name": "Gemini AI services",
+        "description": "Alert classification, schedule generation, invoice text, and technician intent classification.",
+        "files": [
+          "server/services/gemini.ts"
+        ]
+      },
+      {
+        "name": "Scheduling services",
+        "description": "Daily scheduling, notifications to technicians, proximity-based auto-assignment.",
+        "files": [
+          "server/services/scheduler.ts",
+          "server/services/scheduling.ts"
+        ]
+      },
+      {
+        "name": "Orbcomm integration",
+        "description": "IoT device data ingestion and anomaly detection.",
+        "files": [
+          "server/services/orbcomm.ts",
+          "server/services/orbcomm-real.ts",
+          "server/services/orbcomm-enhanced.ts",
+          "server/services/orbcomm-integ.ts"
+        ]
+      },
+      {
+        "name": "Client app (React)",
+        "description": "Dashboard with maps, alerts, service requests, WhatsApp Hub, technician schedule.",
+        "files": [
+          "client/index.html",
+          "client/src/main.tsx",
+          "client/src/App.tsx",
+          "client/src/pages/dashboard.tsx",
+          "client/src/pages/whatsapp-hub.tsx",
+          "client/src/pages/service-requests.tsx",
+          "client/src/components/**"
+        ]
+      }
+    ]
+  }
+}

@@ -189,3 +189,105 @@ Create a clear, concise description suitable for invoicing, highlighting the wor
     return "Container service completed";
   }
 }
+
+// Lightweight free-tier intent classifier for technician WhatsApp messages
+// Keeps a strict set of intents but remains flexible to common phrasings
+export type TechnicianIntent =
+  | "view_profile"
+  | "view_schedule"
+  | "start_service"
+  | "select_service"
+  | "confirm_start_service"
+  | "complete_service"
+  | "upload_photos"
+  | "upload_before_photos"
+  | "upload_after_photos"
+  | "upload_report"
+  | "back"
+  | "help"
+  | "unknown";
+
+export interface TechnicianIntentResult {
+  intent: TechnicianIntent;
+  // When relevant, include a selected service request id or number the tech referenced
+  serviceRequestId?: string;
+  // Free-form arguments for future extensibility
+  args?: Record<string, any>;
+}
+
+export async function classifyTechnicianIntent(
+  messageText: string,
+  context: { hasActiveSelection?: boolean; todaysServices?: Array<{ id: string; requestNumber?: string }>; step?: string } = {}
+): Promise<TechnicianIntentResult> {
+  try {
+    const systemPrompt = `You are a precise assistant that classifies field technician WhatsApp messages into a small fixed intent set for a workflow chatbot.
+Only return JSON. Prefer these intents exactly: view_profile, view_schedule, start_service, select_service, confirm_start_service, complete_service, upload_photos, upload_before_photos, upload_after_photos, upload_report, back, help, unknown.
+If the message refers to a specific service (by SR number or index), include serviceRequestId when possible using the provided context.`;
+
+    const prompt = {
+      message: messageText,
+      context,
+      requiredIntents: [
+        "view_profile",
+        "view_schedule",
+        "start_service",
+        "select_service",
+        "confirm_start_service",
+        "complete_service",
+        "upload_photos",
+        "upload_before_photos",
+        "upload_after_photos",
+        "upload_report",
+        "back",
+        "help",
+        "unknown"
+      ]
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            intent: {
+              type: "string",
+              enum: [
+                "view_profile",
+                "view_schedule",
+                "start_service",
+                "select_service",
+                "confirm_start_service",
+                "complete_service",
+                "upload_photos",
+                "upload_before_photos",
+                "upload_after_photos",
+                "upload_report",
+                "back",
+                "help",
+                "unknown"
+              ]
+            },
+            serviceRequestId: { type: "string" },
+            args: { type: "object" }
+          },
+          required: ["intent"]
+        }
+      },
+      contents: JSON.stringify(prompt)
+    });
+
+    const raw = response.text;
+    if (!raw) return { intent: "unknown" };
+    const parsed = JSON.parse(raw);
+    return {
+      intent: (parsed.intent as TechnicianIntent) || "unknown",
+      serviceRequestId: parsed.serviceRequestId,
+      args: parsed.args
+    };
+  } catch {
+    return { intent: "unknown" };
+  }
+}

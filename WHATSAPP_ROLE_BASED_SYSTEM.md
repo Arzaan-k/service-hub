@@ -187,6 +187,185 @@ Use the provided test script to verify the system:
 node test-whatsapp-auth.js
 ```
 
+## Enhanced WhatsApp Hub Features
+
+### Template Management
+The WhatsApp Hub now includes comprehensive template management:
+
+#### 📋 Template Display
+- **Status Filtering**: Filter templates by status (All, Approved, Pending, Rejected)
+- **Detailed Information**: View template components, buttons, and structure
+- **Real-time Status**: Live status updates from WhatsApp Business API
+
+#### ✏️ Template Editing
+- **Create Templates**: Full template creation with component builder
+- **Edit Existing**: Modify approved templates (creates new version)
+- **Component Management**: Add/edit headers, bodies, footers, and buttons
+- **Button Types**: Support for Quick Reply, Phone Number, and URL buttons
+- **Preview Mode**: Live preview of template structure before saving
+
+#### 🛠️ Template Operations
+- **Register All**: Bulk register all local templates to WhatsApp
+- **Delete Templates**: Remove unwanted templates
+- **Status Management**: Track template approval status
+
+#### Template Structure Support
+```
+Header (Optional): Title or greeting text
+Body (Required): Main message content with variables {{1}}, {{2}}
+Footer (Optional): Additional information
+```
+
+#### Template Categories
+- **Utility**: Service notifications, alerts, confirmations
+- **Marketing**: Promotional messages, announcements
+- **Authentication**: Verification codes, security alerts
+
+## WhatsApp Business API Setup Guide
+
+### Prerequisites
+1. **Facebook Developer Account** - Create at https://developers.facebook.com
+2. **WhatsApp Business Account** - Set up through Facebook Business
+3. **WhatsApp Business API Access** - Request access through Meta
+
+### Environment Variables Required
+
+```bash
+# WhatsApp Business API Configuration
+WA_PHONE_NUMBER_ID=your_phone_number_id
+CLOUD_API_ACCESS_TOKEN=your_access_token
+WEBHOOK_VERIFICATION_TOKEN=your_webhook_token
+```
+
+### Getting WhatsApp Credentials
+
+#### Step 1: Create Facebook App
+1. Go to https://developers.facebook.com
+2. Click "Create App" → "Business"
+3. Add WhatsApp product to your app
+
+#### Step 2: Configure WhatsApp
+1. In your app dashboard, go to WhatsApp → API Setup
+2. Copy the **Phone Number ID**
+3. Generate an **Access Token** from Meta Business settings
+
+#### Step 3: Set Webhook
+1. Set webhook URL: `https://your-domain.com/api/webhook/whatsapp`
+2. Set verification token (any string you choose)
+3. Subscribe to: messages, message_status, message_template_status
+
+### Testing WhatsApp Integration
+
+#### Quick Setup Test
+```bash
+# Run the setup script
+node setup-whatsapp.js
+
+# Test WhatsApp integration
+node test-whatsapp-integration.js
+```
+
+#### Manual Testing
+1. **Check Configuration**:
+```bash
+curl -s http://localhost:5000/api/whatsapp/templates
+```
+
+2. **Register Templates**:
+```bash
+curl -X POST http://localhost:5000/api/whatsapp/templates/register-all
+```
+
+3. **Send Test Message**:
+```bash
+curl -X POST http://localhost:5000/api/whatsapp/send \
+  -H "Content-Type: application/json" \
+  -d '{"to":"+1234567890","text":"Test message"}'
+```
+
+### Common Issues & Solutions
+
+#### ❌ "WhatsApp configuration missing"
+**Solution**: Set environment variables in `.env`:
+```bash
+WA_PHONE_NUMBER_ID=your_phone_number_id
+CLOUD_API_ACCESS_TOKEN=your_access_token
+```
+
+#### ❌ "Template registration failed"
+**Causes**:
+1. Invalid template structure
+2. Missing WhatsApp API permissions
+3. Template name already exists
+
+**Solutions**:
+1. Check template format matches WhatsApp API requirements
+2. Ensure you have "Business Messaging" permission
+3. Use unique template names
+
+#### ❌ "Message sending failed"
+**Causes**:
+1. Invalid phone number format
+2. Phone number not opted in to WhatsApp Business
+3. Rate limiting
+
+**Solutions**:
+1. Use international format: `+1234567890`
+2. Ensure customer has opted in to WhatsApp messaging
+3. Implement rate limiting in your code
+
+### Client Notification System
+
+#### Automatic Alert Notifications
+- **Triggered by**: Alert creation/update
+- **Recipients**: Container owners via WhatsApp
+- **Templates Used**:
+  - `CRITICAL_ALERT` for critical issues
+  - `HIGH_ALERT` for high priority issues
+  - Text messages for other severities
+
+#### Container Updates
+- **Service Scheduling**: Clients notified when services are scheduled
+- **Status Changes**: Container status updates sent automatically
+- **Invoice Generation**: Billing notifications via WhatsApp
+
+#### Setup Requirements
+1. **Customer WhatsApp Numbers**: Ensure customers have `whatsappNumber` field populated
+2. **Template Approval**: Templates must be approved by WhatsApp
+3. **Opt-in Confirmation**: Customers must opt-in to WhatsApp messaging
+
+### Template Structure Requirements
+
+#### Header Component
+```json
+{
+  "type": "HEADER",
+  "format": "TEXT",
+  "text": "Alert Title"
+}
+```
+
+#### Body Component (Required)
+```json
+{
+  "type": "BODY",
+  "text": "Container {{1}} needs attention. Issue: {{2}}"
+}
+```
+
+#### Footer Component
+```json
+{
+  "type": "FOOTER",
+  "text": "Reply URGENT for immediate assistance"
+}
+```
+
+### Template Variables
+- Use `{{1}}`, `{{2}}`, etc. for dynamic content
+- Variables are replaced when sending messages
+- Maximum 10 variables per template
+
 ## Future Enhancements
 
 Potential future improvements:
@@ -195,6 +374,7 @@ Potential future improvements:
 - 📈 Advanced analytics and reporting
 - 🔔 Proactive notification system
 - 🌐 Multi-language support
+- 📊 Template performance analytics
 
 ## Deployment Notes
 

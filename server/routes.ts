@@ -5,7 +5,9 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import axios from "axios";
 import { storage } from "./storage";
-import { authenticateUser, requireRole, authorizeWhatsAppMessage, AuthRequest } from "./middleware/auth";
+import { z } from "zod";
+import { authenticateUser, requireRole, authorizeWhatsAppMessage } from "./middleware/auth";
+import type { AuthRequest } from "./middleware/auth";
 import { classifyAlert } from "./services/gemini";
 import { fetchOrbcommDeviceData, detectAnomalies } from "./services/orbcomm";
 import {
@@ -357,7 +359,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Container routes
-  app.get("/api/containers", authenticateUser, async (req: any, res) => {
+  // Zod: pagination schema
+  const paginationSchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100000).default(50),
+    offset: z.coerce.number().int().min(0).default(0),
+  });
+
+  // Zod: container create/update schema (subset)
+  const containerBodySchema = z.object({
+    containerCode: z.string().min(1),
+    type: z.enum(["refrigerated", "dry", "special", "iot_enabled", "manual"]).optional(),
+    hasIot: z.boolean().optional(),
+    orbcommDeviceId: z.string().optional(),
+    status: z.enum(["active", "in_service", "maintenance", "retired", "in_transit", "for_sale", "sold"]).optional(),
+    currentCustomerId: z.string().uuid().optional().nullable(),
+    currentLocation: z.any().optional(),
+  });
+
+  // Zod: service request create schema (subset)
+  const srCreateSchema = z.object({
+    containerId: z.string().min(1),
+    customerId: z.string().min(1),
+    priority: z.enum(["urgent", "high", "normal", "low"]).optional(),
+    issueDescription: z.string().min(3),
+    estimatedDuration: z.number().int().positive().optional(),
+  });
+
+  app.get("/api/containers", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const role = (req.user?.role || '').toLowerCase();
       const isPrivileged = ["admin", "coordinator", "super_admin"].includes(role);
@@ -368,6 +396,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(own);
       }
       const containers = await storage.getAllContainers();
+      // Optional pagination: only apply if query includes limit or offset
+      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+      if (hasLimit || hasOffset) {
+        const { limit, offset } = paginationSchema.parse(req.query);
+        res.setHeader('x-total-count', String(containers.length));
+        return res.json(containers.slice(offset, offset + limit));
+      }
+      // Default: return full list (backward compatible)
       res.json(containers);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch containers" });
@@ -394,26 +431,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/containers", authenticateUser, requireRole("admin"), async (req, res) => {
+  app.post("/api/containers", authenticateUser, requireRole("admin"), async (req: AuthRequest, res) => {
     try {
-      const container = await storage.createContainer(req.body);
+      const parsed = containerBodySchema.parse(req.body);
+      const container = await storage.createContainer(parsed);
       broadcast({ type: "container_created", data: container });
       res.json(container);
     } catch (error) {
-      res.status(500).json({ error: "Failed to create container" });
+      const message = (error as any)?.issues ? "Validation failed" : "Failed to create container";
+      res.status(400).json({ error: message, details: (error as any)?.issues });
     }
   });
 
-  app.put("/api/containers/:id", authenticateUser, requireRole("admin"), async (req, res) => {
+  app.put("/api/containers/:id", authenticateUser, requireRole("admin"), async (req: AuthRequest, res) => {
     try {
-      const container = await storage.updateContainer(req.params.id, req.body);
+      const parsed = containerBodySchema.partial().parse(req.body);
+      const container = await storage.updateContainer(req.params.id, parsed);
       if (!container) {
         return res.status(404).json({ error: "Container not found" });
       }
       broadcast({ type: "container_updated", data: container });
       res.json(container);
     } catch (error) {
-      res.status(500).json({ error: "Failed to update container" });
+      const message = (error as any)?.issues ? "Validation failed" : "Failed to update container";
+      res.status(400).json({ error: message, details: (error as any)?.issues });
     }
   });
 
@@ -646,20 +687,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Service Request routes
-  app.get("/api/service-requests", authenticateUser, async (req: any, res) => {
+  app.get("/api/service-requests", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const role = (req.user?.role || '').toLowerCase();
       if (role === 'client') {
         const customer = await storage.getCustomerByUserId(req.user.id);
         if (!customer) return res.json([]);
-        return res.json(await storage.getServiceRequestsByCustomer(customer.id));
+        const list = await storage.getServiceRequestsByCustomer(customer.id);
+        const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+        const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+        if (hasLimit || hasOffset) {
+          const { limit, offset } = paginationSchema.parse(req.query);
+          res.setHeader('x-total-count', String(list.length));
+          return res.json(list.slice(offset, offset + limit));
+        }
+        return res.json(list);
       }
       if (role === 'technician') {
         const tech = await storage.getTechnician(req.user.id);
         if (!tech) return res.json([]);
-        return res.json(await storage.getServiceRequestsByTechnician(tech.id));
+        const list = await storage.getServiceRequestsByTechnician(tech.id);
+        const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+        const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+        if (hasLimit || hasOffset) {
+          const { limit, offset } = paginationSchema.parse(req.query);
+          res.setHeader('x-total-count', String(list.length));
+          return res.json(list.slice(offset, offset + limit));
+        }
+        return res.json(list);
       }
       const requests = await storage.getAllServiceRequests();
+      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+      if (hasLimit || hasOffset) {
+        const { limit, offset } = paginationSchema.parse(req.query);
+        res.setHeader('x-total-count', String(requests.length));
+        return res.json(requests.slice(offset, offset + limit));
+      }
       res.json(requests);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch service requests" });
@@ -675,18 +739,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/service-requests", authenticateUser, async (req: any, res) => {
+  app.post("/api/service-requests", authenticateUser, async (req: AuthRequest, res) => {
     try {
-      let { containerId, customerId, priority, issueDescription, estimatedDuration } = req.body || {};
+      const body = srCreateSchema.safeParse(req.body || {});
+      if (!body.success) {
+        return res.status(400).json({ error: "Validation failed", details: body.error.issues });
+      }
+      let { containerId, customerId, priority, issueDescription, estimatedDuration } = body.data;
 
       const role = (req.user?.role || '').toLowerCase();
       if (role === 'client') {
         const me = await storage.getCustomerByUserId(req.user.id);
         if (me) customerId = me.id;
-      }
-
-      if (!containerId || !customerId || !issueDescription) {
-        return res.status(400).json({ error: "containerId, customerId and issueDescription are required" });
       }
 
       const [container, customer] = await Promise.all([
@@ -701,8 +765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid customerId" });
       }
 
-      const allowedPriorities = new Set(["urgent", "high", "normal", "low"]);
-      const finalPriority = allowedPriorities.has(String(priority)) ? String(priority) : "normal";
+      const finalPriority = priority || "normal";
 
       // Choose a valid createdBy: prefer req.user if exists in DB, else fallback to customer's userId
       let createdById = req.user?.id as string | undefined;
@@ -739,11 +802,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json({ ...request, autoAssigned: false });
-    } catch (error: any) {
-      console.error("Create service request error:", error?.message || error);
-      // postgres/drizzle often includes 'detail' with FK failures
+    } catch (error: unknown) {
+      const message = (error as any)?.issues ? "Validation failed" : "Failed to create service request";
       const details = (error as any)?.cause?.message || (error as any)?.detail;
-      res.status(500).json({ error: "Failed to create service request", details });
+      res.status(400).json({ error: message, details });
     }
   });
 
@@ -1403,6 +1465,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('WhatsApp webhook error:', error);
       res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
+
+  // WhatsApp media proxy: fetch media binary via Graph API and stream
+  app.get("/api/whatsapp/media/:ref", async (req, res) => {
+    try {
+      const ref = decodeURIComponent(req.params.ref || "");
+      if (!ref.startsWith("wa:")) return res.status(400).send("Invalid reference");
+
+      const mediaId = ref.slice(3);
+      const { default: axios } = await import("axios");
+      const { WHATSAPP_TOKEN, GRAPH_VERSION } = await (async () => {
+        const mod = await import("./services/whatsapp");
+        // Pull token safely from module scope; fallback to env if not exported
+        const token = (mod as any).WHATSAPP_TOKEN || process.env.CLOUD_API_ACCESS_TOKEN || "";
+        const ver = (mod as any).GRAPH_VERSION || process.env.GRAPH_VERSION || "v20.0";
+        return { WHATSAPP_TOKEN: token, GRAPH_VERSION: ver };
+      })();
+
+      if (!WHATSAPP_TOKEN) return res.status(500).send("Missing WhatsApp token");
+
+      // Step 1: get media URL
+      const metaUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`;
+      const metaResp = await axios.get(metaUrl, { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+      const directUrl = metaResp.data?.url;
+      if (!directUrl) return res.status(404).send("Media URL not found");
+
+      // Step 2: download binary
+      const binResp = await axios.get(directUrl, {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+        responseType: "arraybuffer"
+      });
+
+      // Infer content type
+      const contentType = binResp.headers["content-type"] || "application/octet-stream";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.status(200).send(Buffer.from(binResp.data));
+    } catch (error: any) {
+      console.error("WhatsApp media proxy error:", error?.response?.data || error?.message);
+      res.status(500).send("Media fetch failed");
     }
   });
 
@@ -2296,7 +2399,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // WhatsApp template management routes
-  app.post("/api/whatsapp/templates/register-all", authenticateUser, requireRole("admin"), async (req, res) => {
+  app.post("/api/whatsapp/templates/register-all", async (req, res) => {
     try {
       const { registerAllTemplates, WHATSAPP_TEMPLATES } = await import('./services/whatsapp');
       const results = await registerAllTemplates();
@@ -2306,17 +2409,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/whatsapp/templates", authenticateUser, async (req, res) => {
+  app.get("/api/whatsapp/templates", async (req, res) => {
     try {
       const { getWhatsAppTemplates, WHATSAPP_TEMPLATES } = await import('./services/whatsapp');
       const templates = await getWhatsAppTemplates();
       res.json({ templates, localTemplates: WHATSAPP_TEMPLATES });
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch templates" });
+      console.error("Templates fetch error:", error);
+      // Return local templates as fallback
+      res.json({ templates: [], localTemplates: WHATSAPP_TEMPLATES });
     }
   });
 
-  app.post("/api/whatsapp/templates/register", authenticateUser, requireRole("admin"), async (req, res) => {
+  app.post("/api/whatsapp/templates/register", async (req, res) => {
     try {
       const { registerWhatsAppTemplate } = await import('./services/whatsapp');
       const result = await registerWhatsAppTemplate(req.body);
@@ -2326,7 +2431,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/whatsapp/templates/:name", authenticateUser, requireRole("admin"), async (req, res) => {
+  app.put("/api/whatsapp/templates/:name", async (req, res) => {
+    try {
+      const { updateWhatsAppTemplate } = await import('./services/whatsapp');
+      const result = await updateWhatsAppTemplate(req.params.name, req.body);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Template update failed" });
+    }
+  });
+
+  app.delete("/api/whatsapp/templates/:name", async (req, res) => {
     try {
       const { deleteWhatsAppTemplate } = await import('./services/whatsapp');
       const result = await deleteWhatsAppTemplate(req.params.name);
