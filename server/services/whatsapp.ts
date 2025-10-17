@@ -867,6 +867,86 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
       }
     }
 
+    // Special case for test number +917021307474 - create mock user for testing
+    const isTestNumber = cleanPhone === '917021307474';
+    if (isTestNumber && !user) {
+      console.log('🧪 Creating mock user for testing WhatsApp flows');
+      // Create a test user for the test number
+      user = await storage.createUser({
+        phoneNumber: cleanPhone,
+        name: 'Test User',
+        email: 'test@example.com',
+        role: 'client', // Default role, can be overridden by testingRole
+        password: 'test123',
+        isActive: true,
+        whatsappVerified: true,
+        emailVerified: false
+      });
+
+      // Create mock client profile for testing
+      const roleData = await storage.createCustomer({
+        userId: user.id,
+        companyName: 'Test Company',
+        contactPerson: 'Test Contact',
+        email: 'test@example.com',
+        phone: cleanPhone,
+        whatsappNumber: cleanPhone,
+        customerTier: 'standard',
+        paymentTerms: 'net30',
+        billingAddress: 'Test Address',
+        status: 'active'
+      });
+
+      return { authorized: true, user, roleData };
+    }
+
+    // Override user role if testingRole is set for the test number
+    if (isTestNumber && user && user.role !== 'admin') {
+      const { storage } = await import('../storage');
+      const session = await storage.getWhatsappSession(cleanPhone);
+      const testingRole = (session?.conversationState as any)?.testingRole;
+
+      if (testingRole && testingRole !== user.role) {
+        console.log(`🧪 Overriding role to ${testingRole} for testing`);
+        // Update user role for testing
+        user = await storage.updateUser(user.id, { role: testingRole });
+
+        // Create appropriate profile based on testing role
+        let roleData = null;
+        if (testingRole === 'technician') {
+          // Create mock technician profile
+          roleData = await storage.createTechnician({
+            userId: user.id,
+            employeeCode: 'TEST001',
+            experienceLevel: 'senior',
+            skills: ['electrical', 'mechanical', 'refrigeration'],
+            baseLocation: { lat: 28.6139, lng: 77.2090 }, // Delhi coordinates
+            serviceAreas: ['Delhi', 'Noida', 'Gurgaon'],
+            status: 'available'
+          });
+        } else if (testingRole === 'client') {
+          // Use existing client profile or create if missing
+          roleData = await storage.getCustomerByUserId(user.id);
+          if (!roleData) {
+            roleData = await storage.createCustomer({
+              userId: user.id,
+              companyName: 'Test Company',
+              contactPerson: 'Test Contact',
+              email: 'test@example.com',
+              phone: cleanPhone,
+              whatsappNumber: cleanPhone,
+              customerTier: 'standard',
+              paymentTerms: 'net30',
+              billingAddress: 'Test Address',
+              status: 'active'
+            });
+          }
+        }
+
+        return { authorized: true, user, roleData };
+      }
+    }
+
     if (!user) {
       return {
         authorized: false,
