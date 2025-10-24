@@ -1,25 +1,42 @@
+import { config } from "dotenv";
+config(); // Load environment variables
+
 import axios from "axios";
 
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || "v20.0";
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID || "";
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WABA_ID || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "";
 const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
+console.log('WHATSAPP_TOKEN in whatsapp.ts:', WHATSAPP_TOKEN ? 'SET' : 'NOT SET');
 
 let RESOLVED_WABA_ID: string | null = WHATSAPP_BUSINESS_ACCOUNT_ID || null;
 
 async function resolveWabaId(): Promise<string> {
   if (RESOLVED_WABA_ID) return RESOLVED_WABA_ID;
-  if (!WHATSAPP_PHONE_NUMBER_ID) throw new Error("WA_PHONE_NUMBER_ID is not set");
   if (!WHATSAPP_TOKEN) throw new Error("CLOUD_API_ACCESS_TOKEN is not set");
 
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}?fields=whatsapp_business_account`;
-  const resp = await axios.get(url, {
-    headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-  });
-  const id = resp.data?.whatsapp_business_account?.id;
-  if (!id) throw new Error("Unable to resolve WhatsApp Business Account ID from phone number");
-  RESOLVED_WABA_ID = id;
-  return id;
+  // Prefer explicit business account id from env if present
+  if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
+    RESOLVED_WABA_ID = WHATSAPP_BUSINESS_ACCOUNT_ID;
+    return RESOLVED_WABA_ID;
+  }
+
+  // Try resolving via phone number id if available
+  if (WHATSAPP_PHONE_NUMBER_ID) {
+    try {
+      const url = `https://graph.facebook.com/${GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}?fields=whatsapp_business_account`;
+      const resp = await axios.get(url, { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+      const id = resp.data?.whatsapp_business_account?.id;
+      if (id) {
+        RESOLVED_WABA_ID = id;
+        return id;
+      }
+    } catch (e) {
+      console.warn('[whatsapp] Could not auto-resolve WABA ID; set WABA_ID to avoid this warning');
+    }
+  }
+
+  throw new Error('Unable to resolve WhatsApp Business Account ID. Set WABA_ID environment variable.');
 }
 
 const WHATSAPP_MESSAGES_URL = `https://graph.facebook.com/${GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
@@ -35,6 +52,12 @@ function ensureWhatsAppConfig() {
 
 function cleanPhone(number: string): string {
   return String(number || '').replace(/\D/g, '');
+}
+
+// Test number helpers (role-flow testing; production-safe)
+const ROLE_TEST_NUMBERS = new Set(['917021307474', '7021307474']);
+function isRoleTestNumber(input: string): boolean {
+  return ROLE_TEST_NUMBERS.has(cleanPhone(input));
 }
 
 export interface WhatsAppMessage {
@@ -63,8 +86,12 @@ export interface WhatsAppFlowData {
 
 export async function sendTextMessage(to: string, text: string): Promise<any> {
   try {
+    console.log('📤 Attempting to send WhatsApp message to:', to, 'Text:', text.substring(0, 50) + '...');
     ensureWhatsAppConfig();
     const toClean = cleanPhone(to);
+    console.log('📤 Cleaned phone number:', toClean);
+    console.log('📤 WhatsApp config check - Phone ID:', WHATSAPP_PHONE_NUMBER_ID ? 'SET' : 'NOT SET', 'Token:', WHATSAPP_TOKEN ? 'SET' : 'NOT SET');
+    
     const response = await axios.post(
       WHATSAPP_MESSAGES_URL,
       {
@@ -80,10 +107,11 @@ export async function sendTextMessage(to: string, text: string): Promise<any> {
         },
       }
     );
-    console.log('WhatsApp text send success:', response.data);
+    console.log('✅ WhatsApp text send success:', response.data);
     return response.data;
   } catch (error: any) {
-    console.error("WhatsApp send error:", error.response?.data || error.message);
+    console.error("❌ WhatsApp send error:", error.response?.data || error.message);
+    console.error("❌ Full error:", error);
     throw error;
   }
 }
@@ -610,6 +638,111 @@ export const WHATSAPP_TEMPLATES = {
         text: "Welcome to ContainerGenie! Use 'status', 'service', or 'invoice' commands to get started."
       }
     ]
+  },
+
+  // Enhanced Location Proof Templates (NEW)
+  TECHNICIAN_LOCATION_PROOF: {
+    name: "technician_location_proof_v1",
+    category: "UTILITY",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "Location Verification Required"
+      },
+      {
+        type: "BODY",
+        text: "Please send a photo proving you have arrived at Container {{1}} location.\n\nThis photo will be stored with the service record for quality assurance."
+      }
+    ]
+  },
+
+  LOCATION_PROOF_RECEIVED: {
+    name: "location_proof_received_v1",
+    category: "UTILITY",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "Location Proof Received"
+      },
+      {
+        type: "BODY",
+        text: "Thank you for submitting location proof for Container {{1}}.\n\nYou can now start the service. Tap the button below to proceed."
+      }
+    ]
+  },
+
+  // Enhanced Technician Templates (NEW)
+  TECHNICIAN_DAILY_BRIEF: {
+    name: "technician_daily_brief_v1",
+    category: "UTILITY",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "Good Morning!"
+      },
+      {
+        type: "BODY",
+        text: "Hello {{1}}, you have {{2}} services scheduled today.\n\nFirst service: {{3}} at {{4}}\n\nPlease confirm you've reviewed today's schedule."
+      }
+    ]
+  },
+
+  SERVICE_DOCUMENTATION_COMPLETE: {
+    name: "service_documentation_complete_v1",
+    category: "UTILITY",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "Documentation Complete"
+      },
+      {
+        type: "BODY",
+        text: "Service documentation for Request #{{1}} has been completed.\n\nBefore photos: {{2}}\nAfter photos: {{3}}\nLocation proof: {{4}}\n\nCustomer will be notified upon approval."
+      }
+    ]
+  },
+
+  // Enhanced Customer Service Templates (NEW)
+  SERVICE_APPROVAL_REQUEST: {
+    name: "service_approval_request_v1",
+    category: "UTILITY",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "Service Completion Pending Approval"
+      },
+      {
+        type: "BODY",
+        text: "Service for Container {{1}} has been completed by technician {{2}}.\n\nPlease review the documentation and approve to finalize the service."
+      }
+    ]
+  },
+
+  RESCHEDULE_CONFIRMATION: {
+    name: "reschedule_confirmation_v1",
+    category: "UTILITY",
+    language: "en",
+    components: [
+      {
+        type: "HEADER",
+        format: "TEXT",
+        text: "Service Rescheduled"
+      },
+      {
+        type: "BODY",
+        text: "This is an important update regarding your service request {{1}} for Container {{2}}. The service has been rescheduled to {{3}}.\n\nNew time slot: {{4}}\nAssigned technician: {{5}}"
+      }
+    ]
   }
 };
 
@@ -867,8 +1000,8 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
       }
     }
 
-    // Special case for test number +917021307474 - create mock user for testing
-    const isTestNumber = cleanPhone === '917021307474';
+    // Special case for test numbers: support country and local formats
+    const isTestNumber = cleanPhone === '917021307474' || cleanPhone === '7021307474' || cleanPhone === '917021037474';
     if (isTestNumber && !user) {
       console.log('🧪 Creating mock user for testing WhatsApp flows');
       // Create a test user for the test number
@@ -883,6 +1016,8 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
         emailVerified: false
       });
 
+      console.log('✅ Created test user:', user.id);
+
       // Create mock client profile for testing
       const roleData = await storage.createCustomer({
         userId: user.id,
@@ -896,6 +1031,8 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
         billingAddress: 'Test Address',
         status: 'active'
       });
+
+      console.log('✅ Created test client profile:', roleData?.id);
 
       return { authorized: true, user, roleData };
     }
@@ -1027,7 +1164,290 @@ export async function handleWebhook(body: any): Promise<any> {
               continue;
             }
 
-            // Authorize phone number and get user info
+             // Special test number flow: handle first before authorization
+            const cleanFrom = from.replace(/\D/g, '');
+            const isTestNumber = isRoleTestNumber(cleanFrom);
+            const isFlowTestNumber = typeof from === 'string' && from.replace(/\D/g, '') === '917021037474';
+
+            if (isTestNumber) {
+              console.log('🧪 Processing test number message');
+
+              // Get or create session for test number
+              let session = await storage.getWhatsappSession(from);
+              if (!session) {
+                // Create test user first
+                const testUser = await storage.createUser({
+                  phoneNumber: from.replace(/\D/g, ''),
+                  name: 'Test User',
+                  email: 'test@example.com',
+                  role: 'client',
+                  password: 'test123',
+                  isActive: true,
+                  whatsappVerified: true,
+                  emailVerified: false
+                });
+
+                // Create test client profile
+                await storage.createCustomer({
+                  userId: testUser.id,
+                  companyName: 'Test Company',
+                  contactPerson: 'Test Contact',
+                  email: 'test@example.com',
+                  phone: from.replace(/\D/g, ''),
+                  whatsappNumber: from.replace(/\D/g, ''),
+                  customerTier: 'standard',
+                  paymentTerms: 'net30',
+                  billingAddress: 'Test Address',
+                  status: 'active'
+                });
+
+                session = await storage.createWhatsappSession({
+                  phoneNumber: from,
+                  userId: testUser.id,
+                  conversationState: {},
+                  lastMessageAt: new Date(),
+                  isActive: true,
+                });
+
+                console.log('🧪 Created test session and profile for', from);
+              }
+
+              const testingRole = (session.conversationState as any)?.testingRole;
+
+               // If no role selected yet, handle selection or prompt
+               if (!testingRole) {
+                 // Always send an immediate text acknowledgement so the user sees a reply even if interactive fails
+                 try {
+                   await sendTextMessage(from, '🧪 Hi! Choose a role to test: reply with "technician" or "client". Buttons will appear shortly.');
+                 } catch (e) {
+                   console.error('🧪 Immediate text acknowledgement failed:', e);
+                 }
+                 // Handle interactive role selection buttons
+                 if (message.type === 'interactive' && message.interactive?.type === 'button_reply') {
+                   const buttonId = message.interactive.button_reply.id;
+                   if (buttonId === 'test_role_technician' || buttonId === 'test_role_client') {
+                     const selectedRole = buttonId === 'test_role_technician' ? 'technician' : 'client';
+                     await storage.updateWhatsappSession(session.id, {
+                       conversationState: { ...(session.conversationState || {}), testingRole: selectedRole }
+                     });
+                     await sendTextMessage(from, `🧪 Testing as ${selectedRole}. Continue your flow.`);
+
+                     // Show initial menu for convenience
+                     if (selectedRole === 'technician') {
+                       await sendInteractiveButtons(
+                         from,
+                         `🔧 Technician Mode Activated\n\n🧪 Test Number: ${from}\n👤 Role: ${selectedRole}\n\nWhat would you like to do?`,
+                         [
+                           { id: 'check_schedule', title: '📅 Check Schedule' },
+                           { id: 'switch_role', title: '🔄 Switch Role' }
+                         ]
+                       );
+                     } else {
+                       await sendInteractiveButtons(
+                         from,
+                         `🏢 Client Mode Activated\n\n🧪 Test Number: ${from}\n👤 Role: ${selectedRole}\n\nHow can I help you today?`,
+                         [
+                           { id: 'check_container_details', title: '📦 Check Container Details' },
+                           { id: 'request_service', title: '🔧 Request Service' },
+                           { id: 'check_service_status', title: '📋 Check Service Status' },
+                           { id: 'check_container_status', title: '📊 Check Container Status' },
+                           { id: 'switch_role', title: '🔄 Switch Role' }
+                         ]
+                       );
+                     }
+
+                     await storage.updateWhatsappSession(session.id, { lastMessageAt: new Date() });
+                     continue; // We've handled the selection, no need to fall through
+                   }
+                 }
+
+                 // Allow simple text-based selection
+                 if (message.type === 'text') {
+                   const text = message.text?.body?.toLowerCase().trim();
+                   if (text === 'technician' || text === 'tech') {
+                     await storage.updateWhatsappSession(session.id, {
+                       conversationState: { ...(session.conversationState || {}), testingRole: 'technician' }
+                     });
+                     await sendTextMessage(from, `🧪 Testing as Technician. Continue your flow.`);
+                     await storage.updateWhatsappSession(session.id, { lastMessageAt: new Date() });
+                     continue;
+                   } else if (text === 'client') {
+                     await storage.updateWhatsappSession(session.id, {
+                       conversationState: { ...(session.conversationState || {}), testingRole: 'client' }
+                     });
+                     await sendTextMessage(from, `🧪 Testing as Client. Continue your flow.`);
+                     await storage.updateWhatsappSession(session.id, { lastMessageAt: new Date() });
+                     continue;
+                   }
+                 }
+
+                 console.log('🧪 Test number first message - prompting for role selection');
+
+                 // Store the message for later processing
+                 await storage.createWhatsappMessage({
+                   recipientType: 'customer',
+                   recipientId: session.userId,
+                   phoneNumber: from,
+                   messageType: message.type,
+                   templateName: null,
+                   messageContent: message,
+                   whatsappMessageId: messageId,
+                   status: 'delivered',
+                   conversationId: session.id,
+                   relatedEntityType: 'whatsapp_inbound',
+                   relatedEntityId: messageId,
+                   sentAt: new Date(parseInt(timestamp) * 1000),
+                 });
+
+                 console.log('🧪 About to send role selection buttons to:', from);
+                 try {
+                   await sendInteractiveButtons(
+                     from,
+                     '🧪 Select role to test WhatsApp flow:',
+                     [
+                       { id: 'test_role_technician', title: '🔧 Technician' },
+                       { id: 'test_role_client', title: '🏢 Client' }
+                     ]
+                   );
+                   console.log('🧪 Role selection buttons sent successfully');
+                 } catch (error) {
+                   console.error('🧪 Failed to send role selection buttons:', error);
+                   // Fallback to text message
+                   await sendTextMessage(from, '🧪 Select role to test WhatsApp flow:\n\nReply with "technician" or "client"');
+                 }
+
+                 await storage.updateWhatsappSession(session.id, {
+                   lastMessageAt: new Date(),
+                 });
+                 continue; // Don't process the message yet
+               }
+
+              // For test number with role selected, use session data directly
+              // Get the test user and role data
+              if (!session.userId) {
+                await sendTextMessage(from, "Test session invalid. Please try again.");
+                continue;
+              }
+
+              const testUser = await storage.getUser(session.userId);
+              if (!testUser) {
+                await sendTextMessage(from, "Test user not found. Please try again.");
+                continue;
+              }
+
+              // Apply role override from testingRole
+              const overriddenUser = { ...testUser, role: testingRole };
+              let roleData = null;
+
+              if (testingRole === 'technician') {
+                roleData = await storage.getTechnicianByUserId(testUser.id);
+                if (!roleData) {
+                  // Create test technician profile
+                  roleData = await storage.createTechnician({
+                    userId: testUser.id,
+                    employeeCode: 'TEST001',
+                    experienceLevel: 'senior',
+                    skills: ['electrical', 'mechanical', 'refrigeration'],
+                    baseLocation: { lat: 28.6139, lng: 77.2090 },
+                    serviceAreas: ['Delhi', 'Noida', 'Gurgaon'],
+                    status: 'available'
+                  });
+                  console.log('🧪 Created test technician profile');
+                }
+              } else if (testingRole === 'client') {
+                roleData = await storage.getCustomerByUserId(testUser.id);
+                if (!roleData) {
+                  // Create test client profile
+                  roleData = await storage.createCustomer({
+                    userId: testUser.id,
+                    companyName: 'Test Company',
+                    contactPerson: 'Test Contact',
+                    email: 'test@example.com',
+                    phone: from.replace(/\D/g, ''),
+                    whatsappNumber: from.replace(/\D/g, ''),
+                    customerTier: 'standard',
+                    paymentTerms: 'net30',
+                    billingAddress: 'Test Address',
+                    status: 'active'
+                  });
+                  console.log('🧪 Created test client profile');
+                }
+              }
+
+              const user = overriddenUser;
+
+              // Process the message based on type and user role (with possible testing override)
+              await processIncomingMessage(message, user, roleData, session);
+
+              // Send a compact menu after processing to avoid duplicate prompts
+              try {
+                if (testingRole === 'technician') {
+                  await sendInteractiveButtons(
+                    from,
+                    `🔧 Technician Mode`,
+                    [
+                      { id: 'view_schedule', title: '📋 View Schedule' },
+                      { id: 'start_service', title: '🔧 Start Service' },
+                      { id: 'switch_role', title: '🔄 Switch Role' }
+                    ]
+                  );
+                } else if (testingRole === 'client') {
+                  await sendInteractiveButtons(
+                    from,
+                    `🏢 Client Mode`,
+                    [
+                      { id: 'request_service', title: '🔧 Request Service' },
+                      { id: 'check_status', title: '📊 Status' },
+                      { id: 'switch_role', title: '🔄 Switch Role' }
+                    ]
+                  );
+                }
+              } catch {}
+
+              await storage.updateWhatsappSession(session.id, {
+                lastMessageAt: new Date(),
+              });
+
+              // Broadcast the message to connected WebSocket clients
+              const broadcastWhatsAppMessage = (global as any).broadcastWhatsAppMessage;
+              if (broadcastWhatsAppMessage) {
+                broadcastWhatsAppMessage({
+                  from,
+                  message,
+                  timestamp: new Date(),
+                  userId: user.id,
+                  userRole: user.role,
+                  sessionId: session.id
+                }, user.id);
+              }
+               continue; // Skip normal flow for test number
+             }
+
+             // Flow test number: handle flow testing
+             if (isFlowTestNumber) {
+               console.log('🧪 Processing flow test number message');
+
+               if (message.type === 'interactive' && message.interactive?.type === 'button_reply') {
+                 const buttonId = message.interactive.button_reply.id;
+                 await handleFlowTestButtonClick(buttonId, from);
+               } else {
+                 // Send flow initiation message
+                 await sendInteractiveButtons(
+                   from,
+                   '🧪 *WhatsApp Flow Test Initiation*\n\nWelcome to ContainerGenie WhatsApp Flow Testing!\n\nChoose a flow to test:',
+                   [
+                     { id: 'test_client_flow', title: '🏢 Test Client Flow' },
+                     { id: 'test_technician_flow', title: '🔧 Test Technician Flow' },
+                     { id: 'test_alert_flow', title: '🚨 Test Alert Flow' },
+                     { id: 'test_service_flow', title: '🔧 Test Service Flow' }
+                   ]
+                 );
+               }
+
+               continue; // Skip normal flow for flow test number
+             }
+
+             // Normal authorization for non-test numbers
             const authResult = await authorizeWhatsAppMessage(from);
 
             if (!authResult.authorized) {
@@ -1066,23 +1486,8 @@ export async function handleWebhook(body: any): Promise<any> {
               sentAt: new Date(parseInt(timestamp) * 1000),
             });
 
-            // Special test number flow: prompt for role selection first
-            const isTestNumber = typeof from === 'string' && from.replace(/\D/g, '') === '917021307474';
-            const testingRole = (session.conversationState as any)?.testingRole;
-            if (isTestNumber && !testingRole) {
-              await sendInteractiveButtons(
-                from,
-                '🧪 Select role to test WhatsApp flow:',
-                [
-                  { id: 'test_role_technician', title: '🔧 Technician' },
-                  { id: 'test_role_client', title: '🏢 Client' }
-                ]
-              );
-              // Do not continue processing until role selected
-            } else {
-              // Process the message based on type and user role (with possible testing override)
-              await processIncomingMessage(message, user, roleData, session);
-            }
+            // Process the message based on type and user role
+            await processIncomingMessage(message, user, roleData, session);
 
             // Update session timestamp
             await storage.updateWhatsappSession(session.id, {
@@ -1115,6 +1520,36 @@ export async function handleWebhook(body: any): Promise<any> {
   }
 }
 
+
+// Handle flow test button clicks
+async function handleFlowTestButtonClick(buttonId: string, from: string): Promise<void> {
+  try {
+    switch (buttonId) {
+      case 'test_client_flow':
+        await sendTextMessage(from, '🏢 *Client Flow Test*\n\nTesting client functionalities:\n• Container status\n• Service requests\n• Invoice management\n• Alert monitoring\n\nReply with "status" to test container status.');
+        break;
+      case 'test_technician_flow':
+        await sendTextMessage(from, '🔧 *Technician Flow Test*\n\nTesting technician functionalities:\n• Daily schedule\n• Performance stats\n• Location management\n• Inventory status\n\nReply with "schedule" to test schedule view.');
+        break;
+      case 'test_alert_flow':
+        await sendTextMessage(from, '🚨 *Alert Flow Test*\n\nTesting alert notifications:\n• Critical alerts\n• High priority alerts\n• Resolution workflows\n\nSimulating an alert...');
+        // Simulate sending an alert
+        setTimeout(async () => {
+          await sendTextMessage(from, '🚨 *CRITICAL ALERT*\n\nContainer: TEST001\nIssue: Temperature anomaly\nLocation: Test Location\n\nA service technician will be assigned shortly.');
+        }, 1000);
+        break;
+      case 'test_service_flow':
+        await sendTextMessage(from, '🔧 *Service Flow Test*\n\nTesting service management:\n• Service request creation\n• Technician assignment\n• Service completion\n• Feedback collection\n\nService flow initiated.');
+        break;
+      default:
+        await sendTextMessage(from, '❓ Unknown test option. Please try again.');
+    }
+  } catch (error) {
+    console.error('Error handling flow test button:', error);
+    await sendTextMessage(from, '❌ Error in flow test. Please try again.');
+  }
+}
+
 // Process incoming WhatsApp messages based on user role and message type
 async function processIncomingMessage(message: any, user: any, roleData: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
@@ -1140,7 +1575,7 @@ async function handleTextMessage(message: any, user: any, roleData: any, session
   const from = message.from;
 
   // Testing override for the special number: route by chosen role
-  const isTestNumber = typeof from === 'string' && from.replace(/\D/g, '') === '917021307474';
+  const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
   const testingRole = session.conversationState?.testingRole as string | undefined;
 
   if (user.role === 'client' || (isTestNumber && testingRole === 'client')) {
@@ -1178,17 +1613,15 @@ async function handleClientTextMessage(text: string, from: string, user: any, ro
   } else if (text.includes('history') || text.includes('service history')) {
     await handleClientServiceHistory(from, customer, storage);
   } else {
-    // Enhanced default response with comprehensive options
+    // For any unrecognized text, send main menu
     await sendInteractiveButtons(
       from,
       `👋 Welcome ${customer.contactPerson}!\n\n🏢 ${customer.companyName}\n\nHow can I help you today?`,
       [
-        { id: 'check_status', title: '📊 Container Status' },
-        { id: 'view_alerts', title: '🚨 View Alerts' },
+        { id: 'check_containers', title: '📦 My Containers' },
         { id: 'request_service', title: '🔧 Request Service' },
-        { id: 'check_invoices', title: '💰 Check Invoices' },
-        { id: 'track_containers', title: '📍 Track Containers' },
-        { id: 'service_history', title: '📋 Service History' },
+        { id: 'check_services', title: '📋 Service History' },
+        { id: 'view_invoices', title: '💰 View Invoices' }
       ]
     );
   }
@@ -1196,19 +1629,67 @@ async function handleClientTextMessage(text: string, from: string, user: any, ro
 
 // Helper function to handle client container status requests
 async function handleClientContainerStatus(from: string, customer: any, storage: any): Promise<void> {
-      const containers = await storage.getContainersByCustomer(customer.id);
+  // Check if this is the test number and add mock containers if none exist
+  const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
+  let containers = await storage.getContainersByCustomer(customer.id);
+
+  // For test number, add mock containers if none exist
+  if (isTestNumber && (!containers || containers.length === 0)) {
+    console.log('🧪 Adding mock containers for client status testing');
+
+    // Create mock containers
+    const mockContainers = [
+      { code: 'CNT-TEST-001', type: 'refrigerated', status: 'active', issue: 'Temperature fluctuations' },
+      { code: 'CNT-TEST-002', type: 'dry', status: 'active', issue: 'Door sensor fault' },
+      { code: 'CNT-TEST-003', type: 'special', status: 'maintenance', issue: 'Power supply issues' }
+    ];
+
+    for (const mock of mockContainers) {
+      let container = await storage.getContainerByCode(mock.code);
+      if (!container) {
+        container = await storage.createContainer({
+          containerCode: mock.code,
+          type: mock.type,
+          status: mock.status,
+          hasIot: true,
+          currentCustomerId: customer.id,
+          currentLocation: { lat: 28.6139, lng: 77.2090, address: 'Test Location' },
+          healthScore: Math.floor(Math.random() * 40) + 60 // 60-100
+        });
+
+        // Create some mock alerts for variety
+        if (mock.issue !== 'Door sensor fault') {
+          await storage.createAlert({
+            alertCode: `TEST-${Date.now()}`,
+            containerId: container.id,
+            severity: mock.status === 'maintenance' ? 'high' : 'medium',
+            status: 'open',
+            title: mock.issue,
+            description: `Test alert for ${mock.issue}`,
+            errorCode: 'TEST_001',
+            detectedAt: new Date(),
+            source: 'simulation'
+          });
+        }
+      }
+    }
+
+    // Re-fetch containers
+    containers = await storage.getContainersByCustomer(customer.id);
+  }
+
   const containersByStatus = containers.reduce((acc: any, container: any) => {
     acc[container.status] = (acc[container.status] || 0) + 1;
     return acc;
   }, {});
 
-      const alerts = await storage.getOpenAlerts();
-  const criticalAlerts = alerts.filter((alert: any) => alert.severity === 'critical' && 
+  const alerts = await storage.getOpenAlerts();
+  const criticalAlerts = alerts.filter((alert: any) => alert.severity === 'critical' &&
     containers.some((c: any) => c.id === alert.containerId));
 
   let statusMessage = `📊 *Container Status for ${customer.companyName}*\n\n`;
   statusMessage += `📦 Total Containers: ${containers.length}\n\n`;
-  
+
   Object.entries(containersByStatus).forEach(([status, count]) => {
     const emoji = getStatusEmoji(status);
     statusMessage += `${emoji} ${status.charAt(0).toUpperCase() + status.slice(1)}: ${count}\n`;
@@ -1405,8 +1886,25 @@ function getAlertEmoji(type: string): string {
 // Handle technician text messages with enhanced role-based features
 async function handleTechnicianTextMessage(text: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
-  const { classifyTechnicianIntent } = await import('./gemini');
+  const conversationState = session.conversationState || {};
   const technician = roleData; // roleData is the technician data for technicians
+
+  // Check for awaiting date input
+  if (conversationState.awaiting_date) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (dateRegex.test(text)) {
+      await handleTechnicianScheduleForDate(from, technician, storage, text);
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...conversationState, awaiting_date: false }
+      });
+      return;
+    } else {
+      await sendTextMessage(from, '❌ Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-10-25)');
+      return;
+    }
+  }
+
+  const { classifyTechnicianIntent } = await import('./gemini');
 
   // AI-guided strict-but-flexible intent classification
   const todays = await storage.getTechnicianSchedule(technician.id, new Date().toISOString());
@@ -1497,16 +1995,15 @@ async function handleTechnicianTextMessage(text: string, from: string, user: any
       ]
     );
   } else {
-    // Default dynamic menu
+    // For any unrecognized text, send main menu
     await sendInteractiveButtons(
       from,
       `👋 Hello ${user.name}!\n\n🔧 Employee Code: ${technician.employeeCode}\n📍 Status: ${technician.status.toUpperCase()}\n\nWhat would you like to do?`,
       [
-        { id: 'view_profile', title: '👤 View Profile' },
-        { id: 'view_schedule', title: '📋 View Schedule' },
+        { id: 'check_schedule', title: '📅 View Schedule' },
         { id: 'start_service', title: '🔧 Start Service' },
         { id: 'complete_service', title: '✅ Complete Service' },
-        { id: 'upload_photos', title: '📸 Upload Docs' }
+        { id: 'report_issue', title: '🚨 Report Issue' }
       ]
     );
   }
@@ -1559,27 +2056,130 @@ async function setAwaitingUploadStep(step: 'awaiting_before_photos' | 'awaiting_
 // Helper function to handle technician schedule
 async function handleTechnicianSchedule(from: string, technician: any, storage: any): Promise<void> {
   const today = new Date().toISOString().split('T')[0];
-  const todaySchedule = await storage.getScheduledServicesByTechnician(technician.id, today);
+  await handleTechnicianScheduleForDate(from, technician, storage, today);
+}
+
+// Helper function to handle technician schedule for specific date
+async function handleTechnicianScheduleForDate(from: string, technician: any, storage: any, date: string): Promise<void> {
+  // Check if this is the test number and show mock schedule
+  const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
+  let schedule = await storage.getScheduledServicesByTechnician(technician.id, date);
+
+  // For test number, add mock services if none exist
+  if (isTestNumber && (!schedule || schedule.length === 0)) {
+    console.log('🧪 Adding mock services to schedule for testing');
+
+    // Get or create test customer
+    let customer = await storage.getCustomerByUserId(technician.userId);
+    if (!customer) {
+      customer = await storage.createCustomer({
+        userId: technician.userId,
+        companyName: 'Test Company',
+        contactPerson: 'Test Contact',
+        email: 'test@example.com',
+        phone: from.replace(/\D/g, ''),
+        whatsappNumber: from.replace(/\D/g, ''),
+        customerTier: 'standard',
+        paymentTerms: 'net30',
+        billingAddress: 'Test Address',
+        status: 'active'
+      });
+    }
+
+    // Create mock containers and service requests
+    const mockServices = [
+      { id: 'SR-MOCK-001', issue: 'Temperature sensor showing anomalies in refrigeration unit', container: 'CNT-1001', time: '09:00' },
+      { id: 'SR-MOCK-002', issue: 'Door status indicator not responding correctly', container: 'CNT-1002', time: '11:00' },
+      { id: 'SR-MOCK-003', issue: 'Intermittent power supply affecting container operations', container: 'CNT-1003', time: '14:00' }
+    ];
+
+    for (const mock of mockServices) {
+      // Create container if it doesn't exist
+      let container = await storage.getContainerByCode(mock.container);
+      if (!container) {
+        container = await storage.createContainer({
+          containerCode: mock.container,
+          type: 'refrigerated',
+          status: 'active',
+          hasIot: true,
+          currentCustomerId: customer.id,
+          currentLocation: { lat: 28.6139, lng: 77.2090, address: 'Test Location' }
+        });
+      }
+
+      // Create service request if it doesn't exist
+      let serviceRequest = await storage.getServiceRequest(mock.id);
+      if (!serviceRequest) {
+        serviceRequest = await storage.createServiceRequest({
+          requestNumber: mock.id,
+          containerId: container.id,
+          customerId: customer.id,
+          issueDescription: mock.issue,
+          priority: 'normal',
+          status: 'scheduled',
+          assignedTechnicianId: technician.id,
+          createdBy: technician.userId,
+          scheduledDate: new Date(date),
+          scheduledTimeWindow: `${mock.time}:00-${parseInt(mock.time) + 2}:00`
+        });
+
+        // Create scheduled service
+        await storage.createScheduledService({
+          serviceRequestId: serviceRequest.id,
+          technicianId: technician.id,
+          scheduledDate: new Date(date),
+          sequenceNumber: parseInt(mock.id.split('-')[2]),
+          estimatedStartTime: new Date(`${date}T${mock.time}:00:00Z`),
+          estimatedEndTime: new Date(`${date}T${parseInt(mock.time) + 2}:00:00Z`),
+          estimatedTravelTime: 30,
+          estimatedServiceDuration: 90,
+          routeOrder: parseInt(mock.id.split('-')[2]),
+          totalDistance: 15.5,
+          optimizationScore: 0.95,
+          status: 'scheduled'
+        });
+      }
+    }
+
+    // Re-fetch the schedule to get the newly created services
+    schedule = await storage.getScheduledServicesByTechnician(technician.id, date);
+  }
+
   const nextService = await storage.getNextScheduledService(technician.id);
-  
-  let message = `📋 *Schedule for ${new Date().toLocaleDateString()}*\n\n`;
+
+  let message = `📋 *Schedule for ${new Date(date).toLocaleDateString()}*\n\n`;
   message += `👤 ${technician.employeeCode} - ${technician.status.toUpperCase()}\n\n`;
-  
-  if (todaySchedule.length === 0) {
-    message += `✅ No scheduled services for today!\n`;
+
+  if (schedule.length === 0) {
+    message += `✅ No scheduled services for this date!\n`;
   } else {
-    message += `📋 Today's Services: ${todaySchedule.length}\n\n`;
-    
-    todaySchedule.forEach((service: any, index: number) => {
+    message += `📋 Services: ${schedule.length}\n\n`;
+
+    schedule.forEach((service: any, index: number) => {
       message += `${index + 1}. ${service.serviceRequest?.requestNumber || 'Service'}\n`;
       message += `   🕐 Time: ${new Date(service.estimatedStartTime).toLocaleTimeString()}\n`;
       message += `   📍 Location: Available in app\n`;
       message += `   ⏱️ Duration: ${service.estimatedServiceDuration}min\n`;
       message += `   📊 Status: ${service.status.toUpperCase()}\n\n`;
     });
+
+    // Show service list for selection
+    const listItems = schedule.slice(0, 10).map((req: any, idx: number) => ({
+      id: `select_service_${req.serviceRequestId || req.id}`,
+      title: `${idx + 1}. ${req.serviceRequest?.requestNumber || req.serviceRequestId || req.id}`,
+      description: (req.serviceRequest?.issueDescription || 'Service').substring(0, 50)
+    }));
+
+    await sendInteractiveList(
+      from,
+      message + 'Select a service to view details and start/end:',
+      'Select Service',
+      [{ title: 'Scheduled Services', rows: listItems }]
+    );
+    return;
   }
-  
-  if (nextService && nextService.scheduledDate !== today) {
+
+  if (nextService && nextService.scheduledDate !== date) {
     message += `⏭️ Next Service: ${new Date(nextService.scheduledDate).toLocaleDateString()}`;
   }
 
@@ -1676,13 +2276,14 @@ async function handleInteractiveMessage(message: any, user: any, roleData: any, 
   const from = message.from;
 
               if (interactiveData.type === 'button_reply') {
-                const buttonId = interactiveData.button_reply.id;
+                 const buttonId = interactiveData.button_reply.id;
     await handleButtonClick(buttonId, from, user, roleData, session);
   } else if (interactiveData.type === 'list_reply') {
     const listId = interactiveData.list_reply.id;
     await handleListSelection(listId, from, user, roleData, session);
   }
 }
+
 
 // Handle button clicks based on user role and context
 async function handleButtonClick(buttonId: string, from: string, user: any, roleData: any, session: any): Promise<void> {
@@ -1691,14 +2292,54 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
   // Update conversation state based on button click
   const conversationState = session.conversationState || {};
 
-  // Testing override: let the special number choose a role
-  const isTestNumber = typeof from === 'string' && from.replace(/\D/g, '') === '917021307474';
-  if (isTestNumber && (buttonId === 'test_role_technician' || buttonId === 'test_role_client')) {
+  // Testing override: let the special number choose or switch roles
+  const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
+  if (isTestNumber && (buttonId === 'test_role_technician' || buttonId === 'test_role_client' || buttonId === 'switch_role')) {
+    if (buttonId === 'switch_role') {
+      // Clear testingRole to go back to role selection
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testingRole: null }
+      });
+      await sendTextMessage(from, '🧪 Role cleared. Please select a new role to test:');
+      await sendInteractiveButtons(
+        from,
+        '🧪 Select role to test WhatsApp flow:',
+        [
+          { id: 'test_role_technician', title: '🔧 Technician' },
+          { id: 'test_role_client', title: '🏢 Client' }
+        ]
+      );
+      return;
+    }
     const testingRole = buttonId === 'test_role_technician' ? 'technician' : 'client';
     await storage.updateWhatsappSession(session.id, {
       conversationState: { ...(conversationState || {}), testingRole }
     });
     await sendTextMessage(from, `🧪 Testing as ${testingRole}. Continue your flow.`);
+
+    // Show appropriate menu for the selected role
+    if (testingRole === 'technician') {
+      await sendInteractiveButtons(
+        from,
+        `🔧 Technician Mode Activated\n\n🧪 Test Number: ${from}\n👤 Role: ${testingRole}\n\nWhat would you like to do?`,
+        [
+          { id: 'check_schedule', title: '📅 Check Schedule' },
+          { id: 'switch_role', title: '🔄 Switch Role' }
+        ]
+      );
+    } else if (testingRole === 'client') {
+      await sendInteractiveButtons(
+        from,
+        `🏢 Client Mode Activated\n\n🧪 Test Number: ${from}\n👤 Role: ${testingRole}\n\nHow can I help you today?`,
+        [
+          { id: 'check_container_details', title: '📦 Check Container Details' },
+          { id: 'request_service', title: '🔧 Request Service' },
+          { id: 'check_service_status', title: '📋 Check Service Status' },
+          { id: 'check_container_status', title: '📊 Check Container Status' },
+          { id: 'switch_role', title: '🔄 Switch Role' }
+        ]
+      );
+    }
     return;
   }
 
@@ -1713,8 +2354,26 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
 async function handleClientButtonClick(buttonId: string, from: string, user: any, session: any, conversationState: any): Promise<void> {
   const { storage } = await import('../storage');
 
+  // Handle initial "hi" message for clients
+  if (buttonId === 'client_greeting') {
+    const customer = await storage.getCustomerByUserId(user.id);
+    if (customer) {
+      await sendInteractiveButtons(
+        from,
+        `👋 Hello ${customer.contactPerson}!\n\n🏢 ${customer.companyName}\n\nHow can I help you today?`,
+        [
+          { id: 'check_container_details', title: '📦 Check Container Details' },
+          { id: 'request_service', title: '🔧 Request Service' },
+          { id: 'check_service_status', title: '📋 Check Service Status' },
+          { id: 'check_container_status', title: '📊 Check Container Status' }
+        ]
+      );
+    }
+    return;
+  }
+
   switch (buttonId) {
-    case 'check_status':
+    case 'check_container_status':
       const customer = await storage.getCustomerByUserId(user.id);
       if (customer) {
         const containers = await storage.getContainersByCustomer(customer.id);
@@ -1739,6 +2398,68 @@ Select an option below:`;
             { id: 'request_service', title: 'Request Service' }
           ]
         );
+      }
+      break;
+
+    case 'check_container_details':
+      // Show detailed container list
+      const customerDetails = await storage.getCustomerByUserId(user.id);
+      if (customerDetails) {
+        const containers = await storage.getContainersByCustomer(customerDetails.id);
+        const activeContainers = containers.filter((c: any) => c.status === 'active');
+
+        if (activeContainers.length === 0) {
+          await sendTextMessage(from, '❌ No active containers found. Please contact support.');
+          return;
+        }
+
+        const containerOptions = activeContainers.map((container: any) => ({
+          id: `detail_${container.id}`,
+          title: `${container.containerCode} - ${container.type}`,
+          description: `Status: ${container.status} | Location: ${container.currentLocation?.address || 'Unknown'}`
+        }));
+
+        await sendInteractiveList(
+          from,
+          '📦 *Select Container for Details*',
+          'Choose Container',
+          [{ title: 'Active Containers', rows: containerOptions }]
+        );
+      }
+      break;
+
+    case 'check_service_status':
+      // Show service status
+      const customerService = await storage.getCustomerByUserId(user.id);
+      if (customerService) {
+        const serviceRequests = await storage.getServiceRequestsByCustomer(customerService.id);
+        const pendingRequests = serviceRequests.filter((sr: any) => 
+          ['pending', 'approved', 'scheduled', 'in_progress'].includes(sr.status));
+        const recentCompleted = serviceRequests.filter((sr: any) => sr.status === 'completed')
+          .sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
+          .slice(0, 3);
+
+        let message = `📋 *Service Status for ${customerService.companyName}*\n\n`;
+        
+        if (pendingRequests.length > 0) {
+          message += `⏳ Active Services: ${pendingRequests.length}\n`;
+          pendingRequests.slice(0, 3).forEach((sr: any) => {
+            message += `• ${sr.requestNumber} - ${sr.status.toUpperCase()}\n`;
+          });
+        }
+
+        if (recentCompleted.length > 0) {
+          message += `\n✅ Recent Completed: ${recentCompleted.length}\n`;
+          recentCompleted.forEach((sr: any) => {
+            message += `• ${sr.requestNumber} - Completed\n`;
+          });
+        }
+
+        if (pendingRequests.length === 0 && recentCompleted.length === 0) {
+          message += `No service requests found.`;
+        }
+
+        await sendTextMessage(from, message);
       }
       break;
 
@@ -1938,7 +2659,68 @@ What would you like to do?`,
 async function handleTechnicianButtonClick(buttonId: string, from: string, user: any, session: any, conversationState: any): Promise<void> {
   const { storage } = await import('../storage');
 
+  // Handle initial "hi" message for technicians
+  if (buttonId === 'technician_greeting') {
+    const technician = await storage.getTechnicianByUserId(user.id);
+    if (technician) {
+      await sendInteractiveButtons(
+        from,
+        `👋 Hello ${user.name}!\n\n🔧 Employee Code: ${technician.employeeCode}\n📍 Status: ${technician.status.toUpperCase()}\n\nWhat would you like to do?`,
+        [
+          { id: 'check_schedule', title: '📅 Check Schedule' },
+          { id: 'view_profile', title: '👤 View Profile' },
+          { id: 'update_status', title: '📊 Update Status' }
+        ]
+      );
+    }
+    return;
+  }
+
+  // Handle start service with location proof requirement
+  if (buttonId === 'start_service_with_proof' && conversationState.currentServiceId) {
+    await sendTextMessage(from, '📍 *Location Proof Required*\n\nPlease send a photo proving you have arrived at the container location. This photo will be stored with the service record.');
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: { ...conversationState, step: 'awaiting_location_proof' }
+    });
+    return;
+  }
+
   switch (buttonId) {
+    case 'check_schedule':
+      await sendInteractiveButtons(
+        from,
+        '📅 *Select Schedule Date*',
+        [
+          { id: 'schedule_today', title: '📅 Today\'s Schedule' },
+          { id: 'schedule_tomorrow', title: '📅 Tomorrow\'s Schedule' },
+          { id: 'schedule_specific', title: '📅 Specific Date' }
+        ]
+      );
+      break;
+
+    case 'schedule_today':
+      const technicianToday = await storage.getTechnicianByUserId(user.id);
+      if (technicianToday) {
+        await handleTechnicianSchedule(from, technicianToday, storage);
+      }
+      break;
+
+    case 'schedule_tomorrow':
+      const technicianTomorrow = await storage.getTechnicianByUserId(user.id);
+      if (technicianTomorrow) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        await handleTechnicianScheduleForDate(from, technicianTomorrow, storage, tomorrow.toISOString().split('T')[0]);
+      }
+      break;
+
+    case 'schedule_specific':
+      await sendTextMessage(from, '📅 Please enter the date in YYYY-MM-DD format (e.g., 2025-10-25)');
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...conversationState, awaiting_date: true }
+      });
+      break;
+
     case 'view_profile':
       {
         const technician = await storage.getTechnicianByUserId(user.id);
@@ -1964,7 +2746,24 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
       break;
 
     case 'start_service':
-      await startService(from, user, conversationState);
+      if (conversationState.currentServiceId) {
+        await sendTextMessage(from, '📍 *Location Proof Required*\n\nPlease send a photo proving you have arrived at the container location. This photo will be stored with the service record.');
+        await storage.updateWhatsappSession(session.id, {
+          conversationState: { ...conversationState, step: 'awaiting_location_proof' }
+        });
+      } else {
+        // Present a mock list of services for testing
+        const mockServices = [
+          { id: 'SR-MOCK-001', title: 'Reefer cooling issue', container: 'CNT-1001', description: 'Temperature sensor showing anomalies in refrigeration unit' },
+          { id: 'SR-MOCK-002', title: 'Door sensor fault', container: 'CNT-1002', description: 'Door status indicator not responding correctly' },
+          { id: 'SR-MOCK-003', title: 'Power fluctuations', container: 'CNT-1003', description: 'Intermittent power supply affecting container operations' }
+        ];
+        const listItems = mockServices.map((s, idx) => ({ id: `select_service_${s.id}`, title: `${idx + 1}. ${s.id}`, description: `${s.title} • ${s.container}` }));
+        await sendListMessage(from, 'Select service to start:', 'Select Service', listItems);
+        await storage.updateWhatsappSession(session.id, {
+          conversationState: { ...conversationState, selectableServiceIds: mockServices.map(s => s.id), step: 'awaiting_service_selection' }
+        });
+      }
       break;
 
     case 'complete_service':
@@ -1991,6 +2790,17 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
         }
       }
       await completeService(from, user, conversationState);
+      break;
+
+    case 'end_service':
+      if (conversationState.currentServiceId) {
+        await sendTextMessage(from, '📸 *Service Completion*\n\nPlease send photos of the completed work and a signed report. These will be stored with the service record.');
+        await storage.updateWhatsappSession(session.id, {
+          conversationState: { ...conversationState, step: 'awaiting_completion_photos' }
+        });
+      } else {
+        await sendTextMessage(from, '❌ No service selected. Please select a service first.');
+      }
       break;
 
     case 'upload_photos':
@@ -2059,8 +2869,8 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
 async function handleListSelection(listId: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const conversationState = session.conversationState || {};
 
-  // Technician service selection via list
-  if (user.role === 'technician' && listId.startsWith('select_service_')) {
+  // Technician service selection via list (skip SR-MOCK selections here; handled below)
+  if (user.role === 'technician' && listId.startsWith('select_service_') && !listId.includes('SR-MOCK-')) {
     const { storage } = await import('../storage');
     const serviceId = listId.replace('select_service_', '');
 
@@ -2070,6 +2880,111 @@ async function handleListSelection(listId: string, from: string, user: any, role
         currentServiceId: serviceId,
         step: 'service_selected'
       }
+    });
+
+    // Show service details and start/end options
+    const service = await storage.getServiceRequest(serviceId);
+    if (service) {
+      const container = await storage.getContainer(service.containerId);
+      const message = `🔧 *Service Details*
+
+📋 Request: ${service.requestNumber}
+📦 Container: ${container?.containerCode || 'Unknown'}
+📍 Location: ${(container as any)?.currentLocation?.address || 'Unknown'}
+🔧 Issue: ${service.issueDescription}
+⏰ Scheduled: ${service.scheduledDate ? new Date(service.scheduledDate).toLocaleDateString() : 'Not scheduled'}
+📊 Status: ${service.status.toUpperCase()}
+
+What would you like to do?`;
+
+      await sendInteractiveButtons(
+        from,
+        message,
+        [
+          { id: 'start_service', title: '🔧 Start Service' },
+          { id: 'end_service', title: '✅ End Service' },
+          { id: 'back', title: '⬅️ Back' }
+        ]
+      );
+    } else {
+      await sendTextMessage(from, '❌ Service not found. Please try again.');
+    }
+    return;
+  }
+
+  // Handle service request container selection (client flow)
+  if (conversationState.flow === 'service_request' && conversationState.step === 'awaiting_container_selection') {
+    await serviceRequestViaWhatsApp.handleContainerListSelection(listId, from, user, session);
+    return;
+  }
+
+  // Technician: handle mock service selection IDs
+  if ((user.role === 'technician' || (session.conversationState as any)?.testingRole === 'technician') && listId.startsWith('select_service_')) {
+    const { storage } = await import('../storage');
+    const serviceId = listId.replace('select_service_', '');
+
+    // For mock services, create real service requests in the database
+    if (serviceId.startsWith('SR-MOCK-')) {
+      const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
+      if (isTestNumber) {
+        const mockData = {
+          'SR-MOCK-001': { issue: 'Temperature sensor showing anomalies in refrigeration unit', container: 'CNT-1001' },
+          'SR-MOCK-002': { issue: 'Door status indicator not responding correctly', container: 'CNT-1002' },
+          'SR-MOCK-003': { issue: 'Intermittent power supply affecting container operations', container: 'CNT-1003' }
+        }[serviceId];
+
+        if (mockData) {
+          // Get or create test customer for mock services
+          let customer = await storage.getCustomerByUserId(user.id);
+          if (!customer) {
+            customer = await storage.createCustomer({
+              userId: user.id,
+              companyName: 'Test Company',
+              contactPerson: 'Test Contact',
+              email: 'test@example.com',
+              phone: from.replace(/\D/g, ''),
+              whatsappNumber: from.replace(/\D/g, ''),
+              customerTier: 'standard',
+              paymentTerms: 'net30',
+              billingAddress: 'Test Address',
+              status: 'active'
+            });
+          }
+
+          // Create or get test container
+          let container = await storage.getContainerByCode(mockData.container);
+          if (!container) {
+            container = await storage.createContainer({
+              containerCode: mockData.container,
+              type: 'refrigerated',
+              status: 'active',
+              hasIot: true,
+              currentCustomerId: customer.id,
+              currentLocation: { lat: 28.6139, lng: 77.2090, address: 'Test Location' }
+            });
+          }
+
+          // Create the mock service request
+          const serviceRequest = await storage.createServiceRequest({
+            requestNumber: serviceId,
+            containerId: container.id,
+            customerId: customer.id,
+            issueDescription: mockData.issue,
+            priority: 'normal',
+            status: 'scheduled',
+            assignedTechnicianId: user.id, // Assign to test technician
+            createdBy: user.id,
+            scheduledDate: new Date(),
+            scheduledTimeWindow: '10:00-12:00'
+          });
+
+          console.log('🧪 Created mock service request:', serviceId);
+        }
+      }
+    }
+
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: { ...(session.conversationState || {}), currentServiceId: serviceId, step: 'service_selected' }
     });
 
     await sendInteractiveButtons(
@@ -2082,12 +2997,6 @@ async function handleListSelection(listId: string, from: string, user: any, role
         { id: 'back', title: '⬅️ Back' }
       ]
     );
-    return;
-  }
-
-  // Handle service request container selection (client flow)
-  if (conversationState.flow === 'service_request' && conversationState.step === 'awaiting_container_selection') {
-    await serviceRequestViaWhatsApp.handleContainerListSelection(listId, from, user, session);
     return;
   }
 
@@ -2121,6 +3030,42 @@ async function handleMediaMessage(message: any, user: any, roleData: any, sessio
 
     const beforePhotos = Array.isArray(service.beforePhotos) ? service.beforePhotos.slice() : [];
     const afterPhotos = Array.isArray(service.afterPhotos) ? service.afterPhotos.slice() : [];
+    const locationProofPhotos = Array.isArray(service.locationProofPhotos) ? service.locationProofPhotos.slice() : [];
+
+    // Handle location proof photos for technicians starting service
+    if (step === 'awaiting_location_proof') {
+      if (mediaId) locationProofPhotos.push(`wa:${mediaId}`);
+      await storage.updateServiceRequest(serviceId, { locationProofPhotos });
+      await sendTextMessage(from, '✅ Location proof photo saved. You can now start the service.');
+      
+      // Show service start options
+      const container = await storage.getContainer(service.containerId);
+      const message = `🔧 *Service Details*
+      
+📋 Request: ${service.requestNumber}
+📦 Container: ${container?.containerCode || 'Unknown'}
+📍 Location: ${(container as any)?.currentLocation?.address || 'Unknown'}
+🔧 Issue: ${service.issueDescription}
+⏰ Scheduled: ${service.scheduledDate ? new Date(service.scheduledDate).toLocaleDateString() : 'Not scheduled'}
+📊 Status: ${service.status.toUpperCase()}
+
+Ready to start service?`;
+
+      await sendInteractiveButtons(
+        from,
+        message,
+        [
+          { id: 'start_service', title: '🔧 Start Service' },
+          { id: 'back', title: '⬅️ Back' }
+        ]
+      );
+      
+      // Update session state
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...session.conversationState, step: 'service_started' }
+      });
+      return;
+    }
 
     if (step === 'awaiting_before_photos') {
       if (mediaId) beforePhotos.push(`wa:${mediaId}`);
@@ -3254,12 +4199,13 @@ export class CustomerCommunicationService {
   }
 }
 
+
 // Global instance for easy access
 export const customerCommunicationService = new CustomerCommunicationService();
 
 // Export the service as an object for easier importing
 export const whatsappService = {
-  handleWebhook,
+  handleWebhook: handleWebhook,
   customerCommunicationService,
   authorizeWhatsAppMessage,
   sendMessage: async (phoneNumber: string, message: string) => {
