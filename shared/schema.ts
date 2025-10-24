@@ -99,6 +99,14 @@ export const containers = pgTable("containers", {
   healthScore: integer("health_score"),
   usageCycles: integer("usage_cycles"),
   excelMetadata: jsonb("excel_metadata"), // Store all Excel data as JSON
+
+  // New telemetry fields for enhanced Orbcomm integration
+  lastUpdateTimestamp: timestamp("last_update_timestamp"), // Timestamp from Orbcomm data
+  locationLat: decimal("location_lat", { precision: 10, scale: 8 }), // Latitude from latest Orbcomm telemetry
+  locationLng: decimal("location_lng", { precision: 11, scale: 8 }), // Longitude from latest Orbcomm telemetry
+  lastTelemetry: jsonb("last_telemetry"), // Full raw JSON from Orbcomm message
+  lastSyncedAt: timestamp("last_synced_at"), // Timestamp when this container was last synced
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -136,7 +144,7 @@ export const alerts = pgTable("alerts", {
   acknowledgedBy: varchar("acknowledged_by").references(() => users.id),
   resolvedAt: timestamp("resolved_at"),
   resolutionMethod: resolutionMethodEnum("resolution_method"),
-  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id),
+  serviceRequestId: varchar("service_request_id"), // Remove forward reference to avoid circular dependency
   resolutionSteps: text("resolution_steps").array(),
   requiredParts: text("required_parts").array(),
   estimatedServiceTime: integer("estimated_service_time"),
@@ -367,8 +375,8 @@ export const serviceRequestsRelations = relations(serviceRequests, ({ one, many 
   customer: one(customers, { fields: [serviceRequests.customerId], references: [customers.id] }),
   alert: one(alerts, { fields: [serviceRequests.alertId], references: [alerts.id] }),
   technician: one(technicians, { fields: [serviceRequests.assignedTechnicianId], references: [technicians.id] }),
-  invoice: one(invoices),
-  feedback: one(feedback),
+  invoice: one(invoices, { fields: [serviceRequests.id], references: [invoices.serviceRequestId] }),
+  feedback: one(feedback, { fields: [serviceRequests.id], references: [feedback.serviceRequestId] }),
   createdBy: one(users, { fields: [serviceRequests.createdBy], references: [users.id] }),
   scheduledServices: many(scheduledServices),
 }));
@@ -416,7 +424,8 @@ export const insertWhatsappSessionSchema = createInsertSchema(whatsappSessions).
 export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).omit({ id: true, createdAt: true });
 export const insertContainerMetricsSchema = createInsertSchema(containerMetrics).omit({ id: true });
 export const insertInventorySchema = createInsertSchema(inventory).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, timestamp: true });
+export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({ id: true, createdAt: true });
+export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({ id: true, createdAt: true });
 
 // Types (updated according to PRD)
 export type User = typeof users.$inferSelect;
@@ -445,5 +454,7 @@ export type ContainerMetrics = typeof containerMetrics.$inferSelect;
 export type InsertContainerMetrics = z.infer<typeof insertContainerMetricsSchema>;
 export type InventoryItem = typeof inventory.$inferSelect;
 export type InsertInventoryItem = z.infer<typeof insertInventorySchema>;
-export type AuditLog = typeof auditLogs.$inferSelect;
-export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type EmailVerification = typeof emailVerifications.$inferSelect;
+export type InsertEmailVerification = z.infer<typeof insertEmailVerificationSchema>;
+export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
+export type InsertInventoryTransaction = z.infer<typeof insertInventoryTransactionSchema>;

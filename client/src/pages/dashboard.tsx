@@ -16,15 +16,15 @@ import { getAuthToken } from "@/lib/auth";
 export default function Dashboard() {
   const authToken = getAuthToken();
 
-  const { data: stats, refetch: refetchStats } = useQuery({ queryKey: ["/api/dashboard/stats"] });
+  const { data: stats = {}, refetch: refetchStats } = useQuery<any>({ queryKey: ["/api/dashboard/stats"] });
 
-  const { data: containers } = useQuery({ queryKey: ["/api/containers"] });
+  const { data: containers = [], refetch: refetchContainers } = useQuery<any[]>({ queryKey: ["/api/containers"] });
 
-  const { data: alerts, refetch: refetchAlerts } = useQuery({ queryKey: ["/api/alerts/open"] });
+  const { data: alerts = [], refetch: refetchAlerts } = useQuery<any[]>({ queryKey: ["/api/alerts/open"] });
 
-  const { data: serviceRequests } = useQuery({ queryKey: ["/api/service-requests"] });
+  const { data: serviceRequests = [] } = useQuery<any[]>({ queryKey: ["/api/service-requests"] });
 
-  const { data: technicians } = useQuery({ queryKey: ["/api/technicians"] });
+  const { data: technicians = [] } = useQuery<any[]>({ queryKey: ["/api/technicians"] });
 
   useEffect(() => {
     // Live updates for device→container location
@@ -45,6 +45,23 @@ export default function Dashboard() {
       } catch {}
     };
 
+    // Live updates when server identifies the container directly
+    const onContainerLocUpdate = (payload: any) => {
+      try {
+        const { queryClient } = require("@/lib/queryClient");
+        queryClient.setQueryData(["/api/containers"], (prev: any[] | undefined) => {
+          if (!Array.isArray(prev)) return prev;
+          const { containerId, lat, lng } = payload || {};
+          if (!containerId || lat == null || lng == null) return prev;
+          return prev.map((c: any) =>
+            c.id === containerId
+              ? { ...c, currentLocation: { ...(c.currentLocation || {}), lat, lng } }
+              : c
+          );
+        });
+      } catch {}
+    };
+
     websocket.on("alert_created", () => {
       refetchAlerts();
       refetchStats();
@@ -55,11 +72,13 @@ export default function Dashboard() {
     });
 
     websocket.on("device_update", onDeviceUpdate);
+    websocket.on("container_location_update", onContainerLocUpdate);
 
     return () => {
       websocket.off("alert_created", () => {});
       websocket.off("container_created", () => {});
       websocket.off("device_update", onDeviceUpdate);
+      websocket.off("container_location_update", onContainerLocUpdate);
     };
   }, [refetchAlerts, refetchStats]);
 
