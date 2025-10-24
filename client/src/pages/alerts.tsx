@@ -6,7 +6,8 @@ import AlertItem from "@/components/alert-item";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { websocket } from "@/lib/websocket";
 
 export default function Alerts() {
   const queryClient = useQueryClient();
@@ -14,9 +15,9 @@ export default function Alerts() {
   const [selectedContainer, setSelectedContainer] = useState<string>("");
   const [selectedAlertType, setSelectedAlertType] = useState<string>("temperature");
 
-  const { data: alerts } = useQuery({ queryKey: ["/api/alerts"] });
+  const { data: alerts = [] } = useQuery<any[]>({ queryKey: ["/api/alerts"] });
 
-  const { data: containers } = useQuery({ queryKey: ["/api/containers"] });
+  const { data: containers = [] } = useQuery<any[]>({ queryKey: ["/api/containers"] });
 
   const acknowledge = useMutation({
     mutationFn: async (id: string) => {
@@ -28,6 +29,25 @@ export default function Alerts() {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     }
   });
+
+  // Live updates via WebSocket: refresh alerts/stats when new alerts are created/resolved/acknowledged
+  useEffect(() => {
+    const refresh = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    };
+
+    websocket.on("alert_created", refresh);
+    websocket.on("alert_resolved", refresh);
+    websocket.on("alert_acknowledged", refresh);
+
+    return () => {
+      websocket.off("alert_created", refresh);
+      websocket.off("alert_resolved", refresh);
+      websocket.off("alert_acknowledged", refresh);
+    };
+  }, [queryClient]);
 
   const resolve = useMutation({
     mutationFn: async (id: string) => {
