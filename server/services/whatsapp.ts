@@ -24,12 +24,12 @@ async function resolveWabaId(): Promise<string> {
   // Try resolving via phone number id if available
   if (WHATSAPP_PHONE_NUMBER_ID) {
     try {
-      const url = `https://graph.facebook.com/${GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}?fields=whatsapp_business_account`;
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}?fields=whatsapp_business_account`;
       const resp = await axios.get(url, { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
-      const id = resp.data?.whatsapp_business_account?.id;
+  const id = resp.data?.whatsapp_business_account?.id;
       if (id) {
-        RESOLVED_WABA_ID = id;
-        return id;
+  RESOLVED_WABA_ID = id;
+  return id;
       }
     } catch (e) {
       console.warn('[whatsapp] Could not auto-resolve WABA ID; set WABA_ID to avoid this warning');
@@ -1683,13 +1683,13 @@ async function handleClientContainerStatus(from: string, customer: any, storage:
     return acc;
   }, {});
 
-  const alerts = await storage.getOpenAlerts();
-  const criticalAlerts = alerts.filter((alert: any) => alert.severity === 'critical' &&
+      const alerts = await storage.getOpenAlerts();
+  const criticalAlerts = alerts.filter((alert: any) => alert.severity === 'critical' && 
     containers.some((c: any) => c.id === alert.containerId));
 
   let statusMessage = `📊 *Container Status for ${customer.companyName}*\n\n`;
   statusMessage += `📦 Total Containers: ${containers.length}\n\n`;
-
+  
   Object.entries(containersByStatus).forEach(([status, count]) => {
     const emoji = getStatusEmoji(status);
     statusMessage += `${emoji} ${status.charAt(0).toUpperCase() + status.slice(1)}: ${count}\n`;
@@ -2146,15 +2146,15 @@ async function handleTechnicianScheduleForDate(from: string, technician: any, st
   }
 
   const nextService = await storage.getNextScheduledService(technician.id);
-
+  
   let message = `📋 *Schedule for ${new Date(date).toLocaleDateString()}*\n\n`;
   message += `👤 ${technician.employeeCode} - ${technician.status.toUpperCase()}\n\n`;
-
+  
   if (schedule.length === 0) {
     message += `✅ No scheduled services for this date!\n`;
   } else {
     message += `📋 Services: ${schedule.length}\n\n`;
-
+    
     schedule.forEach((service: any, index: number) => {
       message += `${index + 1}. ${service.serviceRequest?.requestNumber || 'Service'}\n`;
       message += `   🕐 Time: ${new Date(service.estimatedStartTime).toLocaleTimeString()}\n`;
@@ -2276,7 +2276,7 @@ async function handleInteractiveMessage(message: any, user: any, roleData: any, 
   const from = message.from;
 
               if (interactiveData.type === 'button_reply') {
-                 const buttonId = interactiveData.button_reply.id;
+                const buttonId = interactiveData.button_reply.id;
     await handleButtonClick(buttonId, from, user, roleData, session);
   } else if (interactiveData.type === 'list_reply') {
     const listId = interactiveData.list_reply.id;
@@ -3894,10 +3894,10 @@ export class CustomerCommunicationService {
             'HIGH_ALERT',
             'en',
             [
-              container.containerCode,
-              alert.title,
-              container.currentLocation?.address || 'Unknown Location',
-              alert.id.substring(0, 8)
+            container.containerCode,
+            alert.title,
+            container.currentLocation?.address || 'Unknown Location',
+            alert.id.substring(0, 8)
             ]
           );
         } catch (templateError) {
