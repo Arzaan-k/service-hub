@@ -36,7 +36,6 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, gte, sql, isNull } from "drizzle-orm";
-import { leftJoin } from "drizzle-orm/pg-core";
 
 export interface IStorage {
   // User operations
@@ -370,8 +369,8 @@ export class DatabaseStorage implements IStorage {
           timestamp: locationData.timestamp,
           source: locationData.source
         },
-        locationLat: locationData.lat,
-        locationLng: locationData.lng,
+        locationLat: locationData.lat.toString(),
+        locationLng: locationData.lng.toString(),
         lastUpdateTimestamp: new Date(locationData.timestamp),
         lastSyncedAt: new Date(),
         updatedAt: new Date()
@@ -392,8 +391,8 @@ export class DatabaseStorage implements IStorage {
       .update(containers)
       .set({
         // Update with new telemetry fields
-        locationLat: telemetryData.latitude || null,
-        locationLng: telemetryData.longitude || null,
+        locationLat: telemetryData.latitude ? telemetryData.latitude.toString() : null,
+        locationLng: telemetryData.longitude ? telemetryData.longitude.toString() : null,
         currentLocation: (telemetryData.latitude && telemetryData.longitude) ? {
           lat: telemetryData.latitude,
           lng: telemetryData.longitude,
