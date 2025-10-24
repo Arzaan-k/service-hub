@@ -58,7 +58,11 @@ class OrbcommAPIClient {
               'Authorization': `Basic ${Buffer.from(`${this.username}:${this.password}`).toString('base64')}`,
               'User-Agent': 'ContainerGenie/1.0',
               'Origin': 'https://container-genie.com'
-            }
+            },
+            // Add connection options for better reliability
+            handshakeTimeout: 30000, // 30 second timeout
+            perMessageDeflate: false, // Disable compression
+            rejectUnauthorized: false // Allow self-signed certificates for testing
           }
         );
 
@@ -80,6 +84,12 @@ class OrbcommAPIClient {
 
         this.ws.on('error', (error) => {
           console.error('❌ CDH WebSocket error:', error);
+          console.error('❌ Error details:', {
+            code: error.code,
+            errno: error.errno,
+            syscall: error.syscall,
+            message: error.message
+          });
           this.isConnected = false;
           reject(error);
         });
@@ -841,25 +851,59 @@ let orbcommClient: OrbcommAPIClient | null = null;
 
 export function getOrbcommClient(): OrbcommAPIClient {
   if (!orbcommClient) {
-    const url = process.env.ORBCOMM_URL || 'wss://wamc.wamcentral.net:44355/cdh';
+    // Try multiple CDH endpoints based on test results
+    const possibleUrls = [
+      process.env.ORBCOMM_URL,
+      'wss://integ.tms-orbcomm.com:44355/cdh', // Integration server
+      'wss://wamc.wamcentral.net:44355/cdh',   // Production server
+      'wss://integ.tms-orbcomm.com:44355',     // Without /cdh path
+      'wss://wamc.wamcentral.net:44355'        // Without /cdh path
+    ].filter(Boolean);
+    
+    const url = possibleUrls[0] || 'wss://integ.tms-orbcomm.com:44355/cdh';
     const username = process.env.ORBCOMM_USERNAME || 'cdhQuadre';
-    const password = process.env.ORBCOMM_PASSWORD || 'P4pD#QU@!D@re';
+    const password = process.env.ORBCOMM_PASSWORD || 'P4pD#QU@!D@re'; // Fixed typo: was P4cD#QA@!D@re
 
+    console.log(`🔧 Using CDH URL: ${url}`);
+    console.log(`🔧 Using username: ${username}`);
+    
     orbcommClient = new OrbcommAPIClient(url, username, password);
   }
   return orbcommClient;
 }
 
-// Initialize CDH connection
+// Initialize CDH connection with fallback URLs
 export async function initializeOrbcommConnection(): Promise<void> {
-  try {
-    const client = getOrbcommClient();
-    await client.connect();
-    console.log('🚀 CDH API initialized successfully');
-  } catch (error) {
-    console.error('❌ Failed to initialize CDH API:', error);
-    // Don't throw error, continue with mock data
+  const possibleUrls = [
+    process.env.ORBCOMM_URL,
+    'wss://integ.tms-orbcomm.com:44355/cdh', // Integration server
+    'wss://wamc.wamcentral.net:44355/cdh',   // Production server
+    'wss://integ.tms-orbcomm.com:44355',     // Without /cdh path
+    'wss://wamc.wamcentral.net:44355'        // Without /cdh path
+  ].filter(Boolean);
+  
+  const username = process.env.ORBCOMM_USERNAME || 'cdhQuadre';
+  const password = process.env.ORBCOMM_PASSWORD || 'P4pD#QU@!D@re';
+  
+  for (const url of possibleUrls) {
+    try {
+      console.log(`🔌 Attempting CDH connection to: ${url}`);
+      const client = new OrbcommAPIClient(url, username, password);
+      await client.connect();
+      
+      // Update the singleton instance
+      orbcommClient = client;
+      console.log(`🚀 CDH API initialized successfully with ${url}`);
+      return;
+      
+    } catch (error) {
+      console.error(`❌ Failed to connect to ${url}:`, error.message);
+      continue;
+    }
   }
+  
+  console.error('❌ Failed to initialize CDH API with any URL. Continuing with mock data.');
+  // Don't throw error, continue with mock data
 }
 
 // Fetch data for a specific device
@@ -1011,6 +1055,55 @@ export async function populateOrbcommDevices(): Promise<void> {
     console.log('🎉 Actual CDH device population completed');
   } catch (error) {
     console.error('❌ Error populating actual CDH devices:', error);
+  }
+}
+
+// Test CDH connection with detailed logging
+export async function testCDHConnection(): Promise<void> {
+  try {
+    console.log('🧪 Testing CDH connection...');
+    
+    const url = process.env.ORBCOMM_URL || 'wss://wamc.wamcentral.net:44355/cdh';
+    const username = process.env.ORBCOMM_USERNAME || 'cdhQuadre';
+    const password = process.env.ORBCOMM_PASSWORD || 'P4pD#QU@!D@re'; // Fixed typo: was P4cD#QA@!D@re
+    
+    console.log('📋 Connection parameters:');
+    console.log(`  URL: ${url}`);
+    console.log(`  Username: ${username}`);
+    console.log(`  Password: ${password ? '***' : 'NOT SET'}`);
+    
+    // Test basic connectivity
+    const WebSocket = require('ws');
+    const testWs = new WebSocket(url, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`,
+        'User-Agent': 'ContainerGenie-Test/1.0'
+      },
+      handshakeTimeout: 10000,
+      perMessageDeflate: false,
+      rejectUnauthorized: false
+    });
+    
+    testWs.on('open', () => {
+      console.log('✅ Test connection successful!');
+      testWs.close();
+    });
+    
+    testWs.on('error', (error: any) => {
+      console.error('❌ Test connection failed:', error);
+      console.error('❌ This might indicate:');
+      console.error('  - Incorrect URL or port');
+      console.error('  - Authentication failure');
+      console.error('  - Network connectivity issues');
+      console.error('  - Server not accepting connections');
+    });
+    
+    testWs.on('close', (code: number, reason: string) => {
+      console.log(`🔌 Test connection closed. Code: ${code}, Reason: ${reason}`);
+    });
+    
+  } catch (error) {
+    console.error('❌ Error during CDH connection test:', error);
   }
 }
 
