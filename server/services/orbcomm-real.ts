@@ -73,13 +73,15 @@ class OrbcommAPIClient {
           this.isConnected = true;
           this.reconnectAttempts = 0;
           
-          // Send initial GetEvents request per CDH protocol
-          this.sendAuthMessage();
+          // Wait a moment before sending initial request to avoid session conflicts
+          setTimeout(() => {
+            this.sendAuthMessage();
+          }, 2000); // 2 second delay
           
           // Set up periodic refresh after initial connection
           setTimeout(() => {
             this.sendPeriodicRequest();
-          }, 30000); // Refresh every 30 seconds
+          }, 35000); // Refresh every 35 seconds (after initial request)
           
           resolve();
         });
@@ -99,6 +101,7 @@ class OrbcommAPIClient {
         this.ws.on('close', (code, reason) => {
           console.log(`🔌 CDH WebSocket connection closed. Code: ${code}, Reason: ${reason}`);
           this.isConnected = false;
+          this.requestInProgress = false; // Reset request flag on disconnect
           this.handleReconnect();
         });
 
@@ -177,9 +180,15 @@ class OrbcommAPIClient {
             console.error('❌ Following event precedes preceding event - invalid sequence');
             break;
           case 2006:
-            console.error('❌ Response already in progress - wait for current request to complete');
-            // This is normal - just wait for current request to finish
-            // Don't reset requestInProgress flag here as we're already processing
+            console.log('⏳ Response already in progress - waiting for current request to complete');
+            // Reset request flag and retry after a delay
+            this.requestInProgress = false;
+            setTimeout(() => {
+              if (this.isConnected && !this.requestInProgress) {
+                console.log('🔄 Retrying CDH request after 2006 fault...');
+                this.sendPeriodicRequest();
+              }
+            }, 5000); // Retry after 5 seconds
             break;
           case 1001:
             console.error('❌ Unknown error - system issue');
