@@ -35,6 +35,7 @@ class OrbcommAPIClient {
   private reconnectDelay = 5000; // 5 seconds
   private devices: OrbcommDevice[] = [];
   private deviceData: { [deviceId: string]: OrbcommDeviceData } = {};
+  private requestInProgress = false; // Prevent multiple simultaneous requests
 
   constructor(
     private url: string,
@@ -124,7 +125,9 @@ class OrbcommAPIClient {
   }
 
   private sendAuthMessage(): void {
-    if (!this.ws || !this.isConnected) return;
+    if (!this.ws || !this.isConnected || this.requestInProgress) return;
+    
+    this.requestInProgress = true;
     
     // GetEvents message using correct CDH protocol format per documentation
     const getEventsMessage = {
@@ -140,6 +143,11 @@ class OrbcommAPIClient {
     console.log('🔐 Sending CDH GetEvents request...');
     console.log('📋 Request:', JSON.stringify(getEventsMessage, null, 2));
     this.ws.send(JSON.stringify(getEventsMessage));
+    
+    // Reset request flag after a delay
+    setTimeout(() => {
+      this.requestInProgress = false;
+    }, 10000); // 10 second timeout for initial request
   }
 
   private handleMessage(message: any): void {
@@ -147,36 +155,39 @@ class OrbcommAPIClient {
     
     // Handle CDH fault responses per documentation
     if (message.faults && Array.isArray(message.faults)) {
-      for (const fault of message.faults) {
+      for (const faultWrapper of message.faults) {
+        const fault = faultWrapper.fault || faultWrapper; // Handle nested fault structure
         console.log(`⚠️ CDH Fault - Code: ${fault.faultCode}, Severity: ${fault.faultSeverity}, Text: ${fault.faultText}`);
         
         // Handle specific fault codes per CDH documentation
         switch (fault.faultCode) {
-          case '2001':
+          case 2001:
             console.error('❌ Unallocated partition number - check EventPartition parameter');
             break;
-          case '2002':
+          case 2002:
             console.error('❌ Preceding event not found - check PrecedingEventID');
             break;
-          case '2003':
+          case 2003:
             console.error('❌ Following event must be null/empty when preceding event is not provided');
             break;
-          case '2004':
+          case 2004:
             console.error('❌ Following event not found - check FollowingEventID');
             break;
-          case '2005':
+          case 2005:
             console.error('❌ Following event precedes preceding event - invalid sequence');
             break;
-          case '2006':
+          case 2006:
             console.error('❌ Response already in progress - wait for current request to complete');
+            // This is normal - just wait for current request to finish
+            // Don't reset requestInProgress flag here as we're already processing
             break;
-          case '1001':
+          case 1001:
             console.error('❌ Unknown error - system issue');
             break;
-          case '1002':
+          case 1002:
             console.error('❌ Authentication failed - check credentials');
             break;
-          case '1003':
+          case 1003:
             console.error('❌ Unrecognized request - check API format');
             break;
           default:
@@ -189,6 +200,9 @@ class OrbcommAPIClient {
     // Handle CDH Event responses per documentation
     if (message.Event && message.Event.EventClass) {
       console.log(`📱 Received CDH Event - Class: ${message.Event.EventClass}`);
+      
+      // Reset request flag since we received a response
+      this.requestInProgress = false;
       
       // Process different event classes
       switch (message.Event.EventClass) {
@@ -230,7 +244,14 @@ class OrbcommAPIClient {
   }
 
   private sendPeriodicRequest(): void {
-    if (!this.ws || !this.isConnected) return;
+    if (!this.ws || !this.isConnected || this.requestInProgress) {
+      if (this.requestInProgress) {
+        console.log('⏳ CDH request already in progress, skipping...');
+      }
+      return;
+    }
+    
+    this.requestInProgress = true;
     
     // Send periodic GetEvents request using correct CDH protocol format
     const getEventsMessage = {
@@ -245,6 +266,11 @@ class OrbcommAPIClient {
     
     console.log('🔄 Sending periodic CDH GetEvents request...');
     this.ws.send(JSON.stringify(getEventsMessage));
+    
+    // Reset request flag after a delay
+    setTimeout(() => {
+      this.requestInProgress = false;
+    }, 5000); // 5 second timeout
   }
 
   // Process CDH DeviceMessage events per documentation
