@@ -29,7 +29,11 @@ export interface OrbcommDevice {
 
 class OrbcommAPIClient {
   private ws: WebSocket | null = null;
-  private isConnected = false;
+  public get isConnected(): boolean {
+    return this._isConnected;
+  }
+
+  private _isConnected = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 5000; // 5 seconds
@@ -70,7 +74,7 @@ class OrbcommAPIClient {
 
         this.ws.on('open', () => {
           console.log('✅ Connected to Orbcomm CDH WebSocket');
-          this.isConnected = true;
+          this._isConnected = true;
           this.reconnectAttempts = 0;
           
           // Wait a moment before sending initial request to avoid session conflicts
@@ -81,7 +85,13 @@ class OrbcommAPIClient {
           // Set up periodic refresh after initial connection
           setTimeout(() => {
             this.sendPeriodicRequest();
-          }, 35000); // Refresh every 35 seconds (after initial request)
+          }, 10000); // Wait 10 seconds before first periodic request
+          
+          // Set up regular periodic requests - per ORBCOMM docs, be conservative with timing
+          // TEMPORARILY DISABLED to prevent 2006 cascade
+          // setInterval(() => {
+          //   this.sendPeriodicRequest();
+          // }, 60000); // Refresh every 60 seconds (conservative timing per ORBCOMM docs)
           
           resolve();
         });
@@ -89,18 +99,18 @@ class OrbcommAPIClient {
         this.ws.on('error', (error) => {
           console.error('❌ CDH WebSocket error:', error);
           console.error('❌ Error details:', {
-            code: error.code,
-            errno: error.errno,
-            syscall: error.syscall,
+            code: (error as any).code,
+            errno: (error as any).errno,
+            syscall: (error as any).syscall,
             message: error.message
           });
-          this.isConnected = false;
+          this._isConnected = false;
           reject(error);
         });
 
         this.ws.on('close', (code, reason) => {
           console.log(`🔌 CDH WebSocket connection closed. Code: ${code}, Reason: ${reason}`);
-          this.isConnected = false;
+          this._isConnected = false;
           this.requestInProgress = false; // Reset request flag on disconnect
           this.handleReconnect();
         });
@@ -128,7 +138,15 @@ class OrbcommAPIClient {
   }
 
   private sendAuthMessage(): void {
-    if (!this.ws || !this.isConnected || this.requestInProgress) return;
+    if (!this.ws || !this.isConnected) {
+      console.log('❌ CDH not connected, cannot send auth message...');
+      return;
+    }
+
+    if (this.requestInProgress) {
+      console.log('⏳ CDH request already in progress, skipping auth message...');
+      return;
+    }
     
     this.requestInProgress = true;
     
@@ -145,7 +163,13 @@ class OrbcommAPIClient {
     
     console.log('🔐 Sending CDH GetEvents request...');
     console.log('📋 Request:', JSON.stringify(getEventsMessage, null, 2));
-    this.ws.send(JSON.stringify(getEventsMessage));
+    
+    try {
+      this.ws.send(JSON.stringify(getEventsMessage));
+    } catch (error) {
+      console.error('❌ Failed to send CDH auth request:', error);
+      this.requestInProgress = false; // Reset flag on send failure
+    }
     
     // Reset request flag after a delay
     setTimeout(() => {
@@ -180,15 +204,10 @@ class OrbcommAPIClient {
             console.error('❌ Following event precedes preceding event - invalid sequence');
             break;
           case 2006:
-            console.log('⏳ Response already in progress - waiting for current request to complete');
-            // Reset request flag and retry after a delay
+            console.log('⚠️ Response already in progress - stopping all retries to prevent cascade');
+            // Reset request flag and DO NOT retry immediately to prevent infinite loop
             this.requestInProgress = false;
-            setTimeout(() => {
-              if (this.isConnected && !this.requestInProgress) {
-                console.log('🔄 Retrying CDH request after 2006 fault...');
-                this.sendPeriodicRequest();
-              }
-            }, 5000); // Retry after 5 seconds
+            // Let the periodic interval handle the next request naturally
             break;
           case 1001:
             console.error('❌ Unknown error - system issue');
@@ -253,10 +272,13 @@ class OrbcommAPIClient {
   }
 
   private sendPeriodicRequest(): void {
-    if (!this.ws || !this.isConnected || this.requestInProgress) {
-      if (this.requestInProgress) {
-        console.log('⏳ CDH request already in progress, skipping...');
-      }
+    if (!this.ws || !this.isConnected) {
+      console.log('❌ CDH not connected, skipping periodic request...');
+      return;
+    }
+
+    if (this.requestInProgress) {
+      console.log('⏳ CDH request already in progress, skipping periodic request...');
       return;
     }
     
@@ -274,7 +296,13 @@ class OrbcommAPIClient {
     };
     
     console.log('🔄 Sending periodic CDH GetEvents request...');
-    this.ws.send(JSON.stringify(getEventsMessage));
+    
+    try {
+      this.ws.send(JSON.stringify(getEventsMessage));
+    } catch (error) {
+      console.error('❌ Failed to send periodic CDH request:', error);
+      this.requestInProgress = false; // Reset flag on send failure
+    }
     
     // Reset request flag after a delay
     setTimeout(() => {
@@ -499,9 +527,23 @@ class OrbcommAPIClient {
                     rawData: event // Store complete raw Orbcomm event as JSONB
                   });
 
+                  // Check for existing alerts to prevent duplicates
+                  const existingAlerts = await storage.getAlertsByContainer(container.id);
+                  const alertCode = `ORBCOMM-${anomalies.join('-')}`;
+                  const hasRecentAlert = existingAlerts.some(a => 
+                    a.alertCode === alertCode && 
+                    a.status === 'open' && 
+                    new Date(a.detectedAt).getTime() > (Date.now() - 10 * 60 * 1000) // 10 minutes deduplication window
+                  );
+
+                  if (hasRecentAlert) {
+                    console.log(`📱 Skipping duplicate ORBCOMM alert for ${deviceId}: ${anomalies.join(', ')}`);
+                    return;
+                  }
+
                   const title = `Device ${deviceId} anomalies: ${anomalies.join(', ')}`;
                   const alert = await storage.createAlert({
-                    alertCode: `ALT-${Date.now()}`,
+                    alertCode,
                     containerId: container.id,
                     alertType: 'error', // Required field
                     severity: anomalies.includes('POWER_FAILURE') || anomalies.includes('TEMPERATURE_ANOMALY') ? 'high' : 'medium',
@@ -712,7 +754,7 @@ class OrbcommAPIClient {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
-      this.isConnected = false;
+        this._isConnected = false;
     }
   }
 
@@ -919,7 +961,7 @@ export async function initializeOrbcommConnection(): Promise<void> {
   for (const url of possibleUrls) {
     try {
       console.log(`🔌 Attempting CDH connection to: ${url}`);
-      const client = new OrbcommAPIClient(url, username, password);
+      const client = new OrbcommAPIClient(url!, username, password);
       await client.connect();
       
       // Update the singleton instance
@@ -928,7 +970,7 @@ export async function initializeOrbcommConnection(): Promise<void> {
       return;
       
     } catch (error) {
-      console.error(`❌ Failed to connect to ${url}:`, error.message);
+      console.error(`❌ Failed to connect to ${url}:`, (error as any).message);
       continue;
     }
   }

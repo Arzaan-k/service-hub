@@ -21,6 +21,8 @@ export default function Sidebar() {
     { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", roles: ["admin","coordinator","technician","super_admin"] },
     // Admin analytics
     { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", roles: ["admin","super_admin"] },
+    // ORBCOMM data (temporary for testing)
+    { path: "/orbcomm-data", label: "ORBCOMM Data", icon: "fas fa-satellite", roles: ["admin","coordinator","super_admin"] },
   ].filter(item => item.roles.includes(role));
 
   const handleLogout = () => {

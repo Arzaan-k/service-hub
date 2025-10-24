@@ -2495,6 +2495,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ORBCOMM data endpoints
+  app.get('/api/orbcomm/devices', async (req, res) => {
+    try {
+      // For now, return mock data to test the UI
+      const mockDevices = [
+        {
+          deviceId: 'QUAD622180045',
+          assetId: 'QUAD622180045',
+          lastUpdate: new Date().toISOString(),
+          location: { lat: 28.6139, lng: 77.2090 },
+          temperature: 22.5,
+          doorStatus: 'closed',
+          powerStatus: 'on',
+          batteryLevel: 85,
+          errorCodes: [],
+          rawData: { mock: true, timestamp: new Date().toISOString() }
+        },
+        {
+          deviceId: 'QUAD622340186',
+          assetId: 'QUAD622340186',
+          lastUpdate: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
+          location: { lat: 28.6145, lng: 77.2095 },
+          temperature: 18.2,
+          doorStatus: 'open',
+          powerStatus: 'on',
+          batteryLevel: 92,
+          errorCodes: ['DOOR_OPEN'],
+          rawData: { mock: true, timestamp: new Date(Date.now() - 300000).toISOString() }
+        }
+      ];
+      
+      console.log('📱 Returning mock ORBCOMM devices:', mockDevices.length);
+      res.json(mockDevices);
+      
+      // TODO: Uncomment when ORBCOMM client is working
+      // const { getOrbcommClient } = await import('./services/orbcomm-real');
+      // const orbcommClient = getOrbcommClient();
+      // const devices = await orbcommClient.getAllDevices();
+      // res.json(devices);
+    } catch (error) {
+      console.error('ORBCOMM devices error:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch ORBCOMM devices',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.get('/api/orbcomm/devices/:deviceId', async (req, res) => {
+    try {
+      const { deviceId } = req.params;
+      
+      // Mock device data for testing
+      const mockDeviceData = {
+        deviceId,
+        assetId: deviceId,
+        lastUpdate: new Date().toISOString(),
+        location: { lat: 28.6139 + Math.random() * 0.01, lng: 77.2090 + Math.random() * 0.01 },
+        temperature: 20 + Math.random() * 10,
+        doorStatus: Math.random() > 0.5 ? 'open' : 'closed',
+        powerStatus: 'on',
+        batteryLevel: 80 + Math.random() * 20,
+        errorCodes: Math.random() > 0.7 ? ['DOOR_OPEN', 'TEMP_HIGH'] : [],
+        rawData: {
+          mock: true,
+          timestamp: new Date().toISOString(),
+          deviceId,
+          additionalData: {
+            signalStrength: 85,
+            lastHeartbeat: new Date().toISOString(),
+            firmwareVersion: '1.2.3'
+          }
+        }
+      };
+      
+      console.log('📱 Returning mock device data for:', deviceId);
+      res.json(mockDeviceData);
+      
+      // TODO: Uncomment when ORBCOMM client is working
+      // const { getOrbcommClient } = await import('./services/orbcomm-real');
+      // const orbcommClient = getOrbcommClient();
+      // const deviceData = await orbcommClient.getDeviceData(deviceId);
+      // if (!deviceData) {
+      //   return res.status(404).json({ error: 'Device not found' });
+      // }
+      // res.json(deviceData);
+    } catch (error) {
+      console.error('ORBCOMM device data error:', error);
+      res.status(500).json({ error: 'Failed to fetch device data' });
+    }
+  });
+
   // Admin: Verify client for WhatsApp access
   app.post('/api/admin/whatsapp/verify-client', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
     try {

@@ -175,7 +175,7 @@ export const serviceRequests = pgTable("service_requests", {
   resolutionNotes: text("service_notes"),
   usedParts: text("used_parts").array(),
   totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
-  invoiceId: varchar("invoice_id").references(() => invoices.id),
+  invoiceId: varchar("invoice_id"), // Will reference invoices table after it's defined
   customerFeedbackId: varchar("customer_feedback_id").references(() => feedback.id),
   beforePhotos: text("before_photos").array(),
   afterPhotos: text("after_photos").array(),

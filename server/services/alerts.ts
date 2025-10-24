@@ -148,14 +148,17 @@ export class AlertService {
   }
 
   async createAlertFromError(container: any, errorCode: string, metrics: any) {
-    // Check if alert already exists for this error
+    // Enhanced deduplication: Check for existing alerts with same error code and container
     const existingAlerts = await storage.getAlertsByContainer(container.id);
     const hasOpenAlert = existingAlerts.some(a => 
-      a.alertCode === errorCode && a.status === 'open'
+      a.alertCode === errorCode && 
+      a.status === 'open' && 
+      // Also check if alert was created recently (within last 5 minutes) to prevent spam
+      new Date(a.detectedAt).getTime() > (Date.now() - 5 * 60 * 1000)
     );
 
     if (hasOpenAlert) {
-      console.log(`[Alert Service] Alert already exists for ${container.containerCode || container.containerId} - ${errorCode}`);
+      console.log(`[Alert Service] Alert already exists for ${container.containerCode || container.containerId} - ${errorCode} (deduplication active)`);
       return;
     }
 

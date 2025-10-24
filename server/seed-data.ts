@@ -80,21 +80,13 @@ export async function seedDatabase() {
     const technician1 = await db.insert(technicians).values({
       userId: technicianUser[0].id,
       employeeCode: "TECH001",
-      name: "Mike Johnson",
-      phone: "+1555123456",
-      whatsappNumber: "+1555123456",
-      email: "mike@containergenie.com",
-      baseLocation: { lat: 34.0522, lng: -118.2437 }, // Los Angeles
-      serviceRadius: 50,
-      skills: ["refrigeration", "electrical", "mechanical"],
       experienceLevel: "senior",
-      hourlyRate: "75.00",
-      workingHoursStart: "08:00",
-      workingHoursEnd: "17:00",
-      isAvailable: true,
-      averageRating: "4.8",
-      totalServicesCompleted: 150,
-      firstTimeFixRate: "92.5",
+      skills: ["refrigeration", "electrical", "mechanical"],
+      baseLocation: { lat: 34.0522, lng: -118.2437 },
+      serviceAreas: ["Los Angeles", "Orange County"],
+      status: "available",
+      averageRating: 4.8,
+      totalJobsCompleted: 150
     }).returning();
 
     // Create sample containers
@@ -106,21 +98,25 @@ export async function seedDatabase() {
       
       containers_data.push({
         containerCode,
-        type: i % 3 === 0 ? "refrigerated" : i % 3 === 1 ? "dry" : "special",
+        type: (i % 3 === 0 ? "refrigerated" : i % 3 === 1 ? "dry" : "special") as any,
         manufacturer: i % 2 === 0 ? "CIMC" : "Hyundai",
         model: `Model-${i % 10 + 1}`,
         capacity: (20 + (i % 20)).toString(),
-        purchaseDate: new Date(2020 + (i % 4), i % 12, (i % 28) + 1),
-        status,
+        status: status as any,
         orbcommDeviceId: isIot ? `ORB${i.toString().padStart(6, '0')}` : null,
         hasIot: isIot,
         currentLocation: {
           lat: 34.0522 + (Math.random() - 0.5) * 0.1,
           lng: -118.2437 + (Math.random() - 0.5) * 0.1,
+          timestamp: new Date().toISOString(),
+          source: "seed"
         },
         currentCustomerId: i <= 100 ? customer1[0].id : customer2[0].id,
         assignmentDate: new Date(2024, 0, 1),
         expectedReturnDate: new Date(2024, 11, 31),
+        purchaseDate: new Date(2020 + (i % 4), i % 12, (i % 28) + 1),
+        healthScore: 85 + (i % 15),
+        usageCycles: i * 10 + (i % 50)
       });
     }
 
@@ -134,10 +130,11 @@ export async function seedDatabase() {
       const severity = severities[Math.floor(Math.random() * severities.length)];
       
       alerts_data.push({
-        containerId: container.id,
         alertCode: `ALT-${Date.now()}-${i}`,
-        alertType: "error",
-        severity,
+        containerId: container.id,
+        alertType: "error" as any,
+        severity: severity as any,
+        title: `Alert ${i}: ${severity.toUpperCase()} issue detected`,
         description: `Alert ${i}: ${severity.toUpperCase()} issue detected`,
         source: "orbcomm",
         detectedAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),

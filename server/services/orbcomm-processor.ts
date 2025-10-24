@@ -1,7 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { containers } from '@shared/schema';
 import { db } from '../db';
-import { logger } from '../utils/logger';
+// Simple logger replacement
+const logger = {
+  info: (message: string, data?: any) => console.log(`ℹ️ ${message}`, data || ''),
+  error: (message: string, data?: any) => console.error(`❌ ${message}`, data || ''),
+  warn: (message: string, data?: any) => console.warn(`⚠️ ${message}`, data || ''),
+  debug: (message: string, data?: any) => console.debug(`🐛 ${message}`, data || '')
+};
 
 // Types for Orbcomm message processing
 export interface OrbcommMessage {
@@ -74,8 +80,8 @@ export async function processOrbcommMessage(orbcommData: OrbcommMessage): Promis
     await db.update(containers)
       .set({
         lastUpdateTimestamp: telemetryUpdate.lastUpdateTimestamp,
-        locationLat: telemetryUpdate.locationLat,
-        locationLng: telemetryUpdate.locationLng,
+        locationLat: telemetryUpdate.locationLat ? telemetryUpdate.locationLat.toString() : undefined,
+        locationLng: telemetryUpdate.locationLng ? telemetryUpdate.locationLng.toString() : undefined,
         lastTelemetry: telemetryUpdate.lastTelemetry,
         lastSyncedAt: telemetryUpdate.lastSyncedAt,
         updatedAt: new Date()
@@ -103,8 +109,8 @@ export async function processOrbcommMessage(orbcommData: OrbcommMessage): Promis
 
   } catch (error) {
     logger.error('Error processing Orbcomm message', {
-      error: error.message,
-      stack: error.stack,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
       message: orbcommData
     });
     throw error;
@@ -129,7 +135,7 @@ async function emitContainerUpdate(containerDbId: string, updateData: any): Prom
     }
   } catch (error) {
     logger.error('Error emitting container update', {
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
       containerDbId,
       updateData
     });
@@ -215,7 +221,7 @@ export async function getContainerTelemetryHistory(
     }];
   } catch (error) {
     logger.error('Error fetching container telemetry history', {
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
       containerId
     });
     throw error;
@@ -240,7 +246,7 @@ export async function healthCheck(): Promise<{
       errors: 0
     };
   } catch (error) {
-    logger.error('Health check failed', { error: error.message });
+    logger.error('Health check failed', { error: error instanceof Error ? error.message : String(error) });
     return {
       status: 'unhealthy',
       totalProcessed: 0,

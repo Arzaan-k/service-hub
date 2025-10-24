@@ -22,6 +22,7 @@ import Inventory from "@/pages/inventory";
 import Analytics from "@/pages/analytics";
 import ClientProfile from "@/pages/client-profile";
 import AdminWhatsApp from "@/pages/admin-whatsapp";
+import OrbcommData from "@/pages/orbcomm-data";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -95,6 +96,9 @@ function Router() {
       </Route>
       <Route path="/admin/whatsapp">
         {() => <ProtectedRoute component={AdminWhatsApp} roles={["admin", "coordinator", "super_admin"]} />}
+      </Route>
+      <Route path="/orbcomm-data">
+        {() => <ProtectedRoute component={OrbcommData} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
     </Switch>
   );
