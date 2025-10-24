@@ -730,6 +730,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Single service request with relations for detail view
+  app.get("/api/service-requests/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const id = req.params.id;
+      const request = await storage.getServiceRequest(id);
+      if (!request) return res.status(404).json({ error: "Not found" });
+
+      const [container, customer, technician] = await Promise.all([
+        storage.getContainer(request.containerId),
+        storage.getCustomer(request.customerId),
+        request.assignedTechnicianId ? storage.getTechnician(request.assignedTechnicianId) : Promise.resolve(undefined)
+      ]);
+
+      const response = {
+        ...request,
+        container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
+        customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
+        technician: technician ? { id: technician.id, name: (await storage.getUser(technician.userId))?.name || technician.employeeCode } : undefined,
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error("Fetch service request detail error:", error);
+      res.status(500).json({ error: "Failed to fetch service request detail" });
+    }
+  });
+
   app.get("/api/service-requests/pending", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
       const requests = await storage.getPendingServiceRequests();
@@ -2421,13 +2448,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/whatsapp/templates", async (req, res) => {
     try {
-      const { getWhatsAppTemplates, WHATSAPP_TEMPLATES } = await import('./services/whatsapp');
-      const templates = await getWhatsAppTemplates();
-      res.json({ templates, localTemplates: WHATSAPP_TEMPLATES });
+      const mod = await import('./services/whatsapp');
+      const templates = await mod.getWhatsAppTemplates();
+      const localTemplates = (mod as any).WHATSAPP_TEMPLATES || {};
+      res.json({ templates, localTemplates });
     } catch (error) {
       console.error("Templates fetch error:", error);
       // Return local templates as fallback
-      res.json({ templates: [], localTemplates: WHATSAPP_TEMPLATES });
+      try {
+        const mod = await import('./services/whatsapp');
+        const localTemplates = (mod as any).WHATSAPP_TEMPLATES || {};
+        res.json({ templates: [], localTemplates });
+      } catch {
+        res.json({ templates: [], localTemplates: {} });
+      }
     }
   });
 

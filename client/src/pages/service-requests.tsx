@@ -4,6 +4,7 @@ import Header from "@/components/layout/header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -386,7 +387,9 @@ export default function ServiceRequests() {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-lg font-semibold font-mono">{request.requestNumber}</h3>
+                          <h3 className="text-lg font-semibold font-mono">
+                            <Link href={`/service-requests/${request.id}`}>{request.requestNumber}</Link>
+                          </h3>
                           {getStatusBadge(request.status)}
                           <Badge className={`${getPriorityBadge(request.priority)} border`}>
                             {request.priority}

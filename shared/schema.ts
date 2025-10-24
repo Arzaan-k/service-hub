@@ -171,6 +171,7 @@ export const serviceRequests = pgTable("service_requests", {
   customerFeedbackId: varchar("customer_feedback_id").references(() => feedback.id),
   beforePhotos: text("before_photos").array(),
   afterPhotos: text("after_photos").array(),
+  locationProofPhotos: text("location_proof_photos").array(), // New field for location proof photos
   clientApprovalRequired: boolean("client_approval_required"),
   clientApprovedAt: timestamp("client_approved_at"),
   createdBy: varchar("created_by").references(() => users.id).notNull(),

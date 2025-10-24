@@ -1,5 +1,9 @@
+import { config } from 'dotenv';
+config(); // Load environment variables
+
 import { registerAllTemplates, WHATSAPP_TEMPLATES } from './server/services/whatsapp.ts';
 
+console.log('TOKEN:', process.env.CLOUD_API_ACCESS_TOKEN ? 'SET' : 'NOT SET');
 console.log(`📋 Found ${Object.keys(WHATSAPP_TEMPLATES).length} templates to register:`);
 console.log(Object.keys(WHATSAPP_TEMPLATES).join(', '));
 
@@ -22,6 +26,9 @@ console.log(Object.keys(WHATSAPP_TEMPLATES).join(', '));
     console.error(error.stack);
   }
 })();
+
+
+
 
 
 

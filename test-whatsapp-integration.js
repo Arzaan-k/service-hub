@@ -10,7 +10,7 @@
  * 4. Client communication
  */
 
-import { whatsappService } from './server/services/whatsapp.ts';
+const { resolveWabaId, registerAllTemplates, sendTextMessage, getWhatsAppTemplates } = require('./server/services/whatsapp.js');
 
 async function testWhatsAppIntegration() {
   console.log('🧪 Testing WhatsApp Integration\n');
@@ -20,7 +20,6 @@ async function testWhatsAppIntegration() {
     console.log('1️⃣ Testing WhatsApp Configuration...');
     try {
       // This should throw an error if config is missing
-      const { resolveWabaId } = require('./server/services/whatsapp');
       await resolveWabaId();
       console.log('✅ WhatsApp configuration appears to be set');
     } catch (error) {
@@ -36,7 +35,6 @@ async function testWhatsAppIntegration() {
     // Test 2: Test Template Registration
     console.log('\n2️⃣ Testing Template Registration...');
     try {
-      const { registerAllTemplates } = await import('./server/services/whatsapp.ts');
       const results = await registerAllTemplates();
 
       const successCount = results.filter(r => r.status === 'success').length;
@@ -58,8 +56,6 @@ async function testWhatsAppIntegration() {
     try {
       // Send a test message to a phone number (replace with a test number)
       const testPhone = process.env.TEST_PHONE_NUMBER || '+1234567890';
-      const { sendTextMessage } = await import('./server/services/whatsapp.ts');
-
       const result = await sendTextMessage(testPhone, '🧪 Test message from ContainerGenie WhatsApp integration');
       console.log('✅ Test message sent successfully');
       console.log('Message ID:', result.messages?.[0]?.id);
@@ -70,7 +66,6 @@ async function testWhatsAppIntegration() {
     // Test 4: Test Template Fetching
     console.log('\n4️⃣ Testing Template Fetching...');
     try {
-      const { getWhatsAppTemplates } = await import('./server/services/whatsapp.ts');
       const templates = await getWhatsAppTemplates();
 
       console.log('✅ Templates fetched successfully');
@@ -98,7 +93,7 @@ async function testWhatsAppIntegration() {
 }
 
 // Run the test if this script is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (require.main === module) {
   testWhatsAppIntegration().then(() => {
     console.log('\n🏁 WhatsApp integration test completed');
     process.exit(0);
@@ -108,4 +103,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   });
 }
 
-export { testWhatsAppIntegration };
+module.exports = { testWhatsAppIntegration };

@@ -117,7 +117,7 @@ class OrbcommAPIClient {
         "Password": this.password,
         "StartUTC": new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Last 24 hours
         "EndUTC": new Date().toISOString(),
-        "EventType": "1", // Try numeric event type
+        "EventType": 0, // Try numeric event type
         "IncludeData": true,
         "IncludeRawPayload": false,
         "MaxEvents": 1000
@@ -188,7 +188,7 @@ class OrbcommAPIClient {
         "Password": this.password,
         "StartUTC": new Date(Date.now() - 5 * 60 * 1000).toISOString(), // Last 5 minutes
         "EndUTC": new Date().toISOString(),
-        "EventType": "1", // Try numeric event type
+        "EventType": 0, // Try numeric event type
         "IncludeData": true,
         "IncludeRawPayload": false,
         "MaxEvents": 100

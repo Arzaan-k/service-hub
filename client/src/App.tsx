@@ -12,6 +12,7 @@ import Containers from "@/pages/containers";
 import ContainerDetail from "@/pages/container-detail";
 import Alerts from "@/pages/alerts";
 import ServiceRequests from "@/pages/service-requests";
+import ServiceRequestDetail from "@/pages/service-request-detail";
 import Technicians from "@/pages/technicians";
 import TechnicianProfile from "@/pages/technician-profile";
 import Scheduling from "@/pages/scheduling";
@@ -61,6 +62,9 @@ function Router() {
       </Route>
       <Route path="/service-requests">
         {() => <ProtectedRoute component={ServiceRequests} />}
+      </Route>
+      <Route path="/service-requests/:id">
+        {() => <ProtectedRoute component={ServiceRequestDetail} />}
       </Route>
       <Route path="/technicians">
         {() => <ProtectedRoute component={Technicians} roles={["admin", "coordinator", "super_admin"]} />}
