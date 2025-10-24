@@ -49,10 +49,11 @@ class OrbcommAPIClient {
         console.log(`📍 URL: ${this.url}`);
         console.log(`👤 Username: ${this.username}`);
         
-        // Create WebSocket connection with CDH protocol per documentation
-        // CDH uses standard WebSocket with Basic Auth in headers
+        // Create WebSocket connection with CDH protocol per ORBCOMM support instructions
+        // Must use subprotocol 'cdh.orbcomm.com' and specific Basic Auth format
         this.ws = new WebSocket(
           this.url,
+          'cdh.orbcomm.com', // Required subprotocol per ORBCOMM support
           {
             headers: {
               'Authorization': `Basic ${Buffer.from(`${this.username}:${this.password}`).toString('base64')}`,
@@ -251,31 +252,35 @@ class OrbcommAPIClient {
     try {
       console.log('📱 Processing CDH DeviceMessage');
       
-      const deviceId = event.DeviceID || event.DeviceId;
-      const timestamp = event.EventUTC || event.EventDtm || new Date().toISOString();
+      const deviceId = event.DeviceData?.DeviceID || event.DeviceId;
+      const assetId = event.DeviceData?.LastAssetID || event.ReeferData?.AssetID;
+      const timestamp = event.MessageData?.EventDtm || event.MessageData?.AppDtm || new Date().toISOString();
       
       // Extract location data
       let location: { latitude: number; longitude: number } | undefined = undefined;
-      if (event.GPSLatitude && event.GPSLongitude) {
+      if (event.DeviceData?.GPSLatitude && event.DeviceData?.GPSLongitude) {
         location = {
-          latitude: parseFloat(event.GPSLatitude),
-          longitude: parseFloat(event.GPSLongitude)
+          latitude: parseFloat(event.DeviceData.GPSLatitude),
+          longitude: parseFloat(event.DeviceData.GPSLongitude)
         };
       }
       
       // Extract device status data
       const deviceData = {
         deviceId,
+        assetId, // This is the container ID
         timestamp,
         location,
-        temperature: event.DeviceTemp || event.Temperature,
-        doorStatus: event.DoorState || event.DoorStatus,
-        powerStatus: event.ExtPower ? 'on' : 'off',
-        batteryLevel: event.BatteryVoltage || event.BatteryLevel,
-        errorCodes: event.ErrorCodes || [],
+        temperature: event.ReeferData?.TAmb || event.DeviceData?.DeviceTemp,
+        doorStatus: event.DeviceData?.DoorState,
+        powerStatus: event.DeviceData?.ExtPower ? 'on' : 'off',
+        batteryLevel: event.DeviceData?.BatteryVoltage,
+        errorCodes: event.ReeferData?.ReeferAlarms ? 
+          event.ReeferData.ReeferAlarms.map((alarm: any) => alarm.RCAlias || `E${alarm.OemAlarm}`) : [],
         rawData: event
       };
       
+      // Process with database integration
       this.processEvents([deviceData]);
       
     } catch (error) {
@@ -352,32 +357,33 @@ class OrbcommAPIClient {
   }
 
   private processEvents(events: any[]): void {
-    console.log(`📱 Processing ${events.length} events from Orbcomm`);
+    console.log(`📱 Processing ${events.length} events from CDH`);
     
     const devices = new Map();
     
     for (const event of events) {
       try {
         // Extract device information from event
-        const deviceId = event.DeviceId || event.deviceId || event.IMEI;
-        const deviceName = event.DeviceName || event.deviceName || `Device ${deviceId}`;
+        const deviceId = event.deviceId || event.DeviceId || event.IMEI;
+        const assetId = event.assetId || event.AssetID || event.LastAssetID; // Container ID
+        const deviceName = event.deviceName || event.DeviceName || `Device ${deviceId}`;
         
         // Extract location data
         let location: { latitude: number; longitude: number } | undefined = undefined;
-        if (event.Latitude && event.Longitude) {
+        if (event.location) {
+          location = {
+            latitude: parseFloat(event.location.latitude),
+            longitude: parseFloat(event.location.longitude)
+          };
+        } else if (event.Latitude && event.Longitude) {
           location = {
             latitude: parseFloat(event.Latitude),
             longitude: parseFloat(event.Longitude)
           };
-        } else if (event.Location) {
-          location = {
-            latitude: parseFloat(event.Location.Latitude || event.Location.lat),
-            longitude: parseFloat(event.Location.Longitude || event.Location.lng)
-          };
         }
         
         // Extract timestamp
-        const timestamp = event.EventUTC || event.Timestamp || event.timestamp || new Date().toISOString();
+        const timestamp = event.timestamp || event.EventUTC || event.Timestamp || new Date().toISOString();
         
         if (deviceId) {
           devices.set(deviceId, {
@@ -422,18 +428,8 @@ class OrbcommAPIClient {
                 : (event.errorCodes || [])
             } as any;
 
-            // Extract lastAssetId for container matching (AssetID = container ID)
-            let lastAssetId: string | null = null;
-            if (event.ReeferAlarms && Array.isArray(event.ReeferAlarms) && event.ReeferAlarms.length > 0) {
-              // Extract from ReeferAlarms if available
-              lastAssetId = event.ReeferAlarms[0]?.AssetID || event.ReeferAlarms[0]?.assetId;
-            }
-            if (!lastAssetId && event.AssetID) {
-              lastAssetId = event.AssetID;
-            }
-            if (!lastAssetId && event.LastAssetID) {
-              lastAssetId = event.LastAssetID;
-            }
+            // Use assetId as primary container identifier (AssetID = container ID)
+            const lastAssetId = assetId || event.AssetID || event.LastAssetID;
 
             const anomalies = detectAnomalies(dataLike as any);
             if (anomalies && anomalies.length > 0) {
@@ -862,7 +858,7 @@ export function getOrbcommClient(): OrbcommAPIClient {
     
     const url = possibleUrls[0] || 'wss://integ.tms-orbcomm.com:44355/cdh';
     const username = process.env.ORBCOMM_USERNAME || 'cdhQuadre';
-    const password = process.env.ORBCOMM_PASSWORD || 'P4pD#QU@!D@re'; // Fixed typo: was P4cD#QA@!D@re
+    const password = process.env.ORBCOMM_PASSWORD || 'P4cD#QA@!D@re'; // Exact password from ORBCOMM support
 
     console.log(`🔧 Using CDH URL: ${url}`);
     console.log(`🔧 Using username: ${username}`);
@@ -1065,7 +1061,7 @@ export async function testCDHConnection(): Promise<void> {
     
     const url = process.env.ORBCOMM_URL || 'wss://wamc.wamcentral.net:44355/cdh';
     const username = process.env.ORBCOMM_USERNAME || 'cdhQuadre';
-    const password = process.env.ORBCOMM_PASSWORD || 'P4pD#QU@!D@re'; // Fixed typo: was P4cD#QA@!D@re
+    const password = process.env.ORBCOMM_PASSWORD || 'P4cD#QA@!D@re'; // Exact password from ORBCOMM support
     
     console.log('📋 Connection parameters:');
     console.log(`  URL: ${url}`);
