@@ -1,3 +1,7 @@
+import React, { useState } from "react";
+import { Wrench, ChevronDown, ChevronUp } from "lucide-react";
+import ReeferDiagnosticChat from "./rag/ReeferDiagnosticChat";
+
 interface AlertItemProps {
   alert: {
     id: string;
@@ -8,10 +12,13 @@ interface AlertItemProps {
     containerId: string;
   };
   containerName: string;
+  containerModel?: string;
   onAction?: (alertId: string, action: string) => void;
 }
 
-export default function AlertItem({ alert, containerName, onAction }: AlertItemProps) {
+export default function AlertItem({ alert, containerName, containerModel, onAction }: AlertItemProps) {
+  const [showChat, setShowChat] = useState(false);
+
   const severityColors = {
     critical: { bg: "bg-destructive/5", border: "border-destructive/20", text: "text-destructive", badge: "bg-destructive" },
     high: { bg: "bg-warning/5", border: "border-warning/20", text: "text-warning", badge: "bg-warning" },
@@ -64,7 +71,41 @@ export default function AlertItem({ alert, containerName, onAction }: AlertItemP
         >
           Details
         </button>
+        <button
+          onClick={() => setShowChat(!showChat)}
+          className="px-3 py-1.5 text-xs font-medium border border-blue-200 text-blue-700 rounded hover:bg-blue-50 transition-smooth flex items-center gap-1"
+          data-testid={`button-troubleshoot-${alert.id}`}
+        >
+          <Wrench className="h-3 w-3" />
+          {showChat ? (
+            <>
+              Hide Help
+              <ChevronUp className="h-3 w-3" />
+            </>
+          ) : (
+            <>
+              Get Help
+              <ChevronDown className="h-3 w-3" />
+            </>
+          )}
+        </button>
       </div>
+
+      {showChat && (
+        <div className="mt-4 pt-4 border-t border-border">
+          <ReeferDiagnosticChat
+            containerId={alert.containerId}
+            containerModel={containerModel}
+            alarmCode={alert.alertCode}
+            compact={true}
+            context={{
+              alert_id: alert.id,
+              alert_description: alert.description,
+              container_name: containerName
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

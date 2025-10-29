@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -17,6 +17,17 @@ export default function Login() {
   const [rpEmail, setRpEmail] = useState("");
   const [rpCode, setRpCode] = useState("");
   const [rpPassword, setRpPassword] = useState("");
+
+  // Clear any test auth on login page load
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+    if (token === 'test-admin-123') {
+      console.log('[LOGIN] Clearing test auth token');
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('current_user');
+    }
+  }, []);
 
   const loginMutation = useMutation({
     mutationFn: async (data: { email: string; password: string }) => {

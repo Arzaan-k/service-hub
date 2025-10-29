@@ -9,14 +9,14 @@ const app = express();
 
 // Enable CORS (allow custom auth header)
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  origin: true, // Reflect the request origin
   credentials: true,
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-user-id']
 }));
 // Handle preflight
 app.options('*', cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  origin: true, // Reflect the request origin
   credentials: true,
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-user-id']
@@ -39,6 +39,8 @@ app.use((req, res, next) => {
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
+  console.log(`[REQUEST] ${req.method} ${req.url} from ${req.ip}`);
+  
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
     capturedJsonResponse = bodyJson;
@@ -76,25 +78,40 @@ app.use((req, res, next) => {
   });
 
   // Initialize Orbcomm Production connection
-  try {
-    await initializeOrbcommConnection();
+  console.log('[SERVER] Checking Orbcomm initialization conditions:');
+  console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
+  console.log('[SERVER] ENABLE_ORBCOMM_DEV:', process.env.ENABLE_ORBCOMM_DEV);
+  
+  if (process.env.NODE_ENV !== 'development' || process.env.ENABLE_ORBCOMM_DEV === 'true') {
+    console.log('[SERVER] Initializing Orbcomm connection...');
+    try {
+      await initializeOrbcommConnection();
 
-    // Populate database with production devices
-    setTimeout(async () => {
-      try {
-        await populateOrbcommDevices();
-      } catch (error) {
-        console.error('❌ Error populating Orbcomm devices:', error);
-      }
-    }, 5000); // Wait 5 seconds after server start
-  } catch (error) {
-    console.error('❌ Error initializing Orbcomm connection:', error);
+      // Populate database with production devices
+      setTimeout(async () => {
+        try {
+          await populateOrbcommDevices();
+        } catch (error) {
+          console.error('❌ Error populating Orbcomm devices:', error);
+        }
+      }, 5000); // Wait 5 seconds after server start
+    } catch (error) {
+      console.error('❌ Error initializing Orbcomm connection:', error);
+    }
+  } else {
+    console.log('⏭️ Skipping Orbcomm initialization in development mode');
   }
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
+  console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
+  // For testing, let's serve static files in development too
+  if (process.env.NODE_ENV === "development" && process.env.USE_VITE_DEV !== "true") {
+    console.log('[SERVER] Serving static files in development mode for testing');
+    serveStatic(app);
+  } else if (process.env.NODE_ENV === "development") {
+    console.log('[SERVER] Setting up Vite development server');
     await setupVite(app, server);
   } else {
     serveStatic(app);
@@ -105,7 +122,38 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen(port, "0.0.0.0", () => {
+  console.log(`[SERVER] Attempting to listen on all interfaces port ${port}`);
+  
+  // Try multiple binding strategies for maximum compatibility
+  server.listen(port, '0.0.0.0', () => {
     log(`serving on port ${port}`);
+    console.log(`[SERVER] Server is now listening on all interfaces port ${port}`);
+    console.log(`[SERVER] Try accessing at: http://localhost:${port}`);
+    console.log(`[SERVER] Process ID: ${process.pid}`);
+    console.log(`[SERVER] NODE_ENV: ${process.env.NODE_ENV}`);
+  });
+  
+  // Also listen on IPv6
+  server.listen(port, '::', () => {
+    console.log(`[SERVER] Server is also listening on IPv6 port ${port}`);
+  });
+  
+  // Add error handling for the server
+  server.on('error', (err) => {
+    console.error('[SERVER] Server error:', err);
+  });
+  
+  // Log when the server starts listening
+  server.on('listening', () => {
+    const addr = server.address();
+    console.log(`[SERVER] Server listening on ${JSON.stringify(addr)}`);
+  });
+  
+  process.on('SIGINT', () => {
+    console.log('[SERVER] Received SIGINT, shutting down gracefully');
+    server.close(() => {
+      console.log('[SERVER] Server closed');
+      process.exit(0);
+    });
   });
 })();

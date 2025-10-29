@@ -23,6 +23,10 @@ export default function Sidebar() {
     { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", color: "inventory", roles: ["admin","coordinator","technician","super_admin"] },
     // Admin-only analytics
     { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", color: "analytics", roles: ["admin","super_admin"] },
+    // RAG Chat for everyone
+    { path: "/rag-chat", label: "AI Assistant", icon: "fas fa-robot", color: "rag", roles: ["admin","coordinator","technician","client","super_admin"] },
+    // Admin manual management
+    { path: "/admin/manuals", label: "Manuals", icon: "fas fa-book", color: "manuals", roles: ["admin","super_admin"] },
   ].filter(item => item.roles.includes(role));
 
   const handleLogout = () => {

@@ -1,13 +1,10 @@
 import { useState } from "react";
 import { getAuthToken } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 
 async function sendTemplate(to: string, templateName: string, parameters: any[] = []) {
-  const res = await fetch("/api/whatsapp/send-template", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-user-id": getAuthToken() || "" },
-    body: JSON.stringify({ to, templateName, parameters }),
-  });
-  return res.json();
+  const response = await apiRequest("POST", "/api/whatsapp/send-template", { to, templateName, parameters });
+  return response.json();
 }
 
 export default function WhatsAppHubPanel() {

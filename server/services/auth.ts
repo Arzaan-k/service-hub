@@ -36,7 +36,7 @@ function getTransport() {
   return nodemailer.createTransport({ host, port, secure, auth: user && pass ? { user, pass } : undefined });
 }
 
-export async function createAndSendEmailOTP(user: any): Promise<void> {
+export async function createAndSendEmailOTP(user: any): Promise<{ success: boolean; code?: string; error?: string }> {
   const code = generateOtp();
   const codeHash = hashCode(code);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
@@ -61,12 +61,27 @@ export async function createAndSendEmailOTP(user: any): Promise<void> {
     <p>This code expires in 10 minutes.</p>
   </div>`;
 
-  await transporter.sendMail({
-    to: user.email,
-    from,
-    subject: `${appName} - Verify your email`,
-    html,
-  });
+  try {
+    // Check if SMTP is configured
+    if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
+      console.warn('⚠️  SMTP not configured. Email verification code:', code);
+      console.warn('📧 To enable email sending, configure SMTP_HOST, SMTP_USER, and SMTP_PASS in .env');
+      return { success: false, code, error: 'Email not configured. Check server logs for verification code.' };
+    }
+
+    await transporter.sendMail({
+      to: user.email,
+      from,
+      subject: `${appName} - Verify your email`,
+      html,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Email sending failed:', error.message);
+    console.warn('📧 Email verification code (not sent):', code);
+    return { success: false, code, error: 'Email sending failed. Check server logs for verification code.' };
+  }
 }
 
 export async function verifyEmailCode(userId: string, code: string): Promise<boolean> {
@@ -94,6 +109,8 @@ export async function verifyEmailCode(userId: string, code: string): Promise<boo
   // Success → mark emailVerified in caller
   return true;
 }
+
+
 
 
 

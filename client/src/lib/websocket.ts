@@ -13,7 +13,7 @@ export class WebSocketClient {
     this.connect();
   }
 
-  private connect() {
+private connect() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     // Allow explicit URL via env or constructor
     let wsUrl = this.url;
@@ -28,17 +28,19 @@ export class WebSocketClient {
         if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
           host = "localhost:5000";
         } else {
-          host = window.location.hostname;
+          host = window.location.hostname + ":5000";
         }
       }
       wsUrl = `${protocol}//${host}/ws`;
     }
 
+    console.log("Attempting WebSocket connection to:", wsUrl);
+
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log("WebSocket connected");
+        console.log("WebSocket connected to:", wsUrl);
         this.reconnectAttempts = 0;
         // Authenticate socket so server delivers role/user-scoped events
         try {
@@ -46,7 +48,9 @@ export class WebSocketClient {
           if (token && this.ws?.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({ type: 'authenticate', token }));
           }
-        } catch {}
+        } catch (error) {
+          console.error("WebSocket auth error:", error);
+        }
       };
 
       this.ws.onmessage = (event) => {
@@ -63,7 +67,7 @@ export class WebSocketClient {
       };
 
       this.ws.onclose = () => {
-        console.log("WebSocket disconnected");
+        console.log("WebSocket disconnected from:", wsUrl);
         this.attemptReconnect();
       };
     } catch (error) {

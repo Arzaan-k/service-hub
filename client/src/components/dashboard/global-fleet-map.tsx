@@ -545,14 +545,9 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
           params.append('viewbox', '68.1766451354,37.0902398031,97.4025614766,8.088306932');
           params.append('bounded', '1');
         }
-        const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
-        const response = await fetch(url, {
-          headers: {
-            'User-Agent': 'ContainerGenie/1.0 (contact: support@container-genie.local)',
-            'Accept-Language': 'en',
-            'Referer': typeof window !== 'undefined' ? window.location.origin : ''
-          }
-        });
+        // Use our proxy endpoint to avoid CORS issues
+        const proxyUrl = `/api/proxy/nominatim?${params.toString()}`;
+        const response = await fetch(proxyUrl);
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
           const best = data[0];

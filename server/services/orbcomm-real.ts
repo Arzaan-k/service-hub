@@ -88,10 +88,9 @@ class OrbcommAPIClient {
           }, 10000); // Wait 10 seconds before first periodic request
           
           // Set up regular periodic requests - per ORBCOMM docs, be conservative with timing
-          // TEMPORARILY DISABLED to prevent 2006 cascade
-          // setInterval(() => {
-          //   this.sendPeriodicRequest();
-          // }, 60000); // Refresh every 60 seconds (conservative timing per ORBCOMM docs)
+          setInterval(() => {
+            this.sendPeriodicRequest();
+          }, 120000); // Refresh every 2 minutes (very conservative timing to avoid 2006 faults)
           
           resolve();
         });
@@ -250,6 +249,32 @@ class OrbcommAPIClient {
       return;
     }
     
+    // Handle bulk event responses (multiple events in one message)
+    if (message.Events && Array.isArray(message.Events)) {
+      console.log(`📱 Received bulk CDH events: ${message.Events.length} events`);
+      this.requestInProgress = false; // Reset flag since we received a response
+      
+      // Process all events in the bulk response
+      for (const event of message.Events) {
+        if (event.EventClass) {
+          switch (event.EventClass) {
+            case 'DeviceMessage':
+              this.processDeviceMessage(event);
+              break;
+            case 'ReeferMessage':
+              this.processReeferMessage(event);
+              break;
+            case 'LocationMessage':
+              this.processLocationMessage(event);
+              break;
+            default:
+              console.log(`📱 Unknown bulk event class: ${event.EventClass}`);
+          }
+        }
+      }
+      return;
+    }
+    
     // Handle other message types
     if (message.type) {
       switch (message.type) {
@@ -271,7 +296,7 @@ class OrbcommAPIClient {
     }
   }
 
-  private sendPeriodicRequest(): void {
+  public sendPeriodicRequest(): void {
     if (!this.ws || !this.isConnected) {
       console.log('❌ CDH not connected, skipping periodic request...');
       return;
@@ -343,8 +368,8 @@ class OrbcommAPIClient {
         rawData: event
       };
       
-      // Process with database integration
-      this.processEvents([deviceData]);
+      // Process with database integration - pass the full event structure
+      this.processEvents([event]);
       
     } catch (error) {
       console.error('❌ Error processing DeviceMessage:', error);
@@ -381,7 +406,7 @@ class OrbcommAPIClient {
         rawData: event
       };
       
-      this.processEvents([reeferData]);
+      this.processEvents([event]);
       
     } catch (error) {
       console.error('❌ Error processing ReeferMessage:', error);
@@ -412,7 +437,7 @@ class OrbcommAPIClient {
         rawData: event
       };
       
-      this.processEvents([locationData]);
+      this.processEvents([event]);
       
     } catch (error) {
       console.error('❌ Error processing LocationMessage:', error);
@@ -421,42 +446,114 @@ class OrbcommAPIClient {
 
   private processEvents(events: any[]): void {
     console.log(`📱 Processing ${events.length} events from CDH`);
+    if (events.length > 0) {
+      console.log('📱 Sample event structure:', JSON.stringify(events[0], null, 2));
+    }
     
     const devices = new Map();
     
     for (const event of events) {
       try {
-        // Extract device information from event
-        const deviceId = event.deviceId || event.DeviceId || event.IMEI;
-        const assetId = event.assetId || event.AssetID || event.LastAssetID; // Container ID
-        const deviceName = event.deviceName || event.DeviceName || `Device ${deviceId}`;
+        // Extract device information from event - handle nested Event structure
+        const eventData = event.Event || event;
+        const deviceId = eventData.deviceId || eventData.DeviceId || eventData.IMEI || 
+                        eventData.DeviceData?.DeviceID || eventData.DeviceData?.DeviceId ||
+                        eventData.MessageData?.DeviceID;
+        const assetId = eventData.assetId || eventData.AssetID || eventData.LastAssetID || 
+                       eventData.ReeferData?.AssetID || eventData.DeviceData?.LastAssetID ||
+                       eventData.MessageData?.AssetID;
+        const deviceName = eventData.deviceName || eventData.DeviceName || `Device ${deviceId}`;
         
-        // Extract location data
+        console.log(`📱 Processing event - deviceId: ${deviceId}, assetId: ${assetId}`);
+        console.log(`📱 Event structure keys:`, Object.keys(eventData));
+        
+        // Extract location data from various sources
         let location: { latitude: number; longitude: number } | undefined = undefined;
-        if (event.location) {
+        const deviceData = eventData.DeviceData || {};
+        
+        if (eventData.location) {
           location = {
-            latitude: parseFloat(event.location.latitude),
-            longitude: parseFloat(event.location.longitude)
+            latitude: parseFloat(eventData.location.latitude),
+            longitude: parseFloat(eventData.location.longitude)
           };
-        } else if (event.Latitude && event.Longitude) {
+        } else if (eventData.Latitude && eventData.Longitude) {
           location = {
-            latitude: parseFloat(event.Latitude),
-            longitude: parseFloat(event.Longitude)
+            latitude: parseFloat(eventData.Latitude),
+            longitude: parseFloat(eventData.Longitude)
+          };
+        } else if (deviceData.GPSLatitude && deviceData.GPSLongitude) {
+          location = {
+            latitude: parseFloat(deviceData.GPSLatitude),
+            longitude: parseFloat(deviceData.GPSLongitude)
           };
         }
         
         // Extract timestamp
-        const timestamp = event.timestamp || event.EventUTC || event.Timestamp || new Date().toISOString();
+        const timestamp = eventData.timestamp || eventData.EventUTC || eventData.Timestamp || 
+                         eventData.MessageData?.EventDtm || new Date().toISOString();
         
         if (deviceId) {
-          devices.set(deviceId, {
+          console.log(`📱 Found device: ${deviceId}, processing...`);
+          
+          // Extract additional device information from the event structure
+          const reeferData = eventData.ReeferData || {};
+          
+          // Extract temperature from various sources
+          let temperature: number | undefined;
+          if (reeferData.TAmb !== undefined) temperature = reeferData.TAmb;
+          else if (deviceData.DeviceTemp !== undefined) temperature = deviceData.DeviceTemp;
+          else if (eventData.Temperature !== undefined) temperature = eventData.Temperature;
+          
+          // Extract door status
+          let doorStatus: string | undefined;
+          if (deviceData.DoorState) doorStatus = deviceData.DoorState.toLowerCase();
+          else if (eventData.DoorState) doorStatus = eventData.DoorState.toLowerCase();
+          
+          // Extract power status
+          let powerStatus: string | undefined;
+          if (deviceData.ExtPower !== undefined) powerStatus = deviceData.ExtPower ? 'on' : 'off';
+          else if (eventData.PowerStatus) powerStatus = eventData.PowerStatus.toLowerCase();
+          
+          // Extract battery level
+          let batteryLevel: number | undefined;
+          if (deviceData.BatteryVoltage !== undefined) {
+            // Convert voltage to percentage (assuming 8.1V is 100%)
+            batteryLevel = Math.min(100, Math.max(0, (deviceData.BatteryVoltage / 8.1) * 100));
+          }
+          
+          // Extract error codes/alarms
+          const errorCodes: string[] = [];
+          if (reeferData.ReeferAlarms && Array.isArray(reeferData.ReeferAlarms)) {
+            reeferData.ReeferAlarms.forEach((alarm: any) => {
+              if (alarm.Active) {
+                errorCodes.push(alarm.RCAlias || `E${alarm.OemAlarm}`);
+              }
+            });
+          }
+          
+          // Extract asset ID for container matching
+          const lastAssetId = deviceData.LastAssetID || assetId;
+          
+          const deviceInfo = {
             deviceId,
             deviceName,
+            assetId: lastAssetId,
             status: 'active',
             lastSeen: timestamp,
+            lastUpdate: timestamp,
             location,
-            rawEvent: event
-          });
+            temperature,
+            doorStatus,
+            powerStatus,
+            batteryLevel,
+            errorCodes,
+            rawEvent: eventData,
+            deviceData,
+            reeferData
+          };
+          
+          devices.set(deviceId, deviceInfo);
+          console.log(`📱 Added device to map: ${deviceId}`, deviceInfo);
           
           // Emit realtime broadcast for location updates
           if (location) {
@@ -609,6 +706,7 @@ class OrbcommAPIClient {
     // Store processed devices
     this.devices = Array.from(devices.values());
     console.log(`✅ Processed ${this.devices.length} unique devices from events`);
+    console.log(`📱 Device IDs:`, this.devices.map(d => d.deviceId));
     
     // Update database with device information
     this.updateContainersFromDevices();
@@ -786,38 +884,121 @@ class OrbcommAPIClient {
     });
   }
 
-  // Get all devices (read-only) - returns cached devices from CDH
+// Get all devices (read-only) - returns ONLY devices with real ORBCOMM telemetry data
   async getAllDevices(): Promise<OrbcommDevice[]> {
+    console.log(`📱 getAllDevices called - CDH connected: ${this.isConnected}, cached devices: ${this.devices.length}`);
+    
     if (!this.isConnected) {
-      console.log('⚠️ CDH not connected, returning cached devices');
-      return this.devices;
+      console.log('⚠️ CDH not connected, returning empty array (no fallback)');
+      return [];
     }
     
-    // Request fresh device list if we don't have any cached
-    if (this.devices.length === 0) {
-      this.sendPeriodicRequest();
-      // Wait a bit for response
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
+    // Filter to only return devices that have real ORBCOMM telemetry data
+    const realOrbcommDevices = this.devices.filter(device => {
+      // Check if device has real telemetry data (not fallback)
+      const hasRealData = device.rawEvent && 
+                         !device.rawEvent.fallback;
+      return hasRealData;
+    });
     
-    return this.devices;
+    console.log(`📱 Returning ${realOrbcommDevices.length} devices with real ORBCOMM telemetry data`);
+    return realOrbcommDevices;
   }
 
-  // Get device data (read-only) - returns cached data from CDH
+  // Create fallback devices from database containers
+  // Use containerCode as deviceId since ORBCOMM typically uses asset IDs as device identifiers
+  private async createFallbackDevices(): Promise<void> {
+    try {
+      const { storage } = await import('../storage');
+      const containers = await storage.getAllContainers();
+      
+      console.log(`📱 Creating devices from ${containers.length} database containers...`);
+      
+      const fallbackDevices: OrbcommDevice[] = [];
+      
+      for (const container of containers) {
+        // Use containerCode as the ORBCOMM device ID (typical ORBCOMM setup)
+        // Also check if there's an explicit orbcommDeviceId
+        const deviceId = container.orbcommDeviceId || container.containerCode;
+        
+        if (deviceId) {
+          const device: OrbcommDevice = {
+            deviceId,
+            deviceName: `${container.containerCode}`,
+            status: container.status === 'active' ? 'active' : 'inactive',
+            lastSeen: container.lastSyncTime || new Date().toISOString(),
+          };
+          
+          fallbackDevices.push(device);
+        }
+      }
+      
+      this.devices = fallbackDevices;
+      console.log(`📱 Created ${this.devices.length} fallback devices from database containers`);
+    } catch (error) {
+      console.error('❌ Error creating fallback devices:', error);
+      // Create minimal fallback devices
+      this.devices = [
+        {
+          deviceId: 'QUAD622180045',
+          deviceName: 'Device QUAD622180045',
+          status: 'active',
+          lastSeen: new Date().toISOString(),
+        },
+        {
+          deviceId: 'QUAD622340186',
+          deviceName: 'Device QUAD622340186',
+          status: 'active',
+          lastSeen: new Date().toISOString(),
+        }
+      ];
+      console.log(`📱 Created ${this.devices.length} minimal fallback devices`);
+    }
+  }
+
+// Get device data (read-only) - returns ONLY data for devices with real ORBCOMM telemetry
   async getDeviceData(deviceId: string): Promise<OrbcommDeviceData | null> {
+    console.log(`📱 getDeviceData called for device: ${deviceId}`);
+    
     if (!this.isConnected) {
-      console.log('⚠️ CDH not connected, returning cached data');
-      return this.deviceData[deviceId] || null;
+      console.log('⚠️ CDH not connected, returning null');
+      return null;
     }
     
-    // Request fresh data for this device
-    if (!this.deviceData[deviceId]) {
-      this.requestDeviceData(deviceId);
-      // Wait a bit for response
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    // Return cached data if available and has real telemetry
+    if (this.deviceData[deviceId]) {
+      const data = this.deviceData[deviceId];
+      // Check if this is real ORBCOMM data (not fallback)
+      if (data.rawData && !data.rawData.fallback) {
+        console.log(`📱 Returning cached real ORBCOMM data for device: ${deviceId}`);
+        return data;
+      }
     }
     
-    return this.deviceData[deviceId] || null;
+    // Try to find device in the devices array and create data from it
+    const device = this.devices.find(d => d.deviceId === deviceId);
+    if (device && device.rawEvent && !device.rawEvent.fallback) {
+      console.log(`📱 Creating device data from real ORBCOMM device: ${deviceId}`);
+      const deviceData: OrbcommDeviceData = {
+        deviceId: device.deviceId,
+        assetId: (device as any).assetId || device.deviceId,
+        lastUpdate: (device as any).lastUpdate || new Date().toISOString(),
+        location: (device as any).location,
+        temperature: (device as any).temperature,
+        doorStatus: (device as any).doorStatus,
+        powerStatus: (device as any).powerStatus,
+        batteryLevel: (device as any).batteryLevel,
+        errorCodes: (device as any).errorCodes || [],
+        rawData: (device as any).rawEvent || (device as any).rawData
+      };
+      
+      // Cache the data for future requests
+      this.deviceData[deviceId] = deviceData;
+      return deviceData;
+    }
+    
+    console.log(`⚠️ No real ORBCOMM data found for device: ${deviceId}`);
+    return null;
   }
 
   private requestDeviceData(deviceId: string): void {

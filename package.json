@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
-    "build": "npx vite build && npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && cp -r dist/public dist/client",
+    "build": "npx vite build && npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "build:deploy": "npm run build",
     "db:migrate:auth": "tsx server/tools/migrate-auth.ts",
     "import:rentals": "tsx server/tools/import-rentals.ts",
@@ -13,7 +13,9 @@
     "db:deploy": "echo 'Database migrations should be run manually in production'",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
-    "whatsapp:templates": "tsx register-templates.js"
+    "whatsapp:templates": "tsx register-templates.js",
+    "setup:rag": "node setup-rag.js",
+    "seed:rag": "node seed-rag-manuals.js"
   },
   "dependencies": {
     "@google/genai": "^1.21.0",
@@ -114,6 +116,7 @@
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.4",
     "tailwindcss": "^3.4.17",
+    "ts-node": "^10.9.2",
     "tsx": "^4.20.5",
     "typescript": "5.6.3"
   },

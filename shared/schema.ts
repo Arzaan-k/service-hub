@@ -331,6 +331,44 @@ export const inventoryTransactions = pgTable("inventory_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// RAG (Retrieval-Augmented Generation) Tables for Reefer Diagnostic Chatbot
+export const manuals = pgTable("manuals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  sourceUrl: text("source_url"),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  uploadedOn: timestamp("uploaded_on").defaultNow().notNull(),
+  version: text("version"),
+  meta: jsonb("meta"), // Additional metadata like brand, model, etc.
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const manualChunks = pgTable("manual_chunks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  manualId: varchar("manual_id").references(() => manuals.id).notNull(),
+  chunkText: text("chunk_text").notNull(),
+  chunkEmbeddingId: text("chunk_embedding_id"), // ID/key in vector database
+  pageNum: integer("page_num"),
+  startOffset: integer("start_offset"),
+  endOffset: integer("end_offset"),
+  metadata: jsonb("metadata"), // Additional chunk metadata (headings, alarm codes, etc.)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const ragQueries = pgTable("rag_queries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  unitId: varchar("unit_id").references(() => containers.id),
+  queryText: text("query_text").notNull(),
+  responseText: text("response_text").notNull(),
+  sources: jsonb("sources"), // Array of source citations
+  confidence: text("confidence").notNull(), // 'high', 'medium', 'low'
+  suggestedParts: jsonb("suggested_parts"), // Array of suggested spare parts
+  context: jsonb("context"), // Additional context (telemetry, alarm data, etc.)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations (updated according to PRD)
 export const usersRelations = relations(users, ({ one, many }) => ({
   customer: one(customers, { fields: [users.id], references: [customers.userId] }),
@@ -410,6 +448,21 @@ export const containerMetricsRelations = relations(containerMetrics, ({ one }) =
   container: one(containers, { fields: [containerMetrics.containerId], references: [containers.id] }),
 }));
 
+// RAG Relations
+export const manualsRelations = relations(manuals, ({ one, many }) => ({
+  uploadedBy: one(users, { fields: [manuals.uploadedBy], references: [users.id] }),
+  chunks: many(manualChunks),
+}));
+
+export const manualChunksRelations = relations(manualChunks, ({ one }) => ({
+  manual: one(manuals, { fields: [manualChunks.manualId], references: [manuals.id] }),
+}));
+
+export const ragQueriesRelations = relations(ragQueries, ({ one }) => ({
+  user: one(users, { fields: [ragQueries.userId], references: [users.id] }),
+  unit: one(containers, { fields: [ragQueries.unitId], references: [containers.id] }),
+}));
+
 // Insert schemas (updated according to PRD)
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true, updatedAt: true });
@@ -426,6 +479,9 @@ export const insertContainerMetricsSchema = createInsertSchema(containerMetrics)
 export const insertInventorySchema = createInsertSchema(inventory).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({ id: true, createdAt: true });
 export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({ id: true, createdAt: true });
+export const insertManualSchema = createInsertSchema(manuals).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true });
+export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: true, createdAt: true });
 
 // Types (updated according to PRD)
 export type User = typeof users.$inferSelect;
@@ -458,3 +514,9 @@ export type EmailVerification = typeof emailVerifications.$inferSelect;
 export type InsertEmailVerification = z.infer<typeof insertEmailVerificationSchema>;
 export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
 export type InsertInventoryTransaction = z.infer<typeof insertInventoryTransactionSchema>;
+export type Manual = typeof manuals.$inferSelect;
+export type InsertManual = z.infer<typeof insertManualSchema>;
+export type ManualChunk = typeof manualChunks.$inferSelect;
+export type InsertManualChunk = z.infer<typeof insertManualChunkSchema>;
+export type RagQuery = typeof ragQueries.$inferSelect;
+export type InsertRagQuery = z.infer<typeof insertRagQuerySchema>;
