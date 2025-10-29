@@ -37,6 +37,11 @@ export interface ReorderAlert {
 }
 
 class InventoryService {
+  private assertWritable() {
+    if (process.env.INVENTORY_SOURCE_TABLE) {
+      throw new Error('Inventory is in read-only mode because INVENTORY_SOURCE_TABLE is configured. Modify stock in the external source.');
+    }
+  }
   /**
    * Get all inventory items
    */
@@ -75,6 +80,7 @@ class InventoryService {
    * Create new inventory item
    */
   async createItem(itemData: Omit<InventoryItem, 'id' | 'lastUpdated'>): Promise<InventoryItem> {
+    this.assertWritable();
     try {
       const item = await storage.createInventoryItem({
         ...itemData,
@@ -96,6 +102,7 @@ class InventoryService {
    * Update inventory item
    */
   async updateItem(itemId: string, itemData: Partial<InventoryItem>): Promise<InventoryItem> {
+    this.assertWritable();
     try {
       const item = await storage.updateInventoryItem(itemId, {
         ...itemData,
@@ -116,6 +123,7 @@ class InventoryService {
    * Delete inventory item
    */
   async deleteItem(itemId: string): Promise<void> {
+    this.assertWritable();
     try {
       await storage.deleteInventoryItem(itemId);
     } catch (error) {
@@ -134,6 +142,7 @@ class InventoryService {
     userId: string,
     reference?: string
   ): Promise<InventoryTransaction> {
+    this.assertWritable();
     try {
       const item = await this.getItem(itemId);
       if (!item) {
@@ -172,6 +181,7 @@ class InventoryService {
     userId: string,
     reference?: string
   ): Promise<InventoryTransaction> {
+    this.assertWritable();
     try {
       const item = await this.getItem(itemId);
       if (!item) {
@@ -214,6 +224,7 @@ class InventoryService {
     userId: string,
     reference?: string
   ): Promise<InventoryTransaction> {
+    this.assertWritable();
     try {
       const item = await this.getItem(itemId);
       if (!item) {
