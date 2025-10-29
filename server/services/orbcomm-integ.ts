@@ -292,11 +292,13 @@ class OrbcommIntegClient {
   private requestDeviceList(): void {
     if (!this.ws || !this.isConnected) return;
     
-    const requestMessage = {
-      type: 'get_device_list',
+const requestMessage = {
+      type: 'get_all_devices',
       environment: 'integ',
       timestamp: new Date().toISOString(),
-      requestId: `req_${Date.now()}`
+      requestId: `req_${Date.now()}`,
+      // Limit the number of devices for development
+      maxDevices: process.env.NODE_ENV === 'development' ? 10 : undefined
     };
     
     console.log('📱 Requesting device list from INTEG...');

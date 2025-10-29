@@ -28,6 +28,7 @@ import {
   sendCustomerFeedbackRequest
 } from "./services/whatsapp";
 import { runDailyScheduler, startScheduler } from "./services/scheduling";
+import { ragAdapter } from "./services/ragAdapter";
 import { simpleSeed } from "./simple-seed";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -188,10 +189,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         emailVerified: false,
       });
 
-      await createAndSendEmailOTP(user);
+      const emailResult = await createAndSendEmailOTP(user);
 
-      res.json({ user, token: user.id, message: 'Verification code sent to email' });
+      const message = emailResult.success
+        ? 'Verification code sent to email'
+        : `Account created. ${emailResult.error || 'Check server logs for verification code.'}`;
+
+      res.json({
+        user,
+        token: user.id,
+        message,
+        emailSent: emailResult.success,
+        verificationCode: emailResult.code // Only for development/debugging
+      });
     } catch (error) {
+      console.error('Registration error:', error.message);
       res.status(500).json({ error: "Registration failed" });
     }
   });
@@ -204,8 +216,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.getUserByEmail(email);
       if (!user) return res.status(404).json({ error: 'User not found' });
       const { createAndSendEmailOTP } = await import('./services/auth');
-      await createAndSendEmailOTP(user);
-      res.json({ message: 'OTP sent to email' });
+      const emailResult = await createAndSendEmailOTP(user);
+      const message = emailResult.success
+        ? 'OTP sent to email'
+        : `Reset code generated. ${emailResult.error || 'Check server logs for reset code.'}`;
+      res.json({
+        message,
+        emailSent: emailResult.success,
+        resetCode: emailResult.code // Only for development/debugging
+      });
     } catch (error) {
       res.status(500).json({ error: 'Failed to send OTP' });
     }
@@ -260,8 +279,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (user.emailVerified) return res.json({ message: 'Email already verified' });
 
       const { createAndSendEmailOTP } = await import('./services/auth');
-      await createAndSendEmailOTP(user);
-      res.json({ message: 'Verification code resent' });
+      const emailResult = await createAndSendEmailOTP(user);
+      const message = emailResult.success
+        ? 'Verification code resent'
+        : `Code regenerated. ${emailResult.error || 'Check server logs for verification code.'}`;
+      res.json({
+        message,
+        emailSent: emailResult.success,
+        verificationCode: emailResult.code // Only for development/debugging
+      });
     } catch (error) {
       res.status(500).json({ error: 'Resend failed' });
     }
@@ -2495,50 +2521,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ORBCOMM status endpoint for debugging
+  app.get('/api/orbcomm/status', async (req, res) => {
+    try {
+      const { getOrbcommClient } = await import('./services/orbcomm-real');
+      const orbcommClient = getOrbcommClient();
+      
+      console.log('📱 Status endpoint - calling getAllDevices...');
+      const devices = await orbcommClient.getAllDevices();
+      console.log('📱 Status endpoint - devices count:', devices.length);
+      console.log('📱 Status endpoint - devices:', devices);
+      res.json({
+        connected: orbcommClient.isConnected,
+        devicesCount: devices.length,
+        lastUpdate: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('ORBCOMM status error:', error);
+      res.status(500).json({ 
+        error: 'Failed to get ORBCOMM status',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // ORBCOMM manual trigger endpoint
+  app.post('/api/orbcomm/trigger', async (req, res) => {
+    try {
+      const { getOrbcommClient } = await import('./services/orbcomm-real');
+      const orbcommClient = getOrbcommClient();
+      
+      console.log('📱 Manual trigger - sending GetEvents request...');
+      orbcommClient.sendPeriodicRequest();
+      
+      // Wait for response
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      const devices = await orbcommClient.getAllDevices();
+      res.json({
+        success: true,
+        devicesCount: devices.length,
+        message: 'Manual trigger completed'
+      });
+    } catch (error) {
+      console.error('ORBCOMM trigger error:', error);
+      res.status(500).json({ 
+        error: 'Failed to trigger ORBCOMM request',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // ORBCOMM data endpoints
   app.get('/api/orbcomm/devices', async (req, res) => {
     try {
-      // For now, return mock data to test the UI
-      const mockDevices = [
-        {
-          deviceId: 'QUAD622180045',
-          assetId: 'QUAD622180045',
-          lastUpdate: new Date().toISOString(),
-          location: { lat: 28.6139, lng: 77.2090 },
-          temperature: 22.5,
-          doorStatus: 'closed',
-          powerStatus: 'on',
-          batteryLevel: 85,
-          errorCodes: [],
-          rawData: { mock: true, timestamp: new Date().toISOString() }
-        },
-        {
-          deviceId: 'QUAD622340186',
-          assetId: 'QUAD622340186',
-          lastUpdate: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
-          location: { lat: 28.6145, lng: 77.2095 },
-          temperature: 18.2,
-          doorStatus: 'open',
-          powerStatus: 'on',
-          batteryLevel: 92,
-          errorCodes: ['DOOR_OPEN'],
-          rawData: { mock: true, timestamp: new Date(Date.now() - 300000).toISOString() }
-        }
-      ];
+      console.log('📱 ORBCOMM devices endpoint called');
+      const { getOrbcommClient } = await import('./services/orbcomm-real');
+      const orbcommClient = getOrbcommClient();
       
-      console.log('📱 Returning mock ORBCOMM devices:', mockDevices.length);
-      res.json(mockDevices);
+      console.log('🔍 ORBCOMM client connected:', orbcommClient.isConnected);
+      console.log('📱 Calling getAllDevices...');
       
-      // TODO: Uncomment when ORBCOMM client is working
-      // const { getOrbcommClient } = await import('./services/orbcomm-real');
-      // const orbcommClient = getOrbcommClient();
-      // const devices = await orbcommClient.getAllDevices();
-      // res.json(devices);
+      const devices = await orbcommClient.getAllDevices();
+      console.log('📱 Retrieved real ORBCOMM devices:', devices.length);
+      console.log('📱 Devices:', JSON.stringify(devices, null, 2));
+      
+      res.json(devices);
     } catch (error) {
-      console.error('ORBCOMM devices error:', error);
+      console.error('❌ ORBCOMM devices error:', error);
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack');
       res.status(500).json({ 
         error: 'Failed to fetch ORBCOMM devices',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
       });
     }
   });
@@ -2546,41 +2601,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/orbcomm/devices/:deviceId', async (req, res) => {
     try {
       const { deviceId } = req.params;
+      const { getOrbcommClient } = await import('./services/orbcomm-real');
+      const orbcommClient = getOrbcommClient();
       
-      // Mock device data for testing
-      const mockDeviceData = {
-        deviceId,
-        assetId: deviceId,
-        lastUpdate: new Date().toISOString(),
-        location: { lat: 28.6139 + Math.random() * 0.01, lng: 77.2090 + Math.random() * 0.01 },
-        temperature: 20 + Math.random() * 10,
-        doorStatus: Math.random() > 0.5 ? 'open' : 'closed',
-        powerStatus: 'on',
-        batteryLevel: 80 + Math.random() * 20,
-        errorCodes: Math.random() > 0.7 ? ['DOOR_OPEN', 'TEMP_HIGH'] : [],
-        rawData: {
-          mock: true,
-          timestamp: new Date().toISOString(),
-          deviceId,
-          additionalData: {
-            signalStrength: 85,
-            lastHeartbeat: new Date().toISOString(),
-            firmwareVersion: '1.2.3'
-          }
-        }
-      };
+      console.log('📱 Fetching real device data for:', deviceId);
+      const deviceData = await orbcommClient.getDeviceData(deviceId);
       
-      console.log('📱 Returning mock device data for:', deviceId);
-      res.json(mockDeviceData);
+      if (!deviceData) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
       
-      // TODO: Uncomment when ORBCOMM client is working
-      // const { getOrbcommClient } = await import('./services/orbcomm-real');
-      // const orbcommClient = getOrbcommClient();
-      // const deviceData = await orbcommClient.getDeviceData(deviceId);
-      // if (!deviceData) {
-      //   return res.status(404).json({ error: 'Device not found' });
-      // }
-      // res.json(deviceData);
+      res.json(deviceData);
     } catch (error) {
       console.error('ORBCOMM device data error:', error);
       res.status(500).json({ error: 'Failed to fetch device data' });
@@ -2697,6 +2728,201 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: 'Failed to send template' });
+    }
+  });
+
+  // Proxy endpoint for OpenStreetMap Nominatim API to avoid CORS issues
+  app.get("/api/proxy/nominatim", async (req: any, res) => {
+    try {
+      const { q, ...otherParams } = req.query;
+      
+      if (!q) {
+        return res.status(400).json({ error: 'Query parameter "q" is required' });
+      }
+
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.searchParams.append('q', q);
+      url.searchParams.append('format', 'json');
+      
+      // Add other parameters
+      Object.entries(otherParams).forEach(([key, value]) => {
+        if (key !== 'q') {
+          url.searchParams.append(key, value as string);
+        }
+      });
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          'User-Agent': 'ContainerGenie/1.0 (contact: support@container-genie.local)',
+          'Accept-Language': 'en'
+        }
+      });
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error('Nominatim proxy error:', error);
+      res.status(500).json({ error: 'Failed to fetch location data' });
+    }
+  });
+
+  // RAG (Retrieval-Augmented Generation) Endpoints for Reefer Diagnostic Chatbot
+  app.post("/api/rag/query", authenticateUser, async (req: any, res) => {
+    try {
+      const { user_id, unit_id, unit_model, alarm_code, query, context } = req.body;
+
+      if (!query) {
+        return res.status(400).json({ error: 'Query is required' });
+      }
+
+      // Use authenticated user if not specified
+      const actualUserId = user_id || req.user.id;
+
+      const result = await ragAdapter.query({
+        user_id: actualUserId,
+        unit_id,
+        unit_model,
+        alarm_code,
+        query,
+        context
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error('RAG query error:', error);
+      res.status(500).json({ 
+        error: 'Failed to process diagnostic query',
+        message: 'The diagnostic assistant is temporarily unavailable. Please try again later.'
+      });
+    }
+  });
+
+  // Get user's RAG query history
+  app.get("/api/rag/history", authenticateUser, async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit) || 50;
+      const history = await ragAdapter.getUserQueryHistory(req.user.id, limit);
+      res.json(history);
+    } catch (error) {
+      console.error('Failed to get RAG history:', error);
+      res.status(500).json({ error: 'Failed to retrieve query history' });
+    }
+  });
+
+  // Get troubleshooting suggestions for an alert
+  app.post("/api/alerts/:id/troubleshoot", authenticateUser, async (req: any, res) => {
+    try {
+      const alertId = req.params.id;
+
+      // Get alert details
+      const alert = await storage.getAlert(alertId);
+      if (!alert) {
+        return res.status(404).json({ error: 'Alert not found' });
+      }
+
+      // Get container details
+      const container = await storage.getContainer(alert.containerId);
+      if (!container) {
+        return res.status(404).json({ error: 'Container not found' });
+      }
+
+      // Get troubleshooting suggestions
+      const suggestions = await ragAdapter.getAlertSuggestions(
+        container.id,
+        alert.alertType,
+        container.type
+      );
+
+      if (!suggestions) {
+        return res.status(404).json({ error: 'No troubleshooting suggestions available' });
+      }
+
+      res.json(suggestions);
+    } catch (error) {
+      console.error('Alert troubleshooting error:', error);
+      res.status(500).json({ error: 'Failed to get troubleshooting suggestions' });
+    }
+  });
+
+  // Admin endpoints for manual management
+  app.get("/api/manuals", authenticateUser, requireRole(["admin", "coordinator", "super_admin"]), async (req: any, res) => {
+    try {
+      const manuals = await ragAdapter.getManuals();
+      res.json(manuals);
+    } catch (error) {
+      console.error('Failed to get manuals:', error);
+      res.status(500).json({ error: 'Failed to retrieve manuals' });
+    }
+  });
+
+  app.post("/api/manuals/upload", authenticateUser, requireRole(["admin", "super_admin"]), async (req: any, res) => {
+    try {
+      const { name, sourceUrl, version, meta } = req.body;
+
+      if (!name) {
+        return res.status(400).json({ error: 'Manual name is required' });
+      }
+
+      // For now, we'll create a manual entry with metadata only
+      // In a production setup, you would integrate with S3 or similar file storage
+      const fileUrl = sourceUrl || `manual_${Date.now()}.pdf`;
+
+      const manual = await ragAdapter.uploadManual({
+        name,
+        sourceUrl: fileUrl,
+        uploadedBy: req.user.id,
+        version,
+        meta: meta ? JSON.parse(meta) : undefined
+      });
+
+      res.json({
+        ...manual,
+        message: "Manual uploaded successfully. File processing will be implemented in the next phase."
+      });
+    } catch (error) {
+      console.error('Manual upload error:', error);
+      res.status(500).json({ error: 'Failed to upload manual' });
+    }
+  });
+
+  // Delete manual
+  app.delete("/api/manuals/:id", authenticateUser, requireRole(["admin", "super_admin"]), async (req: any, res) => {
+    try {
+      const manualId = req.params.id;
+
+      await ragAdapter.deleteManual(manualId);
+      res.json({ message: 'Manual deleted successfully' });
+    } catch (error) {
+      console.error('Manual delete error:', error);
+      res.status(500).json({ error: 'Failed to delete manual' });
+    }
+  });
+
+  // Get container-specific query history
+  app.get("/api/containers/:id/rag-history", authenticateUser, async (req: any, res) => {
+    try {
+      const containerId = req.params.id;
+      const limit = parseInt(req.query.limit) || 20;
+
+      // Check if user has access to this container
+      const container = await storage.getContainer(containerId);
+      if (!container) {
+        return res.status(404).json({ error: 'Container not found' });
+      }
+
+      // Allow access if user is admin/super_admin or owns the container
+      if (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'coordinator') {
+        const customer = await storage.getCustomerByUserId(req.user.id);
+        if (!customer || container.currentCustomerId !== customer.id) {
+          return res.status(403).json({ error: 'Access denied' });
+        }
+      }
+
+      const history = await ragAdapter.getContainerQueryHistory(containerId, limit);
+      res.json(history);
+    } catch (error) {
+      console.error('Container RAG history error:', error);
+      res.status(500).json({ error: 'Failed to retrieve container query history' });
     }
   });
 

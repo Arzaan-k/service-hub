@@ -1,9 +1,10 @@
+import React from "react";
 import { Switch, Route, Redirect, useRoute } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { isAuthenticated, getCurrentUser } from "./lib/auth";
+import { isAuthenticated, getCurrentUser, initTestAuth } from "./lib/auth";
 
 import Login from "@/pages/login";
 import SignUp from "@/pages/signup";
@@ -23,6 +24,8 @@ import Analytics from "@/pages/analytics";
 import ClientProfile from "@/pages/client-profile";
 import AdminWhatsApp from "@/pages/admin-whatsapp";
 import OrbcommData from "@/pages/orbcomm-data";
+import RagChat from "@/pages/rag-chat";
+import AdminManualUpload from "@/pages/admin-manual-upload";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -100,11 +103,23 @@ function Router() {
       <Route path="/orbcomm-data">
         {() => <ProtectedRoute component={OrbcommData} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
+      <Route path="/rag-chat">
+        {() => <ProtectedRoute component={RagChat} />}
+      </Route>
+      <Route path="/admin/manuals">
+        {() => <ProtectedRoute component={AdminManualUpload} roles={["admin", "super_admin"]} />}
+      </Route>
     </Switch>
   );
 }
 
 function App() {
+  // Only initialize test authentication in development if no real auth exists
+  React.useEffect(() => {
+    // Remove automatic test auth initialization
+    // initTestAuth() was causing conflicts with real login
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

@@ -56,11 +56,23 @@ export default function Clients() {
 
   const { data: clients, isLoading } = useQuery({
     queryKey: ["/api/clients"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/clients");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
   });
 
   // Fetch all containers so we can map them to clients by currentCustomerId
   const { data: containers, error: containersError } = useQuery({
     queryKey: ["/api/containers"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/containers");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
   });
 
   // Allocation state for assigning containers during client creation

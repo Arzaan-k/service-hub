@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAuthToken } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,7 @@ interface Container {
 }
 
 export default function Containers() {
+  const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const authToken = getAuthToken();
   const [searchTerm, setSearchTerm] = useState("");
@@ -51,28 +53,19 @@ export default function Containers() {
   const [sortBy, setSortBy] = useState("containerCode");
 
   const { data: containers = [], isLoading } = useQuery({
-    queryKey: ["/api/containers/all"],
+    queryKey: ["/api/containers"],
     queryFn: async () => {
-      const pageSize = 500;
-      let offset = 0;
-      let all: any[] = [];
-      let total = Infinity;
-
-      while (offset < total) {
-        const res = await fetch(`/api/containers?limit=${pageSize}&offset=${offset}` , {
-          headers: { "x-user-id": authToken || "" },
-        });
-        const chunk = await res.json();
-        const hdr = res.headers.get('x-total-count');
-        total = hdr ? parseInt(hdr, 10) : (offset + chunk.length);
-        all = all.concat(chunk);
-        if (chunk.length < pageSize) break;
-        offset += pageSize;
-      }
-
-      return all;
+      const response = await apiRequest("GET", "/api/containers");
+      return response.json();
     },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
   });
+
+  // Initialize data on component mount
+  useEffect(() => {
+    // Removed test auth initialization - was causing conflicts with real authentication
+  }, []);
 
   const filteredAndSortedContainers = useMemo(() => {
     let filtered = containers.filter((container: Container) => {

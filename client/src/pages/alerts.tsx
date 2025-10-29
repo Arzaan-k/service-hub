@@ -15,9 +15,25 @@ export default function Alerts() {
   const [selectedContainer, setSelectedContainer] = useState<string>("");
   const [selectedAlertType, setSelectedAlertType] = useState<string>("temperature");
 
-  const { data: alerts = [] } = useQuery<any[]>({ queryKey: ["/api/alerts"] });
+  const { data: alerts = [] } = useQuery<any[]>({ 
+    queryKey: ["/api/alerts"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/alerts");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
+  });
 
-  const { data: containers = [] } = useQuery<any[]>({ queryKey: ["/api/containers"] });
+  const { data: containers = [] } = useQuery<any[]>({ 
+    queryKey: ["/api/containers"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/containers");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
+  });
 
   const acknowledge = useMutation({
     mutationFn: async (id: string) => {
@@ -158,6 +174,7 @@ export default function Alerts() {
                   key={alert.id}
                   alert={alert}
                   containerName={container?.containerCode || "Unknown"}
+                  containerModel={container?.type || "Unknown"}
                   onAction={(id, action) => {
                     if (action === "acknowledge") acknowledge.mutate(id);
                     if (action === "resolve") resolve.mutate(id);

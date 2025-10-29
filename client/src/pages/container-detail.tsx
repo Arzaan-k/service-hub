@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getAuthToken } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
 import ContainerMap from "@/components/container-map";
@@ -97,13 +98,12 @@ export default function ContainerDetail() {
   const { data: container, isLoading, error } = useQuery({
     queryKey: [`/api/containers/${id}`],
     queryFn: async () => {
-      const res = await fetch(`/api/containers/${id}`, {
-        headers: { "x-user-id": authToken || "" },
-      });
-      if (!res.ok) throw new Error('Container not found');
-      return res.json();
+      const response = await apiRequest("GET", `/api/containers/${id}`);
+      return response.json();
     },
     enabled: !!id,
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
   });
 
   // Fetch customer data if container has currentCustomerId
@@ -111,14 +111,14 @@ export default function ContainerDetail() {
     queryKey: [`/api/customers/${container?.currentCustomerId}`],
     queryFn: async () => {
       if (!container?.currentCustomerId) return null;
-      const res = await fetch(`/api/customers/${container.currentCustomerId}`, {
-        headers: { "x-user-id": authToken || "" },
-      });
-      if (!res.ok) return null; // Don't throw error, just return null
-      return res.json();
+      const response = await apiRequest("GET", `/api/customers/${container.currentCustomerId}`);
+      if (!response.ok) return null; // Don't throw error, just return null
+      return response.json();
     },
     enabled: !!container?.currentCustomerId && !!container,
     retry: 1,
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
   });
 
   const getStatusBadge = (status: string) => {

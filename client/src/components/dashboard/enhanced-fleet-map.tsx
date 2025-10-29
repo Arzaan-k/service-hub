@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getAuthToken } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,9 +61,8 @@ export default function EnhancedFleetMap({ containers }: EnhancedFleetMapProps) 
   const geocodeLocation = async (location: string, depot?: string): Promise<{ lat: number; lng: number; address: string } | null> => {
     try {
       const query = `${location} ${depot || ''}`.trim();
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
-      );
+      // Use our proxy endpoint to avoid CORS issues
+      const response = await apiRequest("GET", `/api/proxy/nominatim?format=json&q=${encodeURIComponent(query)}&limit=1`);
       const data = await response.json();
       
       if (data && data.length > 0) {

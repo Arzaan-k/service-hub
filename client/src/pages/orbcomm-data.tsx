@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 interface OrbcommDevice {
   deviceId: string;
+  deviceName?: string;
   assetId?: string;
+  status?: string;
+  lastSeen?: string;
   lastUpdate?: string;
   location?: {
     lat: number;
@@ -14,12 +17,15 @@ interface OrbcommDevice {
   powerStatus?: string;
   batteryLevel?: number;
   errorCodes?: string[];
-  rawData?: any;
+  rawEvent?: any;
 }
 
 interface DeviceData {
   deviceId: string;
+  deviceName?: string;
   assetId?: string;
+  status?: string;
+  lastSeen?: string;
   lastUpdate?: string;
   location?: {
     lat: number;
@@ -30,7 +36,7 @@ interface DeviceData {
   powerStatus?: string;
   batteryLevel?: number;
   errorCodes?: string[];
-  rawData?: any;
+  rawEvent?: any;
 }
 
 const OrbcommDataPage: React.FC = () => {
@@ -64,6 +70,69 @@ const OrbcommDataPage: React.FC = () => {
     refetchInterval: 10000, // Refresh every 10 seconds
   });
 
+  // Debugging: Log data to console
+  useEffect(() => {
+    console.log('Devices data:', devices);
+    console.log('Selected device:', selectedDevice);
+    console.log('Device data:', deviceData);
+  }, [devices, selectedDevice, deviceData]);
+
+  // Transform device data to match expected structure
+  const transformDeviceData = (device: any): OrbcommDevice => {
+    // Handle both data structures - sometimes location has lat/lng, sometimes latitude/longitude
+    let location;
+    if (device.location) {
+      if ('latitude' in device.location && 'longitude' in device.location) {
+        location = {
+          lat: device.location.latitude,
+          lng: device.location.longitude
+        };
+      } else if ('lat' in device.location && 'lng' in device.location) {
+        location = {
+          lat: device.location.lat,
+          lng: device.location.lng
+        };
+      }
+    }
+    
+    return {
+      deviceId: device.deviceId,
+      deviceName: device.deviceName,
+      assetId: device.assetId,
+      status: device.status,
+      lastSeen: device.lastSeen,
+      lastUpdate: device.lastUpdate,
+      location: location,
+      temperature: device.temperature,
+      doorStatus: device.doorStatus,
+      powerStatus: device.powerStatus,
+      batteryLevel: device.batteryLevel,
+      errorCodes: device.errorCodes,
+      rawEvent: device.rawEvent
+    };
+  };
+
+  // Transform devices array with error handling
+  const transformedDevices = useMemo(() => {
+    try {
+      return devices.map(transformDeviceData);
+    } catch (error) {
+      console.error('Error transforming devices:', error);
+      return [];
+    }
+  }, [devices]);
+  
+  // Transform selected device data with error handling
+  const transformedDeviceData = useMemo(() => {
+    if (!deviceData) return null;
+    try {
+      return transformDeviceData(deviceData);
+    } catch (error) {
+      console.error('Error transforming device data:', error);
+      return null;
+    }
+  }, [deviceData]);
+
   const formatTimestamp = (timestamp?: string) => {
     if (!timestamp) return 'N/A';
     return new Date(timestamp).toLocaleString();
@@ -80,11 +149,12 @@ const OrbcommDataPage: React.FC = () => {
       case 'closed': return 'text-green-600';
       case 'on': return 'text-green-600';
       case 'off': return 'text-red-600';
+      case 'disconnected': return 'text-red-600';
       default: return 'text-gray-600';
     }
   };
 
-  const getBatteryColor = (level?: number) => {
+const getBatteryColor = (level?: number) => {
     if (!level) return 'text-gray-600';
     if (level > 80) return 'text-green-600';
     if (level > 50) return 'text-yellow-600';
@@ -115,7 +185,7 @@ const OrbcommDataPage: React.FC = () => {
     );
   }
 
-  return (
+return (
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">ORBCOMM Device Data</h1>
@@ -129,16 +199,16 @@ const OrbcommDataPage: React.FC = () => {
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">
-              Devices ({devices.length})
+              Devices ({transformedDevices.length})
             </h2>
           </div>
           <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
-            {devices.length === 0 ? (
+            {transformedDevices.length === 0 ? (
               <div className="px-6 py-8 text-center text-gray-500">
                 No devices found
               </div>
             ) : (
-              devices.map((device) => (
+              transformedDevices.map((device) => (
                 <div
                   key={device.deviceId}
                   className={`px-6 py-4 cursor-pointer hover:bg-gray-50 transition-colors ${
@@ -155,7 +225,7 @@ const OrbcommDataPage: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-gray-500">
-                        {formatTimestamp(device.lastUpdate)}
+                        {formatTimestamp(device.lastUpdate || device.lastSeen)}
                       </p>
                       {device.temperature && (
                         <p className="text-sm font-medium">
@@ -164,7 +234,7 @@ const OrbcommDataPage: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  {device.location && (
+{device.location && (
                     <p className="text-xs text-gray-500 mt-1">
                       📍 {formatLocation(device.location)}
                     </p>
@@ -196,76 +266,76 @@ const OrbcommDataPage: React.FC = () => {
               <div className="flex items-center justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               </div>
-            ) : deviceData ? (
+            ) : transformedDeviceData ? (
               <div className="space-y-4">
                 {/* Basic Info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-gray-700">Device ID</label>
-                    <p className="text-sm text-gray-900">{deviceData.deviceId}</p>
+                    <p className="text-sm text-gray-900">{transformedDeviceData.deviceId}</p>
                   </div>
-                  {deviceData.assetId && (
+                  {transformedDeviceData.assetId && (
                     <div>
                       <label className="text-sm font-medium text-gray-700">Asset ID</label>
-                      <p className="text-sm text-gray-900">{deviceData.assetId}</p>
+                      <p className="text-sm text-gray-900">{transformedDeviceData.assetId}</p>
                     </div>
                   )}
                 </div>
 
                 {/* Location */}
-                {deviceData.location && (
+                {transformedDeviceData.location && (
                   <div>
                     <label className="text-sm font-medium text-gray-700">Location</label>
-                    <p className="text-sm text-gray-900">{formatLocation(deviceData.location)}</p>
+                    <p className="text-sm text-gray-900">{formatLocation(transformedDeviceData.location)}</p>
                   </div>
                 )}
 
                 {/* Last Update */}
                 <div>
                   <label className="text-sm font-medium text-gray-700">Last Update</label>
-                  <p className="text-sm text-gray-900">{formatTimestamp(deviceData.lastUpdate)}</p>
+                  <p className="text-sm text-gray-900">{formatTimestamp(transformedDeviceData.lastUpdate || transformedDeviceData.lastSeen)}</p>
                 </div>
 
                 {/* Status Indicators */}
                 <div className="grid grid-cols-2 gap-4">
-                  {deviceData.temperature && (
+                  {transformedDeviceData.temperature && (
                     <div>
                       <label className="text-sm font-medium text-gray-700">Temperature</label>
-                      <p className="text-sm font-medium text-gray-900">{deviceData.temperature}°C</p>
+                      <p className="text-sm font-medium text-gray-900">{transformedDeviceData.temperature}°C</p>
                     </div>
                   )}
-                  {deviceData.doorStatus && (
+                  {transformedDeviceData.doorStatus && (
                     <div>
                       <label className="text-sm font-medium text-gray-700">Door Status</label>
-                      <p className={`text-sm font-medium ${getStatusColor(deviceData.doorStatus)}`}>
-                        {deviceData.doorStatus}
-                      </p>
+<p className={`text-sm font-medium ${getStatusColor(transformedDeviceData.doorStatus)}`}>
+                         {transformedDeviceData.doorStatus}
+                       </p>
                     </div>
                   )}
-                  {deviceData.powerStatus && (
+                  {transformedDeviceData.powerStatus && (
                     <div>
                       <label className="text-sm font-medium text-gray-700">Power Status</label>
-                      <p className={`text-sm font-medium ${getStatusColor(deviceData.powerStatus)}`}>
-                        {deviceData.powerStatus}
-                      </p>
+<p className={`text-sm font-medium ${getStatusColor(transformedDeviceData.powerStatus)}`}>
+                         {transformedDeviceData.powerStatus}
+                       </p>
                     </div>
                   )}
-                  {deviceData.batteryLevel && (
+                  {transformedDeviceData.batteryLevel && (
                     <div>
                       <label className="text-sm font-medium text-gray-700">Battery Level</label>
-                      <p className={`text-sm font-medium ${getBatteryColor(deviceData.batteryLevel)}`}>
-                        {deviceData.batteryLevel}%
-                      </p>
+<p className={`text-sm font-medium ${getBatteryColor(transformedDeviceData.batteryLevel)}`}>
+                         {transformedDeviceData.batteryLevel}%
+                       </p>
                     </div>
                   )}
                 </div>
 
                 {/* Error Codes */}
-                {deviceData.errorCodes && deviceData.errorCodes.length > 0 && (
+                {transformedDeviceData.errorCodes && transformedDeviceData.errorCodes.length > 0 && (
                   <div>
                     <label className="text-sm font-medium text-gray-700">Error Codes</label>
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {deviceData.errorCodes.map((code, index) => (
+                      {transformedDeviceData.errorCodes.map((code, index) => (
                         <span
                           key={index}
                           className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded"
@@ -278,11 +348,11 @@ const OrbcommDataPage: React.FC = () => {
                 )}
 
                 {/* Raw Data */}
-                {deviceData.rawData && (
+                {transformedDeviceData.rawEvent && (
                   <div>
                     <label className="text-sm font-medium text-gray-700">Raw Data</label>
                     <pre className="text-xs bg-gray-100 p-3 rounded mt-1 overflow-x-auto">
-                      {JSON.stringify(deviceData.rawData, null, 2)}
+                      {JSON.stringify(transformedDeviceData.rawEvent, null, 2)}
                     </pre>
                   </div>
                 )}
@@ -301,18 +371,18 @@ const OrbcommDataPage: React.FC = () => {
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Connection Status</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{devices.length}</div>
+            <div className="text-2xl font-bold text-green-600">{transformedDevices.length}</div>
             <div className="text-sm text-gray-600">Devices Connected</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-blue-600">
-              {devices.filter(d => d.lastUpdate).length}
+              {transformedDevices.filter(d => d.lastUpdate || d.lastSeen).length}
             </div>
             <div className="text-sm text-gray-600">Active Devices</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-orange-600">
-              {devices.filter(d => d.errorCodes && d.errorCodes.length > 0).length}
+              {transformedDevices.filter(d => d.errorCodes && d.errorCodes.length > 0).length}
             </div>
             <div className="text-sm text-gray-600">Devices with Errors</div>
           </div>

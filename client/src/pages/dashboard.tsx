@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
@@ -12,26 +12,72 @@ import ContainerLookup from "@/components/dashboard/container-lookup";
 import ErrorBoundary from "@/components/error-boundary";
 import { websocket } from "@/lib/websocket";
 import { getAuthToken } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Dashboard() {
+  const queryClient = useQueryClient();
   const authToken = getAuthToken();
 
-  const { data: stats = {}, refetch: refetchStats } = useQuery<any>({ queryKey: ["/api/dashboard/stats"] });
+  const { data: stats = {} } = useQuery<any>({ 
+    queryKey: ["/api/dashboard/stats"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/dashboard/stats");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
+  });
 
-  const { data: containers = [], refetch: refetchContainers } = useQuery<any[]>({ queryKey: ["/api/containers"] });
+  const { data: containers = [] } = useQuery<any[]>({ 
+    queryKey: ["/api/containers"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/containers");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
+  });
 
-  const { data: alerts = [], refetch: refetchAlerts } = useQuery<any[]>({ queryKey: ["/api/alerts/open"] });
+  const { data: alerts = [] } = useQuery<any[]>({ 
+    queryKey: ["/api/alerts"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/alerts");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
+  });
 
-  const { data: serviceRequests = [] } = useQuery<any[]>({ queryKey: ["/api/service-requests"] });
+  const { data: serviceRequests = [] } = useQuery<any[]>({ 
+    queryKey: ["/api/service-requests"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/service-requests");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
+  });
 
-  const { data: technicians = [] } = useQuery<any[]>({ queryKey: ["/api/technicians"] });
+  const { data: technicians = [] } = useQuery<any[]>({ 
+    queryKey: ["/api/technicians"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/technicians");
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // 1 minute
+  });
+
+  // Initialize data on component mount
+  useEffect(() => {
+    // Removed test auth initialization - was causing conflicts with real authentication
+  }, []);
 
   useEffect(() => {
     // Live updates for device→container location
     const onDeviceUpdate = (payload: any) => {
       // Optimistically update containers cache
       try {
-        const { queryClient } = require("@/lib/queryClient");
         queryClient.setQueryData(["/api/containers"], (prev: any[] | undefined) => {
           if (!Array.isArray(prev)) return prev;
           const { deviceId, lat, lng } = payload || {};
@@ -48,7 +94,6 @@ export default function Dashboard() {
     // Live updates when server identifies the container directly
     const onContainerLocUpdate = (payload: any) => {
       try {
-        const { queryClient } = require("@/lib/queryClient");
         queryClient.setQueryData(["/api/containers"], (prev: any[] | undefined) => {
           if (!Array.isArray(prev)) return prev;
           const { containerId, lat, lng } = payload || {};
@@ -63,24 +108,24 @@ export default function Dashboard() {
     };
 
     websocket.on("alert_created", () => {
-      refetchAlerts();
-      refetchStats();
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     });
 
     websocket.on("container_created", () => {
-      refetchStats();
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     });
 
     websocket.on("device_update", onDeviceUpdate);
     websocket.on("container_location_update", onContainerLocUpdate);
 
     return () => {
-      websocket.off("alert_created", () => {});
-      websocket.off("container_created", () => {});
+      websocket.off("alert_created");
+      websocket.off("container_created");
       websocket.off("device_update", onDeviceUpdate);
       websocket.off("container_location_update", onContainerLocUpdate);
     };
-  }, [refetchAlerts, refetchStats]);
+  }, [queryClient]);
 
   return (
     <div className="flex min-h-screen">

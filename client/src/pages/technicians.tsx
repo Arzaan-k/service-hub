@@ -49,16 +49,10 @@ export default function Technicians() {
 
   // Set up test user for development
   useEffect(() => {
-    let token = getAuthToken();
-    if (!token) {
-      const testUserId = "test-admin-123";
-      const testUser = { id: testUserId, name: "Test Admin", role: "admin" };
-      saveAuth(testUserId, testUser);
-      token = testUserId;
-      // Fire-and-forget: create test user server-side (safe if already exists)
-      fetch("/api/test/create-user", { method: "POST" }).catch(() => {});
+    const token = getAuthToken();
+    if (token) {
+      setAuthToken(token);
     }
-    setAuthToken(token);
     setAuthReady(true);
   }, []);
 
