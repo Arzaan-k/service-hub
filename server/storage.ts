@@ -36,6 +36,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, gte, sql, isNull } from "drizzle-orm";
+import { Pool } from '@neondatabase/serverless';
 
 export interface IStorage {
   // User operations
@@ -1190,6 +1191,79 @@ export class DatabaseStorage implements IStorage {
 
   // Inventory management methods
   async getAllInventoryItems(): Promise<any[]> {
+    // If an external source table is configured, read live from it
+    const srcTable = process.env.INVENTORY_SOURCE_TABLE;
+    if (srcTable) {
+      const col = (name: string, dflt?: string) => process.env[name] || dflt || '';
+      const COL_ID = col('INVENTORY_COL_ID');
+      const COL_PN = col('INVENTORY_COL_PART_NUMBER');
+      const COL_NAME = col('INVENTORY_COL_PART_NAME');
+      const COL_CAT = col('INVENTORY_COL_CATEGORY');
+      const COL_QTY = col('INVENTORY_COL_QTY');
+      const COL_REO = col('INVENTORY_COL_REORDER');
+      const COL_PRICE = col('INVENTORY_COL_PRICE');
+      const COL_LOC = col('INVENTORY_COL_LOCATION');
+      const COL_CREATED = col('INVENTORY_COL_CREATED_AT');
+      const COL_UPDATED = col('INVENTORY_COL_UPDATED_AT');
+
+      if (!COL_PN || !COL_NAME || !COL_CAT) {
+        throw new Error(
+          'External inventory mapping incomplete. Please set INVENTORY_COL_PART_NUMBER, INVENTORY_COL_PART_NAME, and INVENTORY_COL_CATEGORY.'
+        );
+      }
+
+      // Build a dynamic SQL selecting and mapping columns. Note: identifiers come from env - ensure they are correct.
+      const QTY_EXPR = COL_QTY ? `"${COL_QTY}"` : '0';
+      const REO_EXPR = COL_REO ? `"${COL_REO}"` : '0';
+      const PRICE_EXPR = COL_PRICE ? `"${COL_PRICE}"` : '0';
+      const LOC_EXPR = COL_LOC ? `COALESCE("${COL_LOC}"::text, NULL)` : 'NULL';
+      const CREATED_EXPR = COL_CREATED ? `COALESCE("${COL_CREATED}", NOW())` : 'NOW()';
+      const UPDATED_EXPR = COL_UPDATED ? `COALESCE("${COL_UPDATED}", NOW())` : 'NOW()';
+      const queryText = `
+        SELECT
+          COALESCE(${COL_ID ? `"${COL_ID}"::text` : `"${COL_PN}"::text`}) AS id,
+          COALESCE("${COL_PN}"::text, '')                                  AS part_number,
+          COALESCE("${COL_NAME}"::text, 'Unnamed Part')                    AS part_name,
+          COALESCE("${COL_CAT}"::text, 'general')                           AS category,
+          COALESCE(${QTY_EXPR}::int, 0)                                      AS quantity_in_stock,
+          COALESCE(${REO_EXPR}::int, 0)                                      AS reorder_level,
+          COALESCE(${PRICE_EXPR}::numeric, 0)::numeric(10,2)                 AS unit_price,
+          ${LOC_EXPR}                                                        AS location,
+          ${CREATED_EXPR}                                                    AS created_at,
+          ${UPDATED_EXPR}                                                    AS updated_at
+        FROM ${srcTable}
+        ORDER BY 3`;
+
+      const externalUrl = process.env.INVENTORY_SOURCE_DATABASE_URL;
+      let rows: any[] = [];
+      if (externalUrl) {
+        const pool = new Pool({ connectionString: externalUrl });
+        try {
+          const res = await pool.query(queryText);
+          rows = res.rows as any[];
+        } finally {
+          await pool.end();
+        }
+      } else {
+        const q = sql.raw(queryText);
+        rows = await db.execute(q) as any[];
+      }
+      // Normalize keys to match drizzle inventory schema consumers
+      return (rows as any[]).map((r: any) => ({
+        id: r.id,
+        partNumber: r.part_number,
+        partName: r.part_name,
+        category: r.category,
+        quantityInStock: Number(r.quantity_in_stock) || 0,
+        reorderLevel: Number(r.reorder_level) || 0,
+        unitPrice: Number(r.unit_price) || 0,
+        location: r.location || null,
+        createdAt: r.created_at ?? new Date(),
+        updatedAt: r.updated_at ?? new Date(),
+      }));
+    }
+
+    // Default: use local inventory table managed by drizzle schema
     return await db
       .select()
       .from(inventory)
