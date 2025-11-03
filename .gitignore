@@ -5,7 +5,8 @@ server/public
 vite.config.ts.*
 *.tar.gz
 .env
-
+vectors.json
+vectors.js
 
 #Ignore vscode AI rules
 .github\instructions\codacy.instructions.md
