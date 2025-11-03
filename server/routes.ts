@@ -1194,14 +1194,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get schedules for all technicians for a specific date
+  // Test route to check if routes are being registered
+  app.get("/api/test-schedules", (req, res) => {
+    res.json({ message: "Test route works", query: req.query });
+  });
+
+  // Get schedules for all technicians for a specific date - moved up to avoid conflicts
   app.get("/api/technicians/schedules", authenticateUser, async (req, res) => {
+    console.log("Technician schedules route called with query:", req.query);
     try {
       const { date } = req.query;
       const targetDate = date ? new Date(date as string) : new Date();
 
       // Get all technicians
       const technicians = await storage.getAllTechnicians();
+      console.log(`Found ${technicians.length} technicians`);
 
       // Get schedules for each technician
       const schedules = await Promise.all(
@@ -1221,6 +1228,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         })
       );
+
+      console.log(`Returning ${schedules.length} technician schedules`);
+      console.log(`Sample: ${schedules[0]?.technician?.name || schedules[0]?.technician?.employeeCode} has ${schedules[0]?.schedule?.length || 0} jobs`);
 
       res.json({
         date: targetDate.toISOString().split('T')[0],

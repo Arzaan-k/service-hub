@@ -4,7 +4,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { CalendarIcon, ChevronLeft, ChevronRight, MapPin, Clock, User, AlertTriangle } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -168,7 +169,7 @@ export default function TechnicianSchedule({ technicians }: TechnicianSchedulePr
       </div>
 
       {/* Schedule Content */}
-      <div className="max-h-[600px] overflow-y-auto space-y-3">
+      <div className="max-h-[700px] overflow-y-auto space-y-3">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -226,36 +227,99 @@ export default function TechnicianSchedule({ technicians }: TechnicianSchedulePr
                 {/* Job Cards */}
                 {schedule.length > 0 && (
                   <div className="border-t border-border/50 pt-3">
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
-                      {schedule.slice(0, 6).map((job: any) => (
-                        <div
-                          key={job.id}
-                          className={cn(
-                            "px-3 py-2 border rounded-md flex-shrink-0 min-w-[120px]",
-                            getJobPriorityColor(job.priority)
-                          )}
-                        >
-                          <p className="text-xs font-medium">
-                            {job.requestNumber || `SR-${job.id.slice(-4)}`}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {job.issueDescription || "Service"}
-                          </p>
-                          {job.scheduledTimeWindow && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {job.scheduledTimeWindow}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                      {schedule.length > 6 && (
-                        <div className="px-3 py-2 bg-muted/50 border border-border/50 rounded-md flex-shrink-0 flex items-center justify-center min-w-[80px]">
-                          <span className="text-xs text-muted-foreground">
-                            +{schedule.length - 6} more
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                    <TooltipProvider>
+                      <div className="flex flex-wrap gap-2">
+                        {schedule.map((job: any) => (
+                          <Tooltip key={job.id}>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(
+                                  "px-3 py-2 border rounded-md cursor-pointer hover:shadow-sm transition-shadow flex-shrink-0 min-w-[100px] max-w-[140px]",
+                                  getJobPriorityColor(job.priority)
+                                )}
+                              >
+                                <p className="text-xs font-medium truncate">
+                                  {job.requestNumber || `SR-${job.id.slice(-4)}`}
+                                </p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {job.issueDescription || "Service"}
+                                </p>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs p-4">
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <AlertTriangle className="h-4 w-4 text-warning" />
+                                  <span className="font-medium text-sm">
+                                    {job.requestNumber || `SR-${job.id.slice(-4)}`}
+                                  </span>
+                                </div>
+
+                                <div className="text-xs space-y-1">
+                                  <div className="flex items-start gap-2">
+                                    <User className="h-3 w-3 mt-0.5 text-muted-foreground" />
+                                    <span>{technician.name || technician.employeeCode}</span>
+                                  </div>
+
+                                  <div className="flex items-start gap-2">
+                                    <AlertTriangle className="h-3 w-3 mt-0.5 text-muted-foreground" />
+                                    <span>{job.issueDescription || "Service request"}</span>
+                                  </div>
+
+                                  {job.scheduledTimeWindow && (
+                                    <div className="flex items-start gap-2">
+                                      <Clock className="h-3 w-3 mt-0.5 text-muted-foreground" />
+                                      <span>{job.scheduledTimeWindow}</span>
+                                    </div>
+                                  )}
+
+                                  {job.scheduledDate && (
+                                    <div className="flex items-start gap-2">
+                                      <CalendarIcon className="h-3 w-3 mt-0.5 text-muted-foreground" />
+                                      <span>{format(new Date(job.scheduledDate), "MMM dd, yyyy")}</span>
+                                    </div>
+                                  )}
+
+                                  {job.priority && (
+                                    <div className="flex items-center gap-2">
+                                      <div className={cn(
+                                        "w-2 h-2 rounded-full",
+                                        job.priority?.toLowerCase() === "critical" ? "bg-destructive" :
+                                        job.priority?.toLowerCase() === "high" ? "bg-warning" :
+                                        job.priority?.toLowerCase() === "medium" ? "bg-blue-500" :
+                                        "bg-primary"
+                                      )} />
+                                      <span className="capitalize">{job.priority} Priority</span>
+                                    </div>
+                                  )}
+
+                                  {job.container && (
+                                    <div className="flex items-start gap-2">
+                                      <MapPin className="h-3 w-3 mt-0.5 text-muted-foreground" />
+                                      <span>Container: {job.container.containerCode || job.containerId}</span>
+                                    </div>
+                                  )}
+
+                                  {job.status && (
+                                    <div className="mt-2 pt-2 border-t border-border/50">
+                                      <span className={cn(
+                                        "text-xs px-2 py-1 rounded-full font-medium",
+                                        job.status === 'completed' ? 'bg-success/20 text-success' :
+                                        job.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' :
+                                        job.status === 'scheduled' ? 'bg-muted/20 text-muted-foreground' :
+                                        'bg-warning/20 text-warning'
+                                      )}>
+                                        {job.status.replace('_', ' ').toUpperCase()}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </TooltipProvider>
                   </div>
                 )}
 
@@ -273,13 +337,29 @@ export default function TechnicianSchedule({ technicians }: TechnicianSchedulePr
       {/* Footer with summary */}
       {scheduleData && (
         <div className="mt-4 pt-4 border-t border-border/50">
-          <div className="flex justify-between text-sm text-muted-foreground">
-            <span>
-              Total Technicians: {scheduleData.schedules?.length || 0}
-            </span>
-            <span>
-              Total Jobs: {scheduleData.schedules?.reduce((sum, s) => sum + s.schedule.length, 0) || 0}
-            </span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div className="text-center">
+              <div className="font-medium text-foreground">{scheduleData.schedules?.length || 0}</div>
+              <div className="text-xs text-muted-foreground">Technicians</div>
+            </div>
+            <div className="text-center">
+              <div className="font-medium text-foreground">
+                {scheduleData.schedules?.reduce((sum, s) => sum + s.schedule.length, 0) || 0}
+              </div>
+              <div className="text-xs text-muted-foreground">Total Jobs</div>
+            </div>
+            <div className="text-center">
+              <div className="font-medium text-success">
+                {scheduleData.schedules?.reduce((sum, s) => sum + s.schedule.filter(job => job.status === 'completed').length, 0) || 0}
+              </div>
+              <div className="text-xs text-muted-foreground">Completed</div>
+            </div>
+            <div className="text-center">
+              <div className="font-medium text-blue-500">
+                {scheduleData.schedules?.reduce((sum, s) => sum + s.schedule.filter(job => job.status === 'in_progress').length, 0) || 0}
+              </div>
+              <div className="text-xs text-muted-foreground">In Progress</div>
+            </div>
           </div>
         </div>
       )}
