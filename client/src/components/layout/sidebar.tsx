@@ -35,16 +35,16 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-card border-r border-border flex flex-col sticky top-0 h-screen">
+    <aside className="w-64 bg-[#0b1220] border-r border-[#223351] flex flex-col sticky top-0 h-screen">
       {/* Logo */}
-      <div className="p-6 border-b border-border">
+      <div className="p-6 border-b border-[#223351]">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1f3b7a] to-[#264892] flex items-center justify-center">
             <i className="fas fa-ship text-white"></i>
           </div>
           <div>
-            <h2 className="font-bold text-foreground">Container MS</h2>
-            <p className="text-xs text-muted-foreground">v2.0.1</p>
+            <h2 className="font-bold text-white">Container MS</h2>
+            <p className="text-xs text-white/80">v2.0.1</p>
           </div>
         </div>
       </div>
@@ -59,7 +59,7 @@ export default function Sidebar() {
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth group ${
                 location === item.path
                   ? "text-white"
-                  : "text-slate-300 hover:bg-muted hover:text-white"
+                  : "text-white/80 hover:bg-[#13233d] hover:text-white"
               }`}
               style={location === item.path ? {
                 backgroundColor: item.color === 'containers' ? 'rgba(115, 200, 210, 0.1)' :
@@ -71,6 +71,8 @@ export default function Sidebar() {
                                 item.color === 'whatsapp' ? 'rgba(115, 200, 210, 0.1)' :
                                 item.color === 'inventory' ? 'rgba(255, 144, 19, 0.1)' :
                                 item.color === 'analytics' ? 'rgba(0, 70, 255, 0.1)' :
+                                item.color === 'rag' ? 'rgba(168, 85, 247, 0.1)' :
+                                item.color === 'manuals' ? 'rgba(59, 130, 246, 0.1)' :
                                 'rgba(0, 70, 255, 0.1)',
                 borderLeftColor: item.color === 'containers' ? '#73C8D2' :
                                 item.color === 'alerts' ? '#ef4444' :
@@ -81,6 +83,8 @@ export default function Sidebar() {
                                 item.color === 'whatsapp' ? '#73C8D2' :
                                 item.color === 'inventory' ? '#FF9013' :
                                 item.color === 'analytics' ? '#0046FF' :
+                                item.color === 'rag' ? '#a855f7' :
+                                item.color === 'manuals' ? '#3b82f6' :
                                 '#0046FF',
                 borderLeftWidth: '4px',
                 color: item.color === 'containers' ? '#73C8D2' :
@@ -92,6 +96,8 @@ export default function Sidebar() {
                        item.color === 'whatsapp' ? '#73C8D2' :
                        item.color === 'inventory' ? '#FF9013' :
                        item.color === 'analytics' ? '#0046FF' :
+                       item.color === 'rag' ? '#a855f7' :
+                       item.color === 'manuals' ? '#3b82f6' :
                        '#0046FF'
               } : {}}
               data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
@@ -108,10 +114,12 @@ export default function Sidebar() {
                          item.color === 'whatsapp' ? '#73C8D2' :
                          item.color === 'inventory' ? '#FF9013' :
                          item.color === 'analytics' ? '#0046FF' :
+                         item.color === 'rag' ? '#a855f7' :
+                         item.color === 'manuals' ? '#3b82f6' :
                          '#0046FF'
                 } : {}}
               ></i>
-              <span className="font-medium">{item.label}</span>
+              <span className="font-medium text-white">{item.label}</span>
               {item.badge && (
                 <span
                   className="ml-auto text-white text-xs px-2 py-0.5 rounded-full"
@@ -125,6 +133,8 @@ export default function Sidebar() {
                                     item.color === 'whatsapp' ? '#73C8D2' :
                                     item.color === 'inventory' ? '#FF9013' :
                                     item.color === 'analytics' ? '#0046FF' :
+                                    item.color === 'rag' ? '#a855f7' :
+                                    item.color === 'manuals' ? '#3b82f6' :
                                     '#0046FF'
                   }}
                 >
@@ -143,30 +153,30 @@ export default function Sidebar() {
           ))}
         </div>
 
-        <div className="mt-6 pt-6 border-t border-border space-y-1">
+        <div className="mt-6 pt-6 border-t border-[#223351] space-y-1">
           <Link 
             href="/settings"
-            className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-muted hover:text-white transition-smooth"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-white/80 hover:bg-[#13233d] hover:text-white transition-smooth"
           >
-            <i className="fas fa-cog w-5"></i>
-            <span className="font-medium">Settings</span>
+            <i className="fas fa-cog w-5 text-white/80"></i>
+            <span className="font-medium text-white">Settings</span>
           </Link>
         </div>
       </nav>
 
       {/* User Profile */}
-      <div className="p-4 border-t border-border">
-        <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted cursor-pointer transition-smooth">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold">
+      <div className="p-4 border-t border-[#223351]">
+        <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#13233d] cursor-pointer transition-smooth">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1f3b7a] to-[#264892] flex items-center justify-center text-white font-bold">
             {user?.name?.charAt(0) || "U"}
           </div>
           <div className="flex-1">
-            <p className="text-sm font-semibold text-foreground">{user?.name || "User"}</p>
-            <p className="text-xs text-slate-400">{user?.phoneNumber}</p>
+            <p className="text-sm font-semibold text-white">{user?.name || "User"}</p>
+            <p className="text-xs text-white/80">{user?.phoneNumber}</p>
           </div>
           <button
             onClick={handleLogout}
-            className="text-slate-400 hover:text-white"
+            className="text-white/80 hover:text-white"
             data-testid="button-logout"
           >
             <i className="fas fa-sign-out-alt"></i>

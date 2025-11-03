@@ -4,6 +4,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import axios from "axios";
+import * as fs from "fs";
 import { storage } from "./storage";
 import { z } from "zod";
 import { authenticateUser, requireRole, authorizeWhatsAppMessage } from "./middleware/auth";
@@ -28,11 +29,136 @@ import {
   sendCustomerFeedbackRequest
 } from "./services/whatsapp";
 import { runDailyScheduler, startScheduler } from "./services/scheduling";
-import { ragAdapter } from "./services/ragAdapter";
+import { RagAdapter } from "./services/ragAdapter";
+import { runDiagnosis } from "./services/ragGraph";
+import { DocumentProcessor } from "./services/documentProcessor";
+import { vectorStore } from "./services/vectorStore";
+import multer from 'multer';
+
+// Initialize RAG services
+const ragAdapter = new RagAdapter();
+const documentProcessor = new DocumentProcessor();
 import { simpleSeed } from "./simple-seed";
+
+// Configure multer for file uploads
+const upload = multer({
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow PDF, Word documents, and text files (for testing)
+    const allowedMimes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF and Word documents are allowed.'));
+    }
+  },
+  storage: multer.memoryStorage() // Store in memory for processing
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+
+  // RAG API Endpoints
+  app.post("/api/rag/query", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { query, unit_id, unit_model, alarm_code, context } = req.body;
+      
+      if (!query) {
+        return res.status(400).json({ error: "Query is required" });
+      }
+      
+      const response = await ragAdapter.query({
+        user_id: req.user?.id,
+        unit_id,
+        unit_model,
+        alarm_code,
+        query,
+        context
+      });
+      
+      res.json(response);
+    } catch (error) {
+      console.error("RAG query error:", error);
+      res.status(500).json({ error: "Failed to process RAG query" });
+    }
+  });
+
+  app.get("/api/rag/history", authenticateUser, requireRole("admin", "technician"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.query.user_id as string || req.user?.id;
+      const limit = parseInt(req.query.limit as string || "20");
+      
+      const history = await storage.getRagQueryHistory(userId, limit);
+      res.json(history);
+    } catch (error) {
+      console.error("RAG history error:", error);
+      res.status(500).json({ error: "Failed to retrieve RAG query history" });
+    }
+  });
+
+  // RAG diagnosis endpoint (manual-grounded)
+  app.post("/api/rag/diagnose", authenticateUser, async (req: any, res) => {
+    try {
+      const { containerId, alarmCode, unitModel, query } = req.body || {};
+      const out = await runDiagnosis({ containerId, alarmCode, unitModel, query });
+      res.json(out);
+    } catch (e: any) {
+      console.error('[RAG] diagnose failed:', e?.message || e);
+      res.status(500).json({ error: 'Diagnosis failed' });
+    }
+  });
+
+  app.post("/api/rag/upload", authenticateUser, requireRole("admin"), upload.single('file'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const { title, description, brand, model } = req.body;
+      
+      if (!title) {
+        return res.status(400).json({ error: "Title is required" });
+      }
+      
+      // Save file to disk
+      const fileName = `${Date.now()}-${req.file.originalname}`;
+      const filePath = `uploads/manuals/${fileName}`;
+      
+      fs.mkdirSync('uploads/manuals', { recursive: true });
+      fs.writeFileSync(filePath, req.file.buffer);
+      
+      // Create manual record
+      const manualId = await storage.createManual({
+        title,
+        description: description || '',
+        fileName,
+        filePath,
+        uploadedBy: req.user?.id || '',
+        brand: brand || '',
+        model: model || '',
+      });
+      
+      // Process document and create embeddings
+      const result = await documentProcessor.processPDFFile(filePath, manualId);
+      
+      res.json({
+        success: true,
+        manual_id: manualId,
+        processing_result: result
+      });
+    } catch (error) {
+      console.error("RAG upload error:", error);
+      res.status(500).json({ error: "Failed to process document upload" });
+    }
+  });
 
   // Enhanced WebSocket for real-time updates with user authentication
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
@@ -349,6 +475,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Test user creation error:", error);
       res.status(500).json({ error: "Failed to create test user", details: error.message });
+    }
+  });
+
+  // Get current user endpoint
+  app.get("/api/auth/me", authenticateUser, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        isActive: user.isActive
+      });
+    } catch (error) {
+      console.error("Get current user error:", error);
+      res.status(500).json({ error: "Failed to get current user" });
     }
   });
 
@@ -712,7 +860,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Service Request routes
+  // Service Request routes - specific routes first
+  app.get("/api/service-requests/pending", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
+    try {
+      const requests = await storage.getPendingServiceRequests();
+      res.json(requests);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch pending requests" });
+    }
+  });
+
+  // Single service request with relations for detail view
+  app.get("/api/service-requests/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const id = req.params.id;
+      const request = await storage.getServiceRequest(id);
+      if (!request) return res.status(404).json({ error: "Not found" });
+
+      const [container, customer, technician] = await Promise.all([
+        storage.getContainer(request.containerId),
+        storage.getCustomer(request.customerId),
+        request.assignedTechnicianId ? storage.getTechnician(request.assignedTechnicianId) : Promise.resolve(undefined)
+      ]);
+
+      const response = {
+        ...request,
+        container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
+        customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
+        technician: technician ? { id: technician.id, name: (await storage.getUser(technician.userId))?.name || technician.employeeCode } : undefined,
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error("Fetch service request detail error:", error);
+      res.status(500).json({ error: "Failed to fetch service request detail" });
+    }
+  });
+
+  // Generic service requests route - must come after specific routes
   app.get("/api/service-requests", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const role = (req.user?.role || '').toLowerCase();
@@ -753,42 +938,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(requests);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch service requests" });
-    }
-  });
-
-  // Single service request with relations for detail view
-  app.get("/api/service-requests/:id", authenticateUser, async (req: AuthRequest, res) => {
-    try {
-      const id = req.params.id;
-      const request = await storage.getServiceRequest(id);
-      if (!request) return res.status(404).json({ error: "Not found" });
-
-      const [container, customer, technician] = await Promise.all([
-        storage.getContainer(request.containerId),
-        storage.getCustomer(request.customerId),
-        request.assignedTechnicianId ? storage.getTechnician(request.assignedTechnicianId) : Promise.resolve(undefined)
-      ]);
-
-      const response = {
-        ...request,
-        container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
-        customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
-        technician: technician ? { id: technician.id, name: (await storage.getUser(technician.userId))?.name || technician.employeeCode } : undefined,
-      };
-
-      res.json(response);
-    } catch (error) {
-      console.error("Fetch service request detail error:", error);
-      res.status(500).json({ error: "Failed to fetch service request detail" });
-    }
-  });
-
-  app.get("/api/service-requests/pending", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
-    try {
-      const requests = await storage.getPendingServiceRequests();
-      res.json(requests);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch pending requests" });
     }
   });
 
@@ -2766,48 +2915,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // RAG (Retrieval-Augmented Generation) Endpoints for Reefer Diagnostic Chatbot
-  app.post("/api/rag/query", authenticateUser, async (req: any, res) => {
-    try {
-      const { user_id, unit_id, unit_model, alarm_code, query, context } = req.body;
 
-      if (!query) {
-        return res.status(400).json({ error: 'Query is required' });
-      }
-
-      // Use authenticated user if not specified
-      const actualUserId = user_id || req.user.id;
-
-      const result = await ragAdapter.query({
-        user_id: actualUserId,
-        unit_id,
-        unit_model,
-        alarm_code,
-        query,
-        context
-      });
-
-      res.json(result);
-    } catch (error) {
-      console.error('RAG query error:', error);
-      res.status(500).json({ 
-        error: 'Failed to process diagnostic query',
-        message: 'The diagnostic assistant is temporarily unavailable. Please try again later.'
-      });
-    }
-  });
-
-  // Get user's RAG query history
-  app.get("/api/rag/history", authenticateUser, async (req: any, res) => {
-    try {
-      const limit = parseInt(req.query.limit) || 50;
-      const history = await ragAdapter.getUserQueryHistory(req.user.id, limit);
-      res.json(history);
-    } catch (error) {
-      console.error('Failed to get RAG history:', error);
-      res.status(500).json({ error: 'Failed to retrieve query history' });
-    }
-  });
 
   // Get troubleshooting suggestions for an alert
   app.post("/api/alerts/:id/troubleshoot", authenticateUser, async (req: any, res) => {
@@ -2845,7 +2953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin endpoints for manual management
-  app.get("/api/manuals", authenticateUser, requireRole(["admin", "coordinator", "super_admin"]), async (req: any, res) => {
+  app.get("/api/manuals", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: any, res) => {
     try {
       const manuals = await ragAdapter.getManuals();
       res.json(manuals);
@@ -2855,29 +2963,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/manuals/upload", authenticateUser, requireRole(["admin", "super_admin"]), async (req: any, res) => {
+  app.post("/api/manuals/upload", upload.single('file'), authenticateUser, requireRole("admin", "super_admin"), async (req: any, res) => {
     try {
-      const { name, sourceUrl, version, meta } = req.body;
+      console.log('=== UPLOAD REQUEST ===');
+      console.log('Content-Type:', req.headers['content-type']);
+      console.log('Body:', req.body);
+      console.log('File:', req.file);
+      console.log('Raw body length:', req.rawBody ? req.rawBody.length : 'no raw body');
+
+      const { name, version, meta } = req.body;
+      const file = req.file;
 
       if (!name) {
         return res.status(400).json({ error: 'Manual name is required' });
       }
 
-      // For now, we'll create a manual entry with metadata only
-      // In a production setup, you would integrate with S3 or similar file storage
-      const fileUrl = sourceUrl || `manual_${Date.now()}.pdf`;
+      if (!file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
 
+      // Create manual entry first to get the ID
       const manual = await ragAdapter.uploadManual({
         name,
-        sourceUrl: fileUrl,
+        sourceUrl: `uploaded_${Date.now()}_${file.originalname}`,
         uploadedBy: req.user.id,
         version,
         meta: meta ? JSON.parse(meta) : undefined
       });
 
+      // Save the uploaded file to disk
+      const filePath = await documentProcessor.saveUploadedFile(file, manual.id);
+
+      // Update the manual record with the actual file path
+      const updatedManual = await ragAdapter.updateManual(manual.id, {
+        sourceUrl: filePath
+      });
+
+      console.log(`Manual uploaded successfully: ${name} (${file.originalname})`);
+
       res.json({
-        ...manual,
-        message: "Manual uploaded successfully. File processing will be implemented in the next phase."
+        ...updatedManual,
+        message: "Manual uploaded successfully",
+        fileInfo: {
+          originalName: file.originalname,
+          size: file.size,
+          mimetype: file.mimetype,
+          savedPath: filePath
+        }
       });
     } catch (error) {
       console.error('Manual upload error:', error);
@@ -2886,7 +3018,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete manual
-  app.delete("/api/manuals/:id", authenticateUser, requireRole(["admin", "super_admin"]), async (req: any, res) => {
+  app.delete("/api/manuals/:id", authenticateUser, requireRole("admin", "super_admin"), async (req: any, res) => {
     try {
       const manualId = req.params.id;
 
@@ -2895,6 +3027,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Manual delete error:', error);
       res.status(500).json({ error: 'Failed to delete manual' });
+    }
+  });
+
+  // Process manual for RAG (extract text and create chunks)
+  app.post("/api/manuals/:id/process", authenticateUser, requireRole("admin", "super_admin"), async (req: any, res) => {
+    try {
+      const manualId = req.params.id;
+
+      // Get manual info
+      const manual = await ragAdapter.getManual(manualId);
+      if (!manual) {
+        return res.status(404).json({ error: 'Manual not found' });
+      }
+
+      console.log(`Processing manual: ${manual.name} (${manual.sourceUrl})`);
+
+      // Check if file exists
+      if (!fs.existsSync(manual.sourceUrl)) {
+        return res.status(404).json({ error: 'Manual file not found on disk' });
+      }
+
+      // Process the PDF file
+      const result = await documentProcessor.processPDFFile(manual.sourceUrl, manualId);
+
+      if (result.success) {
+        res.json({
+          message: 'Manual processed successfully for RAG',
+          manualId,
+          chunksCreated: result.chunksCreated,
+          textLength: result.textLength,
+          processingTime: result.processingTime
+        });
+      } else {
+        res.status(500).json({
+          error: 'Failed to process manual',
+          details: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Manual processing error:', error);
+      res.status(500).json({ error: 'Failed to process manual' });
+    }
+  });
+
+  // Process all uploaded manuals (bulk)
+  app.post("/api/manuals/process-all", authenticateUser, requireRole("admin", "super_admin"), async (req: any, res) => {
+    try {
+      const manuals = await ragAdapter.getManuals();
+      let processed = 0;
+      const details: any[] = [];
+
+      for (const m of manuals) {
+        try {
+          if (!m.sourceUrl) {
+            details.push({ id: m.id, name: m.name, status: 'skipped', reason: 'no sourceUrl' });
+            continue;
+          }
+          if (!fs.existsSync(m.sourceUrl)) {
+            details.push({ id: m.id, name: m.name, status: 'skipped', reason: 'file missing' });
+            continue;
+          }
+          const result = await documentProcessor.processPDFFile(m.sourceUrl, m.id);
+          if (result.success) {
+            processed += 1;
+            details.push({ id: m.id, name: m.name, status: 'processed', chunksCreated: result.chunksCreated });
+          } else {
+            details.push({ id: m.id, name: m.name, status: 'failed', error: result.error });
+          }
+        } catch (e: any) {
+          details.push({ id: m.id, name: m.name, status: 'failed', error: e?.message || String(e) });
+        }
+      }
+
+      res.json({ total: manuals.length, processed, details });
+    } catch (error) {
+      console.error('Bulk manual processing error:', error);
+      res.status(500).json({ error: 'Failed to process manuals' });
     }
   });
 

@@ -178,42 +178,42 @@ export default function Login() {
         </div>
       </div>
       {forgotOpen && (
-        <div className="fixed inset-0 bg-gray-900 flex items-center justify-center p-6 z-50">
-          <div className="bg-white border border-gray-200 rounded-2xl p-8 w-full max-w-md shadow-2xl">
-            <h3 className="text-xl font-semibold mb-6 text-gray-900 text-center">Forgot Password</h3>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50">
+          <div className="bg-card border border-border rounded-2xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-semibold mb-6 text-foreground text-center">Forgot Password</h3>
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Email Address</label>
+                <label className="text-sm font-medium text-foreground">Email Address</label>
                 <Input placeholder="john@example.com" value={fpEmail} onChange={(e)=>setFpEmail(e.target.value)} />
               </div>
               <div className="flex gap-3 pt-2">
-                <button className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700" onClick={()=>{setForgotOpen(false); setFpEmail("");}}>Cancel</button>
-                <button className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium" onClick={()=>forgotMutation.mutate({ email: fpEmail })} disabled={forgotMutation.isPending}>{forgotMutation.isPending ? 'Sending...' : 'Send OTP'}</button>
+                <button className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-foreground" onClick={()=>{setForgotOpen(false); setFpEmail("");}}>Cancel</button>
+                <button className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium" onClick={()=>forgotMutation.mutate({ email: fpEmail })} disabled={forgotMutation.isPending}>{forgotMutation.isPending ? 'Sending...' : 'Send OTP'}</button>
               </div>
             </div>
           </div>
         </div>
       )}
       {resetOpen && (
-        <div className="fixed inset-0 bg-gray-900 flex items-center justify-center p-6 z-50">
-          <div className="bg-white border border-gray-200 rounded-2xl p-8 w-full max-w-md shadow-2xl">
-            <h3 className="text-xl font-semibold mb-6 text-gray-900 text-center">Reset Password</h3>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50">
+          <div className="bg-card border border-border rounded-2xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-semibold mb-6 text-foreground text-center">Reset Password</h3>
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Email Address</label>
+                <label className="text-sm font-medium text-foreground">Email Address</label>
                 <Input placeholder="john@example.com" value={rpEmail} onChange={(e)=>setRpEmail(e.target.value)} disabled />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">OTP Code</label>
+                <label className="text-sm font-medium text-foreground">OTP Code</label>
                 <Input placeholder="123456" value={rpCode} onChange={(e)=>setRpCode(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">New Password</label>
+                <label className="text-sm font-medium text-foreground">New Password</label>
                 <Input placeholder="••••••••" type="password" value={rpPassword} onChange={(e)=>setRpPassword(e.target.value)} />
               </div>
               <div className="flex gap-3 pt-2">
-                <button className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700" onClick={()=>{setResetOpen(false); setRpEmail(""); setRpCode(""); setRpPassword("");}}>Cancel</button>
-                <button className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium" onClick={()=>resetMutation.mutate({ email: rpEmail, code: rpCode, newPassword: rpPassword })} disabled={resetMutation.isPending}>{resetMutation.isPending ? 'Resetting...' : 'Reset Password'}</button>
+                <button className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-foreground" onClick={()=>{setResetOpen(false); setRpEmail(""); setRpCode(""); setRpPassword("");}}>Cancel</button>
+                <button className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium" onClick={()=>resetMutation.mutate({ email: rpEmail, code: rpCode, newPassword: rpPassword })} disabled={resetMutation.isPending}>{resetMutation.isPending ? 'Resetting...' : 'Reset Password'}</button>
               </div>
             </div>
           </div>

@@ -188,43 +188,43 @@ const getBatteryColor = (level?: number) => {
 return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">ORBCOMM Device Data</h1>
-        <p className="text-gray-600 mt-1">
+        <h1 className="text-2xl font-bold text-foreground">ORBCOMM Device Data</h1>
+        <p className="text-foreground mt-1">
           Real-time data from ORBCOMM CDH WebSocket connection
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Devices List */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">
+        <div className="bg-card rounded-lg shadow border border-border">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-lg font-semibold text-foreground">
               Devices ({transformedDevices.length})
             </h2>
           </div>
-          <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+          <div className="divide-y divide-border max-h-96 overflow-y-auto">
             {transformedDevices.length === 0 ? (
-              <div className="px-6 py-8 text-center text-gray-500">
+              <div className="px-6 py-8 text-center text-muted-foreground">
                 No devices found
               </div>
             ) : (
               transformedDevices.map((device) => (
                 <div
                   key={device.deviceId}
-                  className={`px-6 py-4 cursor-pointer hover:bg-gray-50 transition-colors ${
-                    selectedDevice === device.deviceId ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                  className={`px-6 py-4 cursor-pointer hover:bg-muted transition-colors ${
+                    selectedDevice === device.deviceId ? 'bg-muted border-l-4 border-primary' : ''
                   }`}
                   onClick={() => setSelectedDevice(device.deviceId)}
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="font-medium text-gray-900">{device.deviceId}</h3>
+                      <h3 className="font-medium text-foreground">{device.deviceId}</h3>
                       {device.assetId && (
-                        <p className="text-sm text-gray-600">Asset: {device.assetId}</p>
+                        <p className="text-sm text-muted-foreground">Asset: {device.assetId}</p>
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-muted-foreground">
                         {formatTimestamp(device.lastUpdate || device.lastSeen)}
                       </p>
                       {device.temperature && (
@@ -246,12 +246,12 @@ return (
         </div>
 
         {/* Device Details */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">
+        <div className="bg-card rounded-lg shadow border border-border">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-lg font-semibold text-foreground">
               Device Details
               {selectedDevice && (
-                <span className="text-sm font-normal text-gray-600 ml-2">
+                <span className="text-sm font-normal text-muted-foreground ml-2">
                   - {selectedDevice}
                 </span>
               )}
@@ -259,7 +259,7 @@ return (
           </div>
           <div className="p-6">
             {!selectedDevice ? (
-              <div className="text-center text-gray-500 py-8">
+              <div className="text-center text-muted-foreground py-8">
                 Select a device to view details
               </div>
             ) : deviceDataLoading ? (
@@ -271,13 +271,13 @@ return (
                 {/* Basic Info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Device ID</label>
-                    <p className="text-sm text-gray-900">{transformedDeviceData.deviceId}</p>
+                    <label className="text-sm font-medium text-foreground">Device ID</label>
+                    <p className="text-sm text-foreground">{transformedDeviceData.deviceId}</p>
                   </div>
                   {transformedDeviceData.assetId && (
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Asset ID</label>
-                      <p className="text-sm text-gray-900">{transformedDeviceData.assetId}</p>
+                      <label className="text-sm font-medium text-foreground">Asset ID</label>
+                      <p className="text-sm text-foreground">{transformedDeviceData.assetId}</p>
                     </div>
                   )}
                 </div>
@@ -285,28 +285,28 @@ return (
                 {/* Location */}
                 {transformedDeviceData.location && (
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Location</label>
-                    <p className="text-sm text-gray-900">{formatLocation(transformedDeviceData.location)}</p>
+                    <label className="text-sm font-medium text-foreground">Location</label>
+                    <p className="text-sm text-foreground">{formatLocation(transformedDeviceData.location)}</p>
                   </div>
                 )}
 
                 {/* Last Update */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Last Update</label>
-                  <p className="text-sm text-gray-900">{formatTimestamp(transformedDeviceData.lastUpdate || transformedDeviceData.lastSeen)}</p>
+                  <label className="text-sm font-medium text-foreground">Last Update</label>
+                  <p className="text-sm text-foreground">{formatTimestamp(transformedDeviceData.lastUpdate || transformedDeviceData.lastSeen)}</p>
                 </div>
 
                 {/* Status Indicators */}
                 <div className="grid grid-cols-2 gap-4">
                   {transformedDeviceData.temperature && (
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Temperature</label>
-                      <p className="text-sm font-medium text-gray-900">{transformedDeviceData.temperature}°C</p>
+                      <label className="text-sm font-medium text-foreground">Temperature</label>
+                      <p className="text-sm font-medium text-foreground">{transformedDeviceData.temperature}°C</p>
                     </div>
                   )}
                   {transformedDeviceData.doorStatus && (
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Door Status</label>
+                      <label className="text-sm font-medium text-foreground">Door Status</label>
 <p className={`text-sm font-medium ${getStatusColor(transformedDeviceData.doorStatus)}`}>
                          {transformedDeviceData.doorStatus}
                        </p>
@@ -314,7 +314,7 @@ return (
                   )}
                   {transformedDeviceData.powerStatus && (
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Power Status</label>
+                      <label className="text-sm font-medium text-foreground">Power Status</label>
 <p className={`text-sm font-medium ${getStatusColor(transformedDeviceData.powerStatus)}`}>
                          {transformedDeviceData.powerStatus}
                        </p>
@@ -322,7 +322,7 @@ return (
                   )}
                   {transformedDeviceData.batteryLevel && (
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Battery Level</label>
+                      <label className="text-sm font-medium text-foreground">Battery Level</label>
 <p className={`text-sm font-medium ${getBatteryColor(transformedDeviceData.batteryLevel)}`}>
                          {transformedDeviceData.batteryLevel}%
                        </p>
@@ -333,12 +333,12 @@ return (
                 {/* Error Codes */}
                 {transformedDeviceData.errorCodes && transformedDeviceData.errorCodes.length > 0 && (
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Error Codes</label>
+                    <label className="text-sm font-medium text-foreground">Error Codes</label>
                     <div className="flex flex-wrap gap-2 mt-1">
                       {transformedDeviceData.errorCodes.map((code, index) => (
                         <span
                           key={index}
-                          className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded"
+                          className="px-2 py-1 bg-destructive/20 text-destructive text-xs rounded"
                         >
                           {code}
                         </span>
@@ -350,15 +350,15 @@ return (
                 {/* Raw Data */}
                 {transformedDeviceData.rawEvent && (
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Raw Data</label>
-                    <pre className="text-xs bg-gray-100 p-3 rounded mt-1 overflow-x-auto">
+                    <label className="text-sm font-medium text-foreground">Raw Data</label>
+                    <pre className="text-xs bg-muted p-3 rounded mt-1 overflow-x-auto text-foreground">
                       {JSON.stringify(transformedDeviceData.rawEvent, null, 2)}
                     </pre>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="text-center text-gray-500 py-8">
+              <div className="text-center text-muted-foreground py-8">
                 No data available for this device
               </div>
             )}
@@ -367,24 +367,24 @@ return (
       </div>
 
       {/* Connection Status */}
-      <div className="mt-6 bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Connection Status</h3>
+      <div className="mt-6 bg-card rounded-lg shadow border border-border p-6">
+        <h3 className="text-lg font-semibold text-foreground mb-4">Connection Status</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{transformedDevices.length}</div>
-            <div className="text-sm text-gray-600">Devices Connected</div>
+            <div className="text-2xl font-bold text-green-400">{transformedDevices.length}</div>
+            <div className="text-sm text-muted-foreground">Devices Connected</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">
+            <div className="text-2xl font-bold text-blue-400">
               {transformedDevices.filter(d => d.lastUpdate || d.lastSeen).length}
             </div>
-            <div className="text-sm text-gray-600">Active Devices</div>
+            <div className="text-sm text-muted-foreground">Active Devices</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600">
+            <div className="text-2xl font-bold text-orange-400">
               {transformedDevices.filter(d => d.errorCodes && d.errorCodes.length > 0).length}
             </div>
-            <div className="text-sm text-gray-600">Devices with Errors</div>
+            <div className="text-sm text-muted-foreground">Devices with Errors</div>
           </div>
         </div>
       </div>

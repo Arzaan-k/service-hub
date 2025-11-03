@@ -446,7 +446,7 @@ export default function ClientProfile() {
                         <TableCell className="font-mono text-sm">{a.alertCode || "-"}</TableCell>
                         <TableCell>{list.find((c) => c.id === a.containerId)?.containerCode || a.containerId}</TableCell>
                         <TableCell>
-                          <Badge className={cn("border text-xs", a.severity === "critical" && "bg-red-100 text-red-800 border-red-200", a.severity === "high" && "bg-orange-100 text-orange-800 border-orange-200", a.severity === "medium" && "bg-yellow-100 text-yellow-800 border-yellow-200", a.severity === "low" && "bg-green-100 text-green-800 border-green-200")}>{a.severity}</Badge>
+                          <Badge className={cn("border text-xs", a.severity === "critical" && "bg-red-500/20 text-red-300 border-red-400/30", a.severity === "high" && "bg-orange-500/20 text-orange-300 border-orange-400/30", a.severity === "medium" && "bg-yellow-500/20 text-yellow-300 border-yellow-400/30", a.severity === "low" && "bg-green-500/20 text-green-300 border-green-400/30")}>{a.severity}</Badge>
                         </TableCell>
                         <TableCell>{a.resolvedAt ? "Resolved" : "Open"}</TableCell>
                         <TableCell>{a.detectedAt ? new Date(a.detectedAt).toLocaleString() : "-"}</TableCell>

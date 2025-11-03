@@ -236,12 +236,12 @@ export default function ServiceRequests() {
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { color: string; icon: any }> = {
-      pending: { color: "bg-gray-100 text-gray-800 border-gray-200", icon: Clock },
-      approved: { color: "bg-blue-100 text-blue-800 border-blue-200", icon: CheckCircle },
-      scheduled: { color: "bg-purple-100 text-purple-800 border-purple-200", icon: Calendar },
-      in_progress: { color: "bg-yellow-100 text-yellow-800 border-yellow-200", icon: Play },
-      completed: { color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle },
-      cancelled: { color: "bg-red-100 text-red-800 border-red-200", icon: XCircle },
+      pending: { color: "bg-gray-500/20 text-gray-400 border-gray-400/30", icon: Clock },
+      approved: { color: "bg-blue-500/20 text-blue-400 border-blue-400/30", icon: CheckCircle },
+      scheduled: { color: "bg-purple-500/20 text-purple-400 border-purple-400/30", icon: Calendar },
+      in_progress: { color: "bg-yellow-500/20 text-yellow-400 border-yellow-400/30", icon: Play },
+      completed: { color: "bg-green-500/20 text-green-400 border-green-400/30", icon: CheckCircle },
+      cancelled: { color: "bg-red-500/20 text-red-400 border-red-400/30", icon: XCircle },
     };
     const config = statusMap[status] || statusMap.pending;
     const IconComponent = config.icon;
@@ -255,10 +255,10 @@ export default function ServiceRequests() {
 
   const getPriorityBadge = (priority: string) => {
     const priorityMap: Record<string, string> = {
-      urgent: "bg-red-100 text-red-800 border-red-200",
-      high: "bg-orange-100 text-orange-800 border-orange-200",
-      normal: "bg-blue-100 text-blue-800 border-blue-200",
-      low: "bg-gray-100 text-gray-800 border-gray-200",
+      urgent: "bg-red-500/20 text-red-400 border-red-400/30",
+      high: "bg-orange-500/20 text-orange-400 border-orange-400/30",
+      normal: "bg-blue-500/20 text-blue-400 border-blue-400/30",
+      low: "bg-gray-500/20 text-gray-400 border-gray-400/30",
     };
     return priorityMap[priority] || priorityMap.normal;
   };
@@ -315,8 +315,8 @@ export default function ServiceRequests() {
             <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("pending")}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-                    <Clock className="h-5 w-5 text-gray-600" />
+                  <div className="w-10 h-10 rounded-lg bg-gray-500/20 flex items-center justify-center">
+                    <Clock className="h-5 w-5 text-gray-400" />
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-foreground">{pendingCount}</p>
@@ -329,8 +329,8 @@ export default function ServiceRequests() {
             <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("scheduled")}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                    <Calendar className="h-5 w-5 text-purple-600" />
+                  <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                    <Calendar className="h-5 w-5 text-purple-400" />
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-foreground">{scheduledCount}</p>
@@ -343,8 +343,8 @@ export default function ServiceRequests() {
             <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("in_progress")}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center">
-                    <Play className="h-5 w-5 text-yellow-600" />
+                  <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+                    <Play className="h-5 w-5 text-yellow-400" />
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-foreground">{inProgressCount}</p>
@@ -357,8 +357,8 @@ export default function ServiceRequests() {
             <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("completed")}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                    <CheckCircle className="h-5 w-5 text-green-400" />
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-foreground">{completedCount}</p>

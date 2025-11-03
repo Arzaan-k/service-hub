@@ -16,6 +16,8 @@ import {
   feedback,
   emailVerifications,
   inventoryTransactions,
+  manuals,
+  ragQueries,
   type User,
   type InsertUser,
   type Customer,
@@ -39,6 +41,12 @@ import { eq, and, desc, asc, gte, sql, isNull } from "drizzle-orm";
 import { Pool } from '@neondatabase/serverless';
 
 export interface IStorage {
+  // RAG operations
+  createManual(manual: { title: string; description: string; fileName: string; filePath: string; uploadedBy: string; brand: string; model: string }): Promise<string>;
+  getManual(id: string): Promise<any>;
+  getAllManuals(): Promise<any[]>;
+  getRagQueryHistory(userId: string, limit?: number): Promise<any[]>;
+  
   // User operations
   getUser(id: string): Promise<User | undefined>;
   getUserByPhoneNumber(phoneNumber: string): Promise<User | undefined>;
@@ -159,6 +167,37 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // RAG operations
+  async createManual(manual: { title: string; description: string; fileName: string; filePath: string; uploadedBy: string; brand: string; model: string }): Promise<string> {
+    const result = await db.insert(manuals).values({
+      title: manual.title,
+      description: manual.description,
+      fileName: manual.fileName,
+      filePath: manual.filePath,
+      uploadedBy: manual.uploadedBy,
+      brand: manual.brand,
+      model: manual.model
+    }).returning();
+    
+    return result[0].id;
+  }
+
+  async getManual(id: string): Promise<any> {
+    const result = await db.select().from(manuals).where(eq(manuals.id, id));
+    return result[0];
+  }
+
+  async getAllManuals(): Promise<any[]> {
+    return await db.select().from(manuals).orderBy(desc(manuals.createdAt));
+  }
+
+  async getRagQueryHistory(userId: string, limit: number = 20): Promise<any[]> {
+    return await db.select().from(ragQueries)
+      .where(eq(ragQueries.userId, userId))
+      .orderBy(desc(ragQueries.createdAt))
+      .limit(limit);
+  }
+
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;

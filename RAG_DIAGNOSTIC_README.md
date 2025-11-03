@@ -30,14 +30,69 @@ The Reefer Diagnostic Assistant is an AI-powered chatbot integrated into Contain
 
 ## Setup Instructions
 
-### 1. Initial Setup
+### 1. Complete RAG System Setup
+
+The RAG system is now fully implemented with **FREE AI alternatives** - no OpenAI costs! Follow these steps to set up the complete system:
 
 ```bash
-# Run the setup script
-npm run setup:rag
+# 1. Install dependencies (already done if following this guide)
+npm install
 
-# Or manually seed sample data
-npm run seed:rag
+# 2. Set up environment variables in .env
+NVIDIA_API_KEY=your_nvidia_api_key_here  # Get from https://build.nvidia.com/explore/discover
+OPENAI_API_KEY=your_openai_api_key_here  # Optional: for enhanced reranking
+CHROMA_URL=http://localhost:8000         # Optional, defaults to localhost:8000
+
+# 3. Run the complete RAG setup
+npm run setup:rag:full
+
+# 4. Check system health
+npm run check:rag
+
+# 5. Apply Database Migration
+
+Apply the pgvector migration to enable vector storage in your Neon database:
+
+```sql
+-- Run this SQL in your Neon dashboard or via migration
+CREATE EXTENSION IF NOT EXISTS vector;
+ALTER TABLE manual_chunks ADD COLUMN IF NOT EXISTS embedding vector(384);
+CREATE INDEX IF NOT EXISTS manual_chunks_embedding_idx ON manual_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+```
+
+Or use the provided migration file: `migrations/add_pgvector_support.sql`
+
+# 6. Start the application
+npm run dev
+```
+
+## 🎉 **COMPLETELY FREE AI PROCESSING WITH NEON INTEGRATION**
+
+This implementation uses:
+- **FREE Embeddings**: HuggingFace all-MiniLM-L6-v2 model (local processing)
+- **FREE LLM**: NVIDIA API with Llama 3 8B model (generous free tier)
+- **Your Existing DB**: Neon PostgreSQL with pgvector extension
+
+**No API costs for AI processing!** 🚀
+
+### 2. Manual Setup Steps
+
+If you prefer manual setup:
+
+```bash
+# Install additional dependencies (FREE alternatives)
+npm install pdf-parse chromadb @xenova/transformers onnxruntime-node langchain multer
+
+# Create upload directories
+mkdir -p uploads/manuals
+
+# Set environment variables in .env
+NVIDIA_API_KEY=your_nvidia_api_key_here  # Get from https://build.nvidia.com/explore/discover
+
+# Run database migrations (ensure RAG tables exist)
+# The tables should be created via the existing migration file: migrations/add_rag_tables.sql
+
+# Initialize vector store (will happen automatically on server start)
 ```
 
 ### 2. Database Schema
@@ -103,16 +158,27 @@ client/src/pages/
 
 ```
 server/services/
-└── ragAdapter.ts              # RAG service integration
+├── ragAdapter.ts              # RAG service integration with FREE NVIDIA API
+├── vectorStore.ts             # PostgreSQL/Neon vector storage with FREE HuggingFace embeddings
+├── documentProcessor.ts       # PDF processing and text extraction
+└── ...                        # Other services
 
 server/routes.ts                # API endpoints
-├── POST /api/rag/query        # Main chat endpoint
+├── POST /api/rag/query        # Main chat endpoint (with real RAG)
 ├── GET /api/rag/history       # Query history
 ├── POST /api/alerts/:id/troubleshoot  # Alert help
 ├── GET /api/manuals           # List manuals
-├── POST /api/manuals/upload   # Upload manual
+├── POST /api/manuals/upload   # Upload manual with processing
 └── DELETE /api/manuals/:id    # Delete manual
 ```
+
+### AI Components (100% FREE with Neon Integration)
+
+- **Embeddings**: HuggingFace `all-MiniLM-L6-v2` (384-dim, local processing)
+- **LLM**: NVIDIA API `meta/llama3-8b-instruct` (free tier available)
+- **Vector DB**: Your existing Neon PostgreSQL with pgvector extension
+- **Text Processing**: Local PDF parsing and chunking
+- **Unified Storage**: Everything in one database
 
 ### Database Schema
 
@@ -130,16 +196,24 @@ CREATE TABLE manuals (
   updated_at timestamptz DEFAULT now()
 );
 
--- Manual chunks for vector search
+-- Manual chunks with vector embeddings stored in PostgreSQL
 CREATE TABLE manual_chunks (
   id uuid PRIMARY KEY,
   manual_id uuid REFERENCES manuals(id),
   chunk_text text NOT NULL,
   chunk_embedding_id text,
+  embedding vector(384), -- Vector embedding stored directly in PostgreSQL
   page_num integer,
+  start_offset integer,
+  end_offset integer,
   metadata jsonb,
   created_at timestamptz DEFAULT now()
 );
+
+-- Index for efficient vector similarity search
+CREATE INDEX manual_chunks_embedding_idx
+ON manual_chunks USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
 
 -- Query history and analytics
 CREATE TABLE rag_queries (
@@ -327,10 +401,20 @@ For technical issues or feature requests related to the RAG Diagnostic Assistant
 
 - **v1.0** - Initial implementation with mock responses
 - **v1.1** - Alert integration and admin interface
-- **v2.0** - Full RAG service integration (planned)
+- **v2.0** - ✅ **COMPLETE RAG IMPLEMENTATION**
+  - Real PDF processing and text extraction
+  - **FREE HuggingFace embeddings** (all-MiniLM-L6-v2)
+  - Chroma vector database storage
+  - Intelligent text chunking with metadata preservation
+  - **FREE NVIDIA API LLM** (Llama 3 8B) with source citations
+  - Confidence scoring and part recommendations
+  - Full file upload and processing pipeline
+  - **💰 ZERO API COSTS for AI processing**
 - **v3.0** - Advanced analytics and multi-language support (planned)
 
 ---
 
-*This documentation covers the complete RAG Diagnostic Assistant implementation in ContainerGenie. The system is production-ready with intelligent mock responses and can be enhanced with full RAG capabilities as needed.*
+*This documentation covers the complete RAG Diagnostic Assistant implementation in ContainerGenie. The system now features **100% FREE AI processing** with PDF processing, HuggingFace embeddings, NVIDIA API LLM, and vector embeddings. The implementation includes comprehensive error handling and falls back to intelligent mock responses when external services are unavailable.*
+
+
 

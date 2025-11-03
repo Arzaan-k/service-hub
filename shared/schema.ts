@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, pgEnum, decimal, uuid, point } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, pgEnum, decimal, uuid, point, customType } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -344,11 +344,25 @@ export const manuals = pgTable("manuals", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Define vector type for pgvector
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType(config) {
+    return `vector(${config?.dimensions ?? 384})`;
+  },
+  toDriver(value: number[]): string {
+    return JSON.stringify(value);
+  },
+  fromDriver(value: string): number[] {
+    return JSON.parse(value);
+  },
+});
+
 export const manualChunks = pgTable("manual_chunks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   manualId: varchar("manual_id").references(() => manuals.id).notNull(),
   chunkText: text("chunk_text").notNull(),
-  chunkEmbeddingId: text("chunk_embedding_id"), // ID/key in vector database
+  chunkEmbeddingId: text("chunk_embedding_id"), // Legacy field for compatibility
+  embedding: vector("embedding", { dimensions: 384 }), // Vector embedding stored directly in PostgreSQL
   pageNum: integer("page_num"),
   startOffset: integer("start_offset"),
   endOffset: integer("end_offset"),
@@ -480,7 +494,7 @@ export const insertInventorySchema = createInsertSchema(inventory).omit({ id: tr
 export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({ id: true, createdAt: true });
 export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({ id: true, createdAt: true });
 export const insertManualSchema = createInsertSchema(manuals).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true });
+export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true, embedding: true });
 export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: true, createdAt: true });
 
 // Types (updated according to PRD)

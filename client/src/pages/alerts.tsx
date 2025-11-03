@@ -155,7 +155,7 @@ export default function Alerts() {
               <Button 
                 onClick={() => simulateAlert.mutate()} 
                 disabled={simulateAlert.isPending || !selectedContainer}
-                className="bg-orange-600 hover:bg-orange-700"
+                className="bg-orange-500 hover:bg-orange-600"
               >
                 {simulateAlert.isPending ? "Simulating..." : "🚨 Simulate Alert"}
               </Button>

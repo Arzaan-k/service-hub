@@ -228,19 +228,19 @@ export default function Technicians() {
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, string> = {
-      available: "bg-green-100 text-green-800 border-green-200",
-      busy: "bg-yellow-100 text-yellow-800 border-yellow-200",
-      offline: "bg-gray-100 text-gray-800 border-gray-200",
+      available: "bg-green-500/20 text-green-200 border-green-400/30",
+      busy: "bg-yellow-500/20 text-yellow-200 border-yellow-400/30",
+      offline: "bg-gray-500/20 text-gray-200 border-gray-400/30",
     };
     return statusMap[status] || statusMap.available;
   };
 
   const getExperienceColor = (level: string) => {
     const colorMap: Record<string, string> = {
-      junior: "text-blue-600",
-      mid: "text-green-600",
-      senior: "text-orange-600",
-      expert: "text-purple-600",
+      junior: "text-blue-200",
+      mid: "text-green-200",
+      senior: "text-orange-200",
+      expert: "text-purple-200",
     };
     return colorMap[level] || colorMap.mid;
   };

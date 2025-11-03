@@ -4,6 +4,7 @@ import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeOrbcommConnection, populateOrbcommDevices } from "./services/orbcomm";
+import { vectorStore } from "./services/vectorStore";
 
 const app = express();
 
@@ -68,6 +69,16 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+
+  // Initialize vector store for RAG functionality
+  console.log('[SERVER] Initializing vector store for RAG...');
+  try {
+    await vectorStore.initializeCollection();
+    console.log('✅ Vector store initialized successfully');
+  } catch (error) {
+    console.error('❌ Error initializing vector store:', error);
+    // Don't fail server startup for vector store issues
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

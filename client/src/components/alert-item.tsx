@@ -10,6 +10,8 @@ interface AlertItemProps {
     description: string;
     detectedAt: string;
     containerId: string;
+    aiClassification?: { summary?: string; confidence?: string; sources?: any[] };
+    resolutionSteps?: string[];
   };
   containerName: string;
   containerModel?: string;
@@ -42,6 +44,30 @@ export default function AlertItem({ alert, containerName, containerModel, onActi
       <p className={`text-sm font-medium ${colors.text} mb-1`}>{alert.alertCode}</p>
       <p className="text-xs text-muted-foreground mb-2">{containerName}</p>
       <p className="text-xs text-foreground mb-3">{alert.description}</p>
+
+      {/* AI Insight */}
+      {(alert.aiClassification?.summary || (alert.resolutionSteps && alert.resolutionSteps.length)) && (
+        <div className="mb-3 p-3 bg-[#0e2038] border border-[#223351] rounded-lg">
+          <div className="text-xs font-semibold text-white mb-1">AI Insight</div>
+          {alert.aiClassification?.summary && (
+            <p className="text-xs text-white mb-2">{alert.aiClassification.summary}</p>
+          )}
+          {alert.resolutionSteps && alert.resolutionSteps.length > 0 && (
+            <ol className="list-decimal list-inside space-y-1 text-xs text-white">
+              {alert.resolutionSteps.slice(0,6).map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ol>
+          )}
+          {alert.aiClassification?.sources && alert.aiClassification.sources.length > 0 && (
+            <div className="mt-2 text-[11px] text-white/70">
+              Sources: {alert.aiClassification.sources.slice(0,3).map((src: any, idx: number) => (
+                <span key={idx} className="mr-2">{src.manual_name} p.{src.page}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => onAction?.(alert.id, "acknowledge")}
@@ -65,6 +91,12 @@ export default function AlertItem({ alert, containerName, containerModel, onActi
           Dispatch Technician
         </button>
         <button
+          onClick={() => onAction?.(alert.id, "create_sr")}
+          className="px-3 py-1.5 text-xs font-medium border border-green-500/40 text-green-400 rounded hover:bg-green-500/10 transition-smooth"
+        >
+          Create Service Request
+        </button>
+        <button
           onClick={() => onAction?.(alert.id, "details")}
           className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted/20 transition-smooth"
           data-testid={`button-details-${alert.id}`}
@@ -73,7 +105,7 @@ export default function AlertItem({ alert, containerName, containerModel, onActi
         </button>
         <button
           onClick={() => setShowChat(!showChat)}
-          className="px-3 py-1.5 text-xs font-medium border border-blue-200 text-blue-700 rounded hover:bg-blue-50 transition-smooth flex items-center gap-1"
+          className="px-3 py-1.5 text-xs font-medium border border-blue-400/30 text-blue-400 rounded hover:bg-blue-400/10 transition-smooth flex items-center gap-1"
           data-testid={`button-troubleshoot-${alert.id}`}
         >
           <Wrench className="h-3 w-3" />

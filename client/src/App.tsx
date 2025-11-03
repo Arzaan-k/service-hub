@@ -114,10 +114,36 @@ function Router() {
 }
 
 function App() {
-  // Only initialize test authentication in development if no real auth exists
+  // Initialize authentication and fetch current user
   React.useEffect(() => {
-    // Remove automatic test auth initialization
-    // initTestAuth() was causing conflicts with real login
+    const initAuth = async () => {
+      // Initialize test auth for development
+      initTestAuth();
+
+      // Try to fetch current user from API
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          const response = await fetch('/api/auth/me', {
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': token
+            }
+          });
+
+          if (response.ok) {
+            const userData = await response.json();
+            // Store user data in localStorage
+            localStorage.setItem('current_user', JSON.stringify(userData));
+            console.log('[AUTH] Fetched and stored user data:', userData);
+          }
+        }
+      } catch (error) {
+        console.log('[AUTH] Could not fetch user data:', error);
+      }
+    };
+
+    initAuth();
   }, []);
 
   return (

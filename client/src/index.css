@@ -5,12 +5,12 @@
 :root {
   /* Base Colors */
   --background: hsl(225, 100%, 5%);
-  --foreground: hsl(0, 0%, 100%);
+  --foreground: hsl(0, 0%, 95%);
   --card: hsl(225, 100%, 8%);
-  --card-foreground: hsl(0, 0%, 100%);
+  --card-foreground: hsl(0, 0%, 95%);
   --popover: hsl(225, 100%, 10%);
-  --popover-foreground: hsl(0, 0%, 100%);
-  --border: hsl(225, 50%, 20%);
+  --popover-foreground: hsl(0, 0%, 95%);
+  --border: hsl(225, 50%, 25%);
   --input: hsl(225, 100%, 8%);
   --ring: hsl(225, 100%, 50%);
   --radius: 0.5rem;

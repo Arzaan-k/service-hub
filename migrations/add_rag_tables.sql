@@ -59,3 +59,9 @@ COMMENT ON TABLE manuals IS 'Stores uploaded service manuals for RAG system';
 COMMENT ON TABLE manual_chunks IS 'Stores text chunks and embeddings from manuals';
 COMMENT ON TABLE rag_queries IS 'Stores RAG chat queries and responses for audit and analytics';
 
+
+
+
+
+
+

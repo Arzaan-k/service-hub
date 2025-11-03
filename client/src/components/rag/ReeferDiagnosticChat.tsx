@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { apiRequest } from '@/lib/queryClient';
 
 interface Message {
   id: string;
@@ -91,28 +92,14 @@ export default function ReeferDiagnosticChat({
     setIsLoading(true);
 
     try {
-      // Call RAG API
-      const response = await fetch('/api/rag/query', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: JSON.stringify({
-          user_id: localStorage.getItem('userId'),
-          unit_id: containerId,
-          unit_model: containerModel,
-          alarm_code: alarmCode,
-          query: userMessage.content,
-          context: context || {}
-        })
+      // Call new diagnosis endpoint (manual-grounded)
+      const ragResponse = await apiRequest('POST', '/api/rag/query', {
+        unit_id: containerId,
+        unit_model: containerModel,
+        alarm_code: alarmCode,
+        query: userMessage.content,
+        context: context || {}
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to get diagnostic response');
-      }
-
-      const ragResponse = await response.json();
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -123,7 +110,7 @@ export default function ReeferDiagnosticChat({
           steps: ragResponse.steps,
           sources: ragResponse.sources,
           confidence: ragResponse.confidence,
-          suggestedParts: ragResponse.suggested_spare_parts
+          suggestedParts: ragResponse.suggested_spare_parts || ragResponse.suggestedParts
         }
       };
 
@@ -159,12 +146,16 @@ export default function ReeferDiagnosticChat({
     }
   };
 
-  const getConfidenceColor = (confidence: string) => {
+  const getConfidenceColor = (confidence: Confidence) => {
     switch (confidence) {
-      case 'high': return 'bg-green-100 text-green-800';
-      case 'medium': return 'bg-yellow-100 text-yellow-800';
-      case 'low': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'high':
+        return 'bg-green-500/20 text-green-200';
+      case 'medium':
+        return 'bg-yellow-500/20 text-yellow-200';
+      case 'low':
+        return 'bg-red-500/20 text-red-200';
+      default:
+        return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -178,13 +169,13 @@ export default function ReeferDiagnosticChat({
   };
 
   return (
-    <Card className={`flex flex-col ${compact ? 'h-96' : 'h-[600px]'} ${className}`}>
+    <Card className={`flex flex-col ${compact ? 'h-96' : 'h-[600px]'} ${className} bg-[#0c1a2e] border-[#223351]`}>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Bot className="h-5 w-5 text-blue-600" />
+        <CardTitle className="flex items-center gap-2 text-lg text-white">
+          <Bot className="h-5 w-5 text-white" />
           Reefer Diagnostic Assistant
           {alarmCode && (
-            <Badge variant="outline" className="ml-2">
+            <Badge variant="outline" className="ml-2 text-white border-[#223351]">
               {alarmCode}
             </Badge>
           )}
@@ -197,15 +188,15 @@ export default function ReeferDiagnosticChat({
             {messages.length === 0 ? (
               <div className="flex items-center justify-center h-full text-center">
                 <div className="space-y-3">
-                  <Bot className="h-12 w-12 text-gray-400 mx-auto" />
+                  <Bot className="h-12 w-12 text-white/80 mx-auto" />
                   <div className="space-y-1">
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-medium text-white">
                       {alarmCode
                         ? `Ask about ${alarmCode} troubleshooting`
                         : "Ask me anything about reefer maintenance"
                       }
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-white/80">
                       I can help with alarms, diagnostics, and repair procedures
                     </p>
                   </div>
@@ -218,18 +209,18 @@ export default function ReeferDiagnosticChat({
                     <div className={`flex gap-3 max-w-[85%] ${message.type === 'user' ? 'flex-row-reverse' : ''}`}>
                       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
                         message.type === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-600'
+                          ? 'bg-[#1f3b7a] text-white'
+                          : 'bg-[#0e2038] text-white border border-[#223351]'
                       }`}>
                         {message.type === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                       </div>
 
                       <div className={`rounded-lg px-4 py-3 ${
                         message.type === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white border border-gray-200 shadow-sm'
+                          ? 'bg-[#1f3b7a] text-white'
+                          : 'bg-[#0e2038] border border-[#223351] text-white'
                       }`}>
-                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                        <p className="text-sm whitespace-pre-wrap text-white">{message.content}</p>
                       </div>
                     </div>
                   </div>
@@ -238,7 +229,7 @@ export default function ReeferDiagnosticChat({
                     <div className={`${message.type === 'user' ? 'mr-11' : 'ml-11'} space-y-4`}>
                       {/* Confidence Badge */}
                       <div className="flex items-center gap-2">
-                        <Badge className={`${getConfidenceColor(message.metadata.confidence)} flex items-center gap-1`}>
+                        <Badge className={`${getConfidenceColor(message.metadata.confidence)} flex items-center gap-1 text-white`}>
                           {getConfidenceIcon(message.metadata.confidence)}
                           <span className="capitalize">{message.metadata.confidence} Confidence</span>
                         </Badge>
@@ -247,10 +238,10 @@ export default function ReeferDiagnosticChat({
                       {/* Steps */}
                       {message.metadata.steps && message.metadata.steps.length > 0 && (
                         <div className="space-y-2">
-                          <h4 className="text-sm font-semibold text-gray-900">Troubleshooting Steps:</h4>
-                          <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700 ml-2">
+                          <h4 className="text-sm font-semibold text-white">Troubleshooting Steps:</h4>
+                          <ol className="list-decimal list-inside space-y-1 text-sm text-white/90 ml-2">
                             {message.metadata.steps.map((step, index) => (
-                              <li key={index} className="leading-relaxed">{step}</li>
+                              <li key={index} className="leading-relaxed text-white/90">{step}</li>
                             ))}
                           </ol>
                         </div>
@@ -259,10 +250,10 @@ export default function ReeferDiagnosticChat({
                       {/* Suggested Parts */}
                       {message.metadata.suggestedParts && message.metadata.suggestedParts.length > 0 && (
                         <div className="space-y-2">
-                          <h4 className="text-sm font-semibold text-gray-900">Suggested Spare Parts:</h4>
+                          <h4 className="text-sm font-semibold text-white">Suggested Spare Parts:</h4>
                           <div className="flex flex-wrap gap-2">
                             {message.metadata.suggestedParts.map((part, index) => (
-                              <Badge key={index} variant="secondary" className="text-xs">
+                              <Badge key={index} variant="secondary" className="text-xs text-white bg-[#0e2038] border-[#223351]">
                                 {part}
                               </Badge>
                             ))}
@@ -273,13 +264,13 @@ export default function ReeferDiagnosticChat({
                       {/* Sources */}
                       {message.metadata.sources && message.metadata.sources.length > 0 && (
                         <div className="space-y-2">
-                          <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                            <BookOpen className="h-4 w-4" />
+                          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                            <BookOpen className="h-4 w-4 text-white" />
                             Sources:
                           </h4>
                           <div className="space-y-1">
                             {message.metadata.sources.map((source, index) => (
-                              <div key={index} className="text-xs text-gray-600 bg-gray-50 rounded px-3 py-2">
+                              <div key={index} className="text-xs text-white bg-[#0c1a2e] rounded px-3 py-2 border border-[#223351]">
                                 {source.manual_name} - Page {source.page}
                               </div>
                             ))}
@@ -289,7 +280,7 @@ export default function ReeferDiagnosticChat({
                     </div>
                   )}
 
-                  <div className="text-xs text-gray-400 text-center">
+                  <div className="text-xs text-white/70 text-center">
                     {message.timestamp.toLocaleTimeString()}
                   </div>
                 </div>
@@ -298,13 +289,13 @@ export default function ReeferDiagnosticChat({
 
             {isLoading && (
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Bot className="h-4 w-4 text-gray-600" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#0e2038] flex items-center justify-center border border-[#223351]">
+                  <Bot className="h-4 w-4 text-white" />
                 </div>
-                <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
+                <div className="bg-[#0e2038] border border-[#223351] rounded-lg px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                    <span className="text-sm text-gray-600">Analyzing manuals...</span>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span className="text-sm text-white">Analyzing manuals...</span>
                   </div>
                 </div>
               </div>
@@ -314,7 +305,7 @@ export default function ReeferDiagnosticChat({
           </div>
         </ScrollArea>
 
-        <Separator />
+        <Separator className="bg-[#223351]" />
 
         <div className="p-4">
           <div className="flex gap-2">
@@ -324,21 +315,22 @@ export default function ReeferDiagnosticChat({
               onKeyPress={handleKeyPress}
               placeholder={alarmCode ? `Ask about ${alarmCode}...` : "Ask about troubleshooting, alarms, or maintenance..."}
               disabled={isLoading}
-              className="flex-1"
+              className="flex-1 bg-[#0e2038] border-[#223351] text-white placeholder:text-white/60"
             />
             <Button
               onClick={handleSendMessage}
               disabled={!inputValue.trim() || isLoading}
               size="sm"
+              className="bg-[#1f3b7a] hover:bg-[#264892] text-white"
             >
               <Send className="h-4 w-4" />
             </Button>
           </div>
 
           {alarmCode && (
-            <div className="mt-2 text-xs text-gray-500">
-              💡 Try asking: "What causes {alarmCode}?" or "How to fix {alarmCode}?"
-            </div>
+            <div className="mt-2 text-xs text-white/80">
+            💡 Try asking: "What causes {alarmCode}?" or "How to fix {alarmCode}?"
+          </div>
           )}
         </div>
       </CardContent>

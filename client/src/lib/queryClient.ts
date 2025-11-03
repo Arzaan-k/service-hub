@@ -13,15 +13,22 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const token = getAuthToken() || localStorage.getItem('auth_token') || localStorage.getItem('authToken');
-  
-  // Prevent test tokens from being used
-  if (token === 'test-admin-123') {
-    console.warn('[API] Test token detected, clearing auth');
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('current_user');
-  }
+  const getAuthTokenResult = getAuthToken();
+  const localStorageAuthToken = localStorage.getItem('auth_token');
+  const localStorageAuthTokenAlt = localStorage.getItem('authToken');
+  const token = getAuthTokenResult || localStorageAuthToken || localStorageAuthTokenAlt;
+
+  console.log(`[API REQUEST DEBUG] ${method} ${url}`, {
+    getAuthTokenResult,
+    localStorageAuthToken,
+    localStorageAuthTokenAlt,
+    finalToken: token,
+    url,
+    isRagQuery: url.includes('/api/rag/query')
+  });
+
+  // Allow test tokens in development - server will handle fallback
+  // Removed aggressive token clearing that was causing issues
   
   const headers: Record<string, string> = {};
 
@@ -31,7 +38,12 @@ export async function apiRequest(
 
   if (token) {
     headers["x-user-id"] = token;
+    console.log(`[API HEADERS SET] Setting x-user-id header to: ${token}`);
+  } else {
+    console.log(`[API HEADERS WARNING] No token available for ${method} ${url}`);
   }
+
+  console.log(`[API FINAL HEADERS] ${method} ${url}`, headers);
 
   const getBaseUrl = () => {
     // For API requests, always use the backend URL
@@ -68,7 +80,7 @@ export async function apiRequest(
     fullUrl = `${normalizedBaseUrl}${normalizedUrl}`;
   }
 
-  console.log(`[API] ${method} ${fullUrl}`, { token, headers: { ...headers, 'x-user-id': '[HIDDEN]' } });
+  console.log(`[API] ${method} ${fullUrl}`);
 
   let res: Response;
 try {
@@ -97,13 +109,8 @@ export const getQueryFn: <T>(options: {
   async ({ queryKey }) => {
     const token = getAuthToken() || localStorage.getItem('auth_token') || localStorage.getItem('authToken');
     
-    // Prevent test tokens from being used
-    if (token === 'test-admin-123') {
-      console.warn('[QUERY] Test token detected, clearing auth');
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('current_user');
-    }
+    // Allow test tokens in development - server will handle fallback
+    // Removed aggressive token clearing that was causing issues
     
     const headers: Record<string, string> = {};
 

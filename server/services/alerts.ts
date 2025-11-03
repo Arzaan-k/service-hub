@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { ragAdapter } from "./ragAdapter";
 import { whatsappService } from "./whatsapp";
 import { schedulerService } from "./scheduler";
 import { type InsertAlert } from "@shared/schema";
@@ -10,6 +11,28 @@ export class AlertService {
   async processNewAlert(alertData: any): Promise<{ alert: any; serviceRequest?: any; remoteResolved?: boolean }> {
     // Create the alert first
     const alert = await storage.createAlert(alertData);
+    try {
+      // Generate AI insight from manuals for this alert
+      const container = await storage.getContainer(alert.containerId);
+      const suggestions = await ragAdapter.getAlertSuggestions(
+        alert.containerId,
+        alert.alertCode,
+        container?.model
+      );
+      if (suggestions) {
+        await storage.updateAlert(alert.id, {
+          aiClassification: {
+            summary: suggestions.answer,
+            confidence: suggestions.confidence,
+            sources: suggestions.sources
+          },
+          resolutionSteps: suggestions.steps,
+          requiredParts: suggestions.suggested_spare_parts || []
+        });
+      }
+    } catch (e) {
+      console.warn('[AlertService] AI insight generation failed:', (e as any)?.message || e);
+    }
     
     // Attempt remote resolution for certain alert types
     const remoteResolution = await this.attemptRemoteResolution(alert);
