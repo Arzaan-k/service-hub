@@ -76,3 +76,4 @@ npx tsx verify-rag-configuration.js
 **Check progress**: `npx tsx check-qdrant-progress.js`
 
 
+

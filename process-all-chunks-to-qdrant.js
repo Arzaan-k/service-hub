@@ -108,3 +108,4 @@ async function processAllChunksToQdrant() {
 processAllChunksToQdrant().catch(console.error);
 
 
+
