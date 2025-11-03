@@ -261,96 +261,65 @@ export class DatabaseStorage implements IStorage {
 
   async getAllContainers(): Promise<Container[]> {
     const containerList = await db.select().from(containers).orderBy(containers.id);
-
-    // Ensure containers have currentLocation data for map display
-    const defaultLocations = [
-      { lat: 33.7434, lng: -118.2726, name: "LA Port" },
-      { lat: 32.7157, lng: -117.1611, name: "San Diego" },
-      { lat: 37.8044, lng: -122.2712, name: "Oakland" },
-      { lat: 33.7701, lng: -118.1937, name: "Long Beach" },
-      { lat: 37.7749, lng: -122.4194, name: "San Francisco" },
-      { lat: 34.0522, lng: -118.2437, name: "Los Angeles" },
-      { lat: 40.7128, lng: -74.0060, name: "New York" },
-      { lat: 25.7617, lng: -80.1918, name: "Miami" }
-    ];
-
-    return containerList.map((container: Container, index: number) => {
-      // If container doesn't have currentLocation, add a default one
-      if (!container.currentLocation) {
-        const defaultLocation = defaultLocations[index % defaultLocations.length];
-        return {
-          ...container,
-          currentLocation: {
-            lat: defaultLocation.lat,
-            lng: defaultLocation.lng,
-            address: defaultLocation.name,
-            source: 'default'
-          }
-        };
-      }
-      return container;
-    });
+    return containerList.map(container => this.parseContainerData(container));
   }
 
-  async getContainer(id: string): Promise<Container | undefined> {
-    const [container] = await db.select().from(containers).where(eq(containers.id, id));
+  // Helper function to parse decimal fields and ensure currentLocation
+  private parseContainerData(container: Container): Container {
+    if (!container) return container;
+
+    // Parse decimal fields from strings to numbers
+    const parsedContainer = {
+      ...container,
+      locationLat: container.locationLat ? parseFloat(container.locationLat as string) : undefined,
+      locationLng: container.locationLng ? parseFloat(container.locationLng as string) : undefined
+    };
 
     // Ensure container has currentLocation data for map display
-    if (container && !container.currentLocation) {
-      const defaultLocations = [
-        { lat: 33.7434, lng: -118.2726, name: "LA Port" },
-        { lat: 32.7157, lng: -117.1611, name: "San Diego" },
-        { lat: 37.8044, lng: -122.2712, name: "Oakland" },
-        { lat: 33.7701, lng: -118.1937, name: "Long Beach" }
-      ];
-      const defaultLocation = defaultLocations[Math.floor(Math.random() * defaultLocations.length)];
+    if (!parsedContainer.currentLocation) {
+      // Use telemetry location if available
+      if (parsedContainer.locationLat && parsedContainer.locationLng) {
+        parsedContainer.currentLocation = {
+          lat: parsedContainer.locationLat,
+          lng: parsedContainer.locationLng,
+          timestamp: parsedContainer.lastSyncedAt?.toISOString(),
+          source: 'orbcomm'
+        };
+      } else {
+        // Fallback to default location
+        const defaultLocations = [
+          { lat: 33.7434, lng: -118.2726, name: "LA Port" },
+          { lat: 32.7157, lng: -117.1611, name: "San Diego" },
+          { lat: 37.8044, lng: -122.2712, name: "Oakland" },
+          { lat: 33.7701, lng: -118.1937, name: "Long Beach" }
+        ];
+        const defaultLocation = defaultLocations[Math.floor(Math.random() * defaultLocations.length)];
 
-      return {
-        ...container,
-        currentLocation: {
+        parsedContainer.currentLocation = {
           lat: defaultLocation.lat,
           lng: defaultLocation.lng,
           address: defaultLocation.name,
           source: 'default'
-        }
-      };
+        };
+      }
     }
 
-    return container;
+    return parsedContainer;
+  }
+
+  async getContainer(id: string): Promise<Container | undefined> {
+    const [container] = await db.select().from(containers).where(eq(containers.id, id));
+    return container ? this.parseContainerData(container) : undefined;
   }
 
   async getContainerByContainerId(containerId: string): Promise<Container | undefined> {
     const [container] = await db.select().from(containers).where(eq(containers.containerCode, containerId));
-    return container;
+    return container ? this.parseContainerData(container) : undefined;
   }
 
   async getContainersByCustomer(customerId: string): Promise<Container[]> {
     const containerList = await db.select().from(containers).where(eq(containers.currentCustomerId, customerId));
-
-    // Ensure containers have currentLocation data for map display
-    const defaultLocations = [
-      { lat: 33.7434, lng: -118.2726, name: "LA Port" },
-      { lat: 32.7157, lng: -117.1611, name: "San Diego" },
-      { lat: 37.8044, lng: -122.2712, name: "Oakland" },
-      { lat: 33.7701, lng: -118.1937, name: "Long Beach" }
-    ];
-
-    return containerList.map((container: Container, index: number) => {
-      // If container doesn't have currentLocation, add a default one
-      if (!container.currentLocation) {
-        const defaultLocation = defaultLocations[index % defaultLocations.length];
-        return {
-          ...container,
-          currentLocation: {
-            lat: defaultLocation.lat,
-            lng: defaultLocation.lng,
-            address: defaultLocation.name,
-            source: 'default'
-          }
-        };
-      }
-      return container;
-    });
+    return containerList.map(container => this.parseContainerData(container));
   }
 
   async createContainer(container: any): Promise<Container> {
@@ -369,34 +338,12 @@ export class DatabaseStorage implements IStorage {
 
   async getContainerByOrbcommId(orbcommDeviceId: string): Promise<Container | undefined> {
     const [container] = await db.select().from(containers).where(eq(containers.orbcommDeviceId, orbcommDeviceId));
-    return container;
+    return container ? this.parseContainerData(container) : undefined;
   }
 
   async getContainerByCode(containerCode: string): Promise<Container | undefined> {
     const [container] = await db.select().from(containers).where(eq(containers.containerCode, containerCode));
-
-    // Ensure container has currentLocation data for map display
-    if (container && !container.currentLocation) {
-      const defaultLocations = [
-        { lat: 33.7434, lng: -118.2726, name: "LA Port" },
-        { lat: 32.7157, lng: -117.1611, name: "San Diego" },
-        { lat: 37.8044, lng: -122.2712, name: "Oakland" },
-        { lat: 33.7701, lng: -118.1937, name: "Long Beach" }
-      ];
-      const defaultLocation = defaultLocations[Math.floor(Math.random() * defaultLocations.length)];
-
-      return {
-        ...container,
-        currentLocation: {
-          lat: defaultLocation.lat,
-          lng: defaultLocation.lng,
-          address: defaultLocation.name,
-          source: 'default'
-        }
-      };
-    }
-
-    return container;
+    return container ? this.parseContainerData(container) : undefined;
   }
 
   async updateContainerLocation(containerId: string, locationData: { lat: number; lng: number; timestamp: string; source: string }): Promise<void> {
@@ -541,37 +488,68 @@ export class DatabaseStorage implements IStorage {
 
   async getAllTechnicians(): Promise<Technician[]> {
     // Return technicians enriched with linked user fields for UI display
-    const rows = await db
-      .select({
-        tech: technicians,
-        userName: users.name,
-        userEmail: users.email,
-        userPhone: users.phoneNumber,
-      })
-      .from(technicians)
-      .leftJoin(users, eq(technicians.userId, users.id));
+    try {
+      const rows = await db
+        .select({
+          tech: technicians,
+          userName: users.name,
+          userEmail: users.email,
+          userPhone: users.phoneNumber,
+        })
+        .from(technicians)
+        .leftJoin(users, eq(technicians.userId, users.id));
 
-    return rows.map((r: any) => ({
-      ...r.tech,
-      name: r.userName,
-      email: r.userEmail,
-      phone: r.userPhone,
-    }));
+      return rows.map((r: any) => ({
+        ...r.tech,
+        name: r.userName,
+        email: r.userEmail,
+        phone: r.userPhone,
+      }));
+    } catch (error) {
+      console.error("Error in getAllTechnicians:", error);
+      // Fallback: return technicians without user data
+      try {
+        const techRows = await db.select().from(technicians);
+        return techRows.map((tech: any) => ({
+          ...tech,
+          name: null,
+          email: null,
+          phone: null,
+        }));
+      } catch (fallbackError) {
+        console.error("Fallback also failed:", fallbackError);
+        // Last resort: return empty array
+        return [];
+      }
+    }
   }
 
   async getTechnician(id: string): Promise<Technician | undefined> {
-    const [row] = await db
-      .select({
-        tech: technicians,
-        userName: users.name,
-        userEmail: users.email,
-        userPhone: users.phoneNumber,
-      })
-      .from(technicians)
-      .leftJoin(users, eq(technicians.userId, users.id))
-      .where(eq(technicians.id, id));
-    if (!row) return undefined as any;
-    return { ...row.tech, name: row.userName, email: row.userEmail, phone: row.userPhone } as any;
+    try {
+      const [row] = await db
+        .select({
+          tech: technicians,
+          userName: users.name,
+          userEmail: users.email,
+          userPhone: users.phoneNumber,
+        })
+        .from(technicians)
+        .leftJoin(users, eq(technicians.userId, users.id))
+        .where(eq(technicians.id, id));
+      if (!row) return undefined as any;
+      return { ...row.tech, name: row.userName, email: row.userEmail, phone: row.userPhone } as any;
+    } catch (error) {
+      console.error("Error in getTechnician:", error);
+      // Fallback: return technician without user data
+      try {
+        const [techRow] = await db.select().from(technicians).where(eq(technicians.id, id));
+        if (!techRow) return undefined as any;
+        return { ...techRow, name: null, email: null, phone: null } as any;
+      } catch (fallbackError) {
+        console.error("Technician fallback failed:", fallbackError);
+        return undefined as any;
+      }
+    }
   }
 
   async getAvailableTechnicians(): Promise<Technician[]> {

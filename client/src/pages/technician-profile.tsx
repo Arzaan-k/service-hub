@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
 import { MapPin, Phone, Star, Wrench, ArrowLeft } from "lucide-react";
+import WageBreakdown from "@/components/wage-breakdown";
 
 function formatDate(d: string | Date) {
   const dt = typeof d === "string" ? new Date(d) : d;
@@ -108,6 +109,9 @@ export default function TechnicianProfile() {
               <div className="flex items-center gap-1 text-sm pt-1"><Star className="h-4 w-4 text-yellow-500 fill-yellow-500"/><span>{technician.averageRating ?? 0}/5</span></div>
             </CardContent>
           </Card>
+
+          {/* Wage Breakdown Section */}
+          <WageBreakdown technicianId={technicianId} />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-1">

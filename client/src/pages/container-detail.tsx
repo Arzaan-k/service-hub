@@ -405,8 +405,9 @@ export default function ContainerDetail() {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="telemetry">Telemetry</TabsTrigger>
               <TabsTrigger value="specifications">Specifications</TabsTrigger>
               <TabsTrigger value="location">Location & History</TabsTrigger>
               <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
@@ -552,6 +553,149 @@ export default function ContainerDetail() {
                         </a>
                       </Button>
                       <span className="text-sm text-muted-foreground">Google Drive Link</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* Telemetry Tab */}
+            <TabsContent value="telemetry" className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Current Telemetry Data */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Thermometer className="h-5 w-5" />
+                      Current Telemetry
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Temperature</label>
+                        <p className="text-sm">
+                          {container.lastTelemetry?.temperature !== undefined
+                            ? `${container.lastTelemetry.temperature}°C`
+                            : 'N/A'
+                          }
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Door Status</label>
+                        <p className="text-sm">{container.lastTelemetry?.doorStatus || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Power Status</label>
+                        <p className="text-sm">{container.lastTelemetry?.powerStatus || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Battery Level</label>
+                        <p className="text-sm">
+                          {container.lastTelemetry?.batteryLevel !== undefined
+                            ? `${container.lastTelemetry.batteryLevel}%`
+                            : 'N/A'
+                          }
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Last Update</label>
+                        <p className="text-sm">
+                          {container.lastSyncedAt ? new Date(container.lastSyncedAt).toLocaleString() : 'Never'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">IoT Device</label>
+                        <p className="text-sm font-mono">{container.orbcommDeviceId || 'Not Connected'}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Location from Telemetry */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <MapPin className="h-5 w-5" />
+                      GPS Location (Latest)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {container.locationLat && container.locationLng ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Coordinates</label>
+                          <p className="text-sm font-mono">
+                            {typeof container.locationLat === 'number' && typeof container.locationLng === 'number'
+                              ? `${container.locationLat.toFixed(6)}, ${container.locationLng.toFixed(6)}`
+                              : `${container.locationLat}, ${container.locationLng}`
+                            }
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Last Location Update</label>
+                          <p className="text-sm">
+                            {container.lastSyncedAt ? new Date(container.lastSyncedAt).toLocaleString() : 'Unknown'}
+                          </p>
+                        </div>
+                        <div className="pt-2">
+                          <Button variant="outline" size="sm" asChild>
+                            <a
+                              href={`https://www.google.com/maps?q=${container.locationLat},${container.locationLng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              View on Map
+                            </a>
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground">No GPS data available</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Error Codes/Alerts */}
+              {container.lastTelemetry?.errorCodes && container.lastTelemetry.errorCodes.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5" />
+                      Active Error Codes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {container.lastTelemetry.errorCodes.map((errorCode: string, index: number) => (
+                        <Badge key={index} variant="destructive" className="font-mono">
+                          {errorCode}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Raw Telemetry Data */}
+              {container.lastTelemetry && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Raw Telemetry Data
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="bg-muted p-4 rounded-lg overflow-x-auto">
+                      <pre className="text-xs text-muted-foreground">
+                        {JSON.stringify(container.lastTelemetry, null, 2)}
+                      </pre>
                     </div>
                   </CardContent>
                 </Card>

@@ -75,6 +75,15 @@ export const technicians = pgTable("technicians", {
   status: technicianStatusEnum("status").notNull().default("available"),
   averageRating: integer("average_rating"),
   totalJobsCompleted: integer("total_jobs"),
+
+  // Wage breakdown fields
+  grade: text("grade"), // e.g., "S1", "S2", "S3"
+  designation: text("designation"), // e.g., "Sr. Technician", "Jr. Technician"
+  hotelAllowance: integer("hotel_allowance").default(0), // ₹800
+  localTravelAllowance: integer("local_travel_allowance").default(0), // ₹400
+  foodAllowance: integer("food_allowance").default(0), // ₹300
+  personalAllowance: integer("personal_allowance").default(0), // ₹100 (PA)
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

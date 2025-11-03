@@ -1,4 +1,4 @@
-import { useParams, Link } from "react-router-dom";
+import { useRoute, Link } from "wouter";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery } from "@tanstack/react-query";
@@ -9,8 +9,8 @@ import { Separator } from "@/components/ui/separator";
 import { Calendar, Clock, MapPin, Package, UserCheck, ArrowLeft } from "lucide-react";
 
 export default function ServiceRequestDetail() {
-  const params = useParams();
-  const id = params.id as string;
+  const [, params] = useRoute("/service-requests/:id");
+  const id = params?.id as string;
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/service-requests", id],

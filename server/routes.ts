@@ -1143,6 +1143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const technicians = await storage.getAllTechnicians();
       res.json(technicians);
     } catch (error) {
+      console.error("Error fetching technicians:", error);
       res.status(500).json({ error: "Failed to fetch technicians" });
     }
   });
@@ -1236,6 +1237,177 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(technician);
     } catch (error) {
       res.status(500).json({ error: "Failed to update technician location" });
+    }
+  });
+
+  // Database Analysis Endpoint
+  app.get("/api/debug/analyze-db", authenticateUser, async (req, res) => {
+    try {
+      const { db } = require('./db');
+
+      // Get all tables
+      const tablesResult = await db.execute(`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+        ORDER BY table_name
+      `);
+
+      const analysis = {
+        tables: [],
+        issues: {}
+      };
+
+      // Analyze each table
+      for (const tableRow of tablesResult.rows) {
+        const tableName = tableRow.table_name;
+
+        // Get columns
+        const columnsResult = await db.execute(`
+          SELECT column_name, data_type, is_nullable, column_default
+          FROM information_schema.columns
+          WHERE table_name = $1 AND table_schema = 'public'
+          ORDER BY ordinal_position
+        `, [tableName]);
+
+        // Get row count
+        let rowCount = 0;
+        try {
+          const countResult = await db.execute(`SELECT COUNT(*) as count FROM ${tableName}`);
+          rowCount = parseInt(countResult.rows[0].count);
+        } catch (e) {
+          rowCount = -1;
+        }
+
+        analysis.tables.push({
+          name: tableName,
+          columns: columnsResult.rows,
+          rowCount
+        });
+      }
+
+      // Check technicians table for wage columns
+      const techTable = analysis.tables.find(t => t.name === 'technicians');
+      if (techTable) {
+        const existingColumns = techTable.columns.map(c => c.column_name);
+        const requiredColumns = ['grade', 'designation', 'hotel_allowance', 'local_travel_allowance', 'food_allowance', 'personal_allowance'];
+        const missingColumns = requiredColumns.filter(col => !existingColumns.includes(col));
+
+        if (missingColumns.length > 0) {
+          console.log('Adding missing wage columns:', missingColumns);
+
+          for (const column of missingColumns) {
+            let sql;
+            if (['grade', 'designation'].includes(column)) {
+              sql = `ALTER TABLE technicians ADD COLUMN IF NOT EXISTS ${column} TEXT`;
+            } else {
+              sql = `ALTER TABLE technicians ADD COLUMN IF NOT EXISTS ${column} INTEGER DEFAULT 0`;
+            }
+
+            await db.execute(sql);
+            console.log(`✅ Added column: ${column}`);
+          }
+
+          analysis.issues.wageColumns = { status: 'fixed', added: missingColumns };
+        } else {
+          analysis.issues.wageColumns = { status: 'ok' };
+        }
+      }
+
+      res.json(analysis);
+    } catch (error) {
+      console.error('Database analysis failed:', error);
+      res.status(500).json({ error: 'Database analysis failed', details: error.message });
+    }
+  });
+
+  // Wage Breakdown API Endpoints
+  app.get("/api/technicians/:id/wage", authenticateUser, async (req, res) => {
+    try {
+      const technician = await storage.getTechnician(req.params.id);
+      if (!technician) {
+        return res.status(404).json({ error: "Technician not found" });
+      }
+
+      // Calculate total from allowances
+      const total = (technician.hotelAllowance || 0) +
+                   (technician.localTravelAllowance || 0) +
+                   (technician.foodAllowance || 0) +
+                   (technician.personalAllowance || 0);
+
+      const wageData = {
+        grade: technician.grade,
+        designation: technician.designation,
+        hotelAllowance: technician.hotelAllowance || 0,
+        localTravelAllowance: technician.localTravelAllowance || 0,
+        foodAllowance: technician.foodAllowance || 0,
+        personalAllowance: technician.personalAllowance || 0,
+        total: total
+      };
+
+      res.json(wageData);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch wage details" });
+    }
+  });
+
+  app.put("/api/technicians/:id/wage", authenticateUser, async (req, res) => {
+    try {
+      console.log("Updating wage for technician:", req.params.id, req.body);
+      const { grade, designation, hotelAllowance, localTravelAllowance, foodAllowance, personalAllowance } = req.body;
+
+      // Calculate total
+      const total = (hotelAllowance || 0) + (localTravelAllowance || 0) + (foodAllowance || 0) + (personalAllowance || 0);
+
+      console.log("Calculated total:", total);
+
+      // Try to update technician wage details
+      try {
+        const updatedTechnician = await storage.updateTechnician(req.params.id, {
+          grade,
+          designation,
+          hotelAllowance: hotelAllowance || 0,
+          localTravelAllowance: localTravelAllowance || 0,
+          foodAllowance: foodAllowance || 0,
+          personalAllowance: personalAllowance || 0,
+          updatedAt: new Date()
+        });
+
+        console.log("Update result:", updatedTechnician ? "success" : "failed");
+
+        if (!updatedTechnician) {
+          return res.status(404).json({ error: "Technician not found" });
+        }
+
+        // Broadcast update
+        broadcast({ type: "technician_wage_updated", data: { technicianId: req.params.id, wageData: { ...req.body, total } } });
+
+        return res.json({
+          status: "success",
+          total: total,
+          message: "Wage details updated successfully"
+        });
+      } catch (updateError) {
+        console.error("Update failed, trying raw SQL:", updateError);
+
+        // Fallback: try raw SQL update
+        const db = require('./db').db;
+        await db.execute(`
+          UPDATE technicians
+          SET grade = $1, designation = $2, hotel_allowance = $3, local_travel_allowance = $4,
+              food_allowance = $5, personal_allowance = $6, updated_at = NOW()
+          WHERE id = $7
+        `, [grade, designation, hotelAllowance || 0, localTravelAllowance || 0, foodAllowance || 0, personalAllowance || 0, req.params.id]);
+
+        return res.json({
+          status: "success",
+          total: total,
+          message: "Wage details updated successfully (fallback)"
+        });
+      }
+    } catch (error) {
+      console.error("Error updating wage:", error);
+      res.status(500).json({ error: "Failed to update wage details", details: error.message });
     }
   });
 
@@ -2714,9 +2886,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error('ORBCOMM trigger error:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to trigger ORBCOMM request',
         details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // ORBCOMM Real Data Status - Only shows real ORBCOMM data, no simulation
+  app.get('/api/orbcomm/real-status', async (req, res) => {
+    try {
+      const { getOrbcommClient } = await import('./services/orbcomm-real');
+      const client = getOrbcommClient();
+
+      // Check if client exists and is connected
+      const isConnected = client && (client as any).isConnected;
+      const connectionInfo = {
+        connected: isConnected,
+        url: process.env.ORBCOMM_URL || 'wss://integ.tms-orbcomm.com:44355/cdh',
+        username: process.env.ORBCOMM_USERNAME ? '***configured***' : 'not set',
+        lastActivity: isConnected ? new Date().toISOString() : null,
+        dataSource: 'REAL_ORBCOMM_ONLY'
+      };
+
+      // Get real alert stats
+      const allAlerts = await storage.getAllAlerts();
+      const realOrbcommAlerts = allAlerts.filter(a => a.source === 'orbcomm');
+
+      res.json({
+        success: true,
+        status: 'Real ORBCOMM data only - no simulation or fake data',
+        connection: connectionInfo,
+        alerts: {
+          total: realOrbcommAlerts.length,
+          last24h: realOrbcommAlerts.filter(a => {
+            const alertTime = new Date(a.detectedAt);
+            const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            return alertTime > oneDayAgo;
+          }).length
+        },
+        message: 'System configured for real ORBCOMM data only. All alerts and telemetry come from live ORBCOMM WebSocket events. No simulation data is processed.'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
       });
     }
   });

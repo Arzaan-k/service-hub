@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, BookOpen, Trash2, Download, Eye, Activity } from "lucide-react";
+import { Upload, FileText, BookOpen, Trash2, Download, Eye, Activity, CheckCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 interface Manual {
@@ -207,7 +207,7 @@ export default function AdminManualUpload() {
   return (
     <div className="flex min-h-screen bg-[#0b1220] text-white">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="Knowledge Base" />
 
         <div className="flex-1 overflow-y-auto">
@@ -660,7 +660,8 @@ export default function AdminManualUpload() {
             </Card>
           </div>
         </div>
-      </main>
+      </div>
+    </div>
     </div>
   );
 }

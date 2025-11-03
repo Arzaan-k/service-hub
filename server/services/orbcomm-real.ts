@@ -445,28 +445,33 @@ class OrbcommAPIClient {
   }
 
   private processEvents(events: any[]): void {
-    console.log(`📱 Processing ${events.length} events from CDH`);
+    console.log(`📡 Processing ${events.length} REAL ORBCOMM events from CDH WebSocket`);
     if (events.length > 0) {
-      console.log('📱 Sample event structure:', JSON.stringify(events[0], null, 2));
+      console.log('📡 Sample REAL event structure:', JSON.stringify(events[0], null, 2));
     }
-    
+
     const devices = new Map();
-    
+
     for (const event of events) {
       try {
         // Extract device information from event - handle nested Event structure
         const eventData = event.Event || event;
-        const deviceId = eventData.deviceId || eventData.DeviceId || eventData.IMEI || 
+        const deviceId = eventData.deviceId || eventData.DeviceId || eventData.IMEI ||
                         eventData.DeviceData?.DeviceID || eventData.DeviceData?.DeviceId ||
                         eventData.MessageData?.DeviceID;
-        const assetId = eventData.assetId || eventData.AssetID || eventData.LastAssetID || 
+        const assetId = eventData.assetId || eventData.AssetID || eventData.LastAssetID ||
                        eventData.ReeferData?.AssetID || eventData.DeviceData?.LastAssetID ||
                        eventData.MessageData?.AssetID;
+
+        // Skip processing if no assetId (container ID) is available
+        if (!assetId) {
+          console.log(`⚠️ Skipping event - no container ID (AssetID) found for device ${deviceId}`);
+          continue;
+        }
+
+        console.log(`📡 Processing REAL ORBCOMM event - deviceId: ${deviceId}, assetId (container): ${assetId}`);
         const deviceName = eventData.deviceName || eventData.DeviceName || `Device ${deviceId}`;
-        
-        console.log(`📱 Processing event - deviceId: ${deviceId}, assetId: ${assetId}`);
-        console.log(`📱 Event structure keys:`, Object.keys(eventData));
-        
+
         // Extract location data from various sources
         let location: { latitude: number; longitude: number } | undefined = undefined;
         const deviceData = eventData.DeviceData || {};
@@ -591,6 +596,14 @@ class OrbcommAPIClient {
             // Use assetId as primary container identifier (AssetID = container ID)
             const lastAssetId = assetId || event.AssetID || event.LastAssetID;
 
+            // Only process events where we have a container ID (assetId)
+            if (!lastAssetId) {
+              console.log(`⚠️ Skipping anomaly detection - no container ID (AssetID) available for device ${deviceId}`);
+              return;
+            }
+
+            console.log(`🔍 Checking for container with exact ID match: ${lastAssetId}`);
+
             const anomalies = detectAnomalies(dataLike as any);
             if (anomalies && anomalies.length > 0) {
               // Fire and forget to avoid blocking event loop
@@ -598,21 +611,16 @@ class OrbcommAPIClient {
                 try {
                   const { storage } = await import('../storage');
 
-                  let container = null;
-                  if (lastAssetId) {
-                    // Primary lookup: container_id matches lastAssetId (container ID = reefer ID)
-                    container = await storage.getContainerByCode(lastAssetId);
-                  }
-
-                  if (!container && deviceId) {
-                    // Fallback: try orbcomm device ID
-                    container = await storage.getContainerByOrbcommId(deviceId);
-                  }
+                  // Strict matching: only process if container ID exactly matches
+                  const container = await storage.getContainerByCode(lastAssetId);
 
                   if (!container) {
-                    console.log(`⚠️ No container match found for lastAssetId ${lastAssetId} or deviceId ${deviceId}`);
+                    console.log(`❌ No container found with exact container ID ${lastAssetId} - skipping ORBCOMM alert creation for device ${deviceId}`);
+                    console.log(`📋 Available container IDs in database:`, (await storage.getAllContainers()).map(c => c.containerCode));
                     return;
                   }
+
+                  console.log(`✅ Container match found: ${container.containerCode} (ID: ${container.id}) - creating REAL ORBCOMM alert`);
 
                   // Update container telemetry with full Orbcomm data using enhanced method
                   await storage.updateContainerTelemetry(container.id, {
@@ -658,23 +666,20 @@ class OrbcommAPIClient {
                   console.error('Error creating alert from Orbcomm anomaly:', e);
                 }
               })();
-            } else if (lastAssetId || deviceId) {
-              // Even without anomalies, update container telemetry if we have identification
+            } else if (lastAssetId) {
+              // Even without anomalies, update container telemetry if we have container ID
               (async () => {
                 try {
                   const { storage } = await import('../storage');
 
-                  let container = null;
-                  if (lastAssetId) {
-                    container = await storage.getContainerByCode(lastAssetId);
-                  }
-                  if (!container && deviceId) {
-                    container = await storage.getContainerByOrbcommId(deviceId);
-                  }
+                  // Strict matching: only update telemetry for containers that exactly match
+                  const container = await storage.getContainerByCode(lastAssetId);
 
                   if (container) {
+                    console.log(`✅ Container match found: ${container.containerCode} (ID: ${container.id}) - updating telemetry with REAL ORBCOMM data`);
+
                     await storage.updateContainerTelemetry(container.id, {
-                      lastAssetId: lastAssetId || deviceId,
+                      lastAssetId: lastAssetId,
                       timestamp,
                       latitude: location?.latitude,
                       longitude: location?.longitude,
@@ -682,9 +687,9 @@ class OrbcommAPIClient {
                       rawData: event // Store complete raw Orbcomm event as JSONB
                     });
 
-                    console.log(`📍 Updated telemetry for container ${container.containerCode} from ${lastAssetId ? 'AssetID' : 'DeviceID'} ${lastAssetId || deviceId}`);
+                    console.log(`📍 Updated telemetry for container ${container.containerCode} from AssetID ${lastAssetId}`);
                   } else {
-                    console.log(`⚠️ No container match found for lastAssetId ${lastAssetId} or deviceId ${deviceId} (no anomalies)`);
+                    console.log(`❌ No container found with exact container ID ${lastAssetId} - skipping ORBCOMM telemetry update for device ${deviceId}`);
                   }
                 } catch (e) {
                   console.error('Error updating container telemetry:', e);
@@ -731,33 +736,35 @@ class OrbcommAPIClient {
           lastAssetId = dd.LastAssetID || rd.AssetID || rd.LastAssetID;
         }
 
-        // Try to find container by lastAssetId first (AssetID = container ID)
-        let container = null;
-        if (lastAssetId) {
-          container = await storage.getContainerByCode(lastAssetId);
-          if (container && !container.orbcommDeviceId) {
-            // Persist the association for future lookups
+        // Only process if we have a container ID (AssetID)
+        if (!lastAssetId) {
+          console.log(`⚠️ Skipping container update for device ${device.deviceId} - no container ID (AssetID) available`);
+          continue;
+        }
+
+        // Strict matching: only update containers that exactly match the container ID
+        const container = await storage.getContainerByCode(lastAssetId);
+
+        if (container) {
+          // Update orbcommDeviceId association if not set
+          if (!container.orbcommDeviceId) {
             try {
               await storage.updateContainer(container.id, {
                 orbcommDeviceId: device.deviceId,
                 updatedAt: new Date()
               });
-            } catch {}
+              console.log(`✅ Associated container ${lastAssetId} with Orbcomm device ${device.deviceId}`);
+            } catch (err) {
+              console.error(`❌ Failed to associate container ${lastAssetId} with device ${device.deviceId}:`, err);
+            }
           }
-        }
 
-        // Fallback: try orbcommDeviceId if no AssetID match
-        if (!container) {
-          container = await storage.getContainerByOrbcommId(device.deviceId);
-        }
-
-        if (container && device.location) {
           // Update container with telemetry data using enhanced method
           await storage.updateContainerTelemetry(container.id, {
-            lastAssetId: lastAssetId || device.deviceId,
+            lastAssetId: lastAssetId,
             timestamp: device.lastSeen || new Date().toISOString(),
-            latitude: device.location.latitude,
-            longitude: device.location.longitude,
+            latitude: device.location?.latitude,
+            longitude: device.location?.longitude,
             rawData: (device as any).rawEvent || device // Store raw Orbcomm data
           });
 
@@ -765,29 +772,31 @@ class OrbcommAPIClient {
 
           // Broadcast after successful DB write to keep UI in sync
           try {
-            (global as any).broadcast?.({
-              type: 'device_update',
-              data: {
-                deviceId: device.deviceId,
-                lat: device.location.latitude,
-                lng: device.location.longitude,
-                status: 'active',
-                ts: Date.now()
-              }
-            });
-            (global as any).broadcast?.({
-              type: 'container_location_update',
-              data: {
-                containerId: container.id,
-                lat: device.location.latitude,
-                lng: device.location.longitude,
-                ts: Date.now(),
-                source: 'orbcomm'
-              }
-            });
+            if (device.location) {
+              (global as any).broadcast?.({
+                type: 'device_update',
+                data: {
+                  deviceId: device.deviceId,
+                  lat: device.location.latitude,
+                  lng: device.location.longitude,
+                  status: 'active',
+                  ts: Date.now()
+                }
+              });
+              (global as any).broadcast?.({
+                type: 'container_location_update',
+                data: {
+                  containerId: container.id,
+                  lat: device.location.latitude,
+                  lng: device.location.longitude,
+                  ts: Date.now(),
+                  source: 'orbcomm'
+                }
+              });
+            }
           } catch {}
-        } else if (!container) {
-          console.log(`⚠️ No container found for Orbcomm device ${device.deviceId}. Tried: AssetID match (${lastAssetId}), orbcommDeviceId match`);
+        } else {
+          console.log(`⚠️ No container found with exact container ID ${lastAssetId} for Orbcomm device ${device.deviceId}`);
         }
       }
     } catch (error) {

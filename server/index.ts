@@ -5,8 +5,50 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeOrbcommConnection, populateOrbcommDevices } from "./services/orbcomm";
 import { vectorStore } from "./services/vectorStore";
+import { db } from "./db";
 
 const app = express();
+
+// Ensure wage columns exist in database
+async function ensureWageColumns() {
+  try {
+    console.log('🔍 Checking for wage columns in technicians table...');
+
+    // Check if wage columns exist
+    const columnsResult = await db.execute(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'technicians' AND table_schema = 'public'
+      AND column_name IN ('grade', 'designation', 'hotel_allowance', 'local_travel_allowance', 'food_allowance', 'personal_allowance')
+    `);
+
+    const existingColumns = columnsResult.rows.map(row => row.column_name);
+    const requiredColumns = ['grade', 'designation', 'hotel_allowance', 'local_travel_allowance', 'food_allowance', 'personal_allowance'];
+    const missingColumns = requiredColumns.filter(col => !existingColumns.includes(col));
+
+    if (missingColumns.length > 0) {
+      console.log('📝 Adding missing wage columns:', missingColumns);
+
+      for (const column of missingColumns) {
+        let sql;
+        if (['grade', 'designation'].includes(column)) {
+          sql = `ALTER TABLE technicians ADD COLUMN IF NOT EXISTS ${column} TEXT`;
+        } else {
+          sql = `ALTER TABLE technicians ADD COLUMN IF NOT EXISTS ${column} INTEGER DEFAULT 0`;
+        }
+
+        await db.execute(sql);
+        console.log(`✅ Added column: ${column}`);
+      }
+
+      console.log('🎉 All wage columns added successfully!');
+    } else {
+      console.log('✅ All wage columns already exist');
+    }
+  } catch (error) {
+    console.error('❌ Error ensuring wage columns:', error);
+    throw error;
+  }
+}
 
 // Enable CORS (allow custom auth header)
 app.use(cors({
@@ -80,6 +122,16 @@ app.use((req, res, next) => {
     // Don't fail server startup for vector store issues
   }
 
+  // Ensure database schema is up to date
+  console.log('[SERVER] Checking database schema...');
+  try {
+    await ensureWageColumns();
+    console.log('✅ Database schema verified');
+  } catch (error) {
+    console.error('❌ Error ensuring database schema:', error);
+    // Don't fail server startup for schema issues
+  }
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -93,7 +145,7 @@ app.use((req, res, next) => {
   console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
   console.log('[SERVER] ENABLE_ORBCOMM_DEV:', process.env.ENABLE_ORBCOMM_DEV);
   
-  if (process.env.NODE_ENV !== 'development' || process.env.ENABLE_ORBCOMM_DEV === 'true') {
+  if (process.env.NODE_ENV !== 'development' || process.env.ENABLE_ORBCOMM_DEV === 'true' || process.env.FORCE_ORBCOMM_DEV === 'true') {
     console.log('[SERVER] Initializing Orbcomm connection...');
     try {
       await initializeOrbcommConnection();

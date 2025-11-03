@@ -388,7 +388,7 @@ export default function ServiceRequests() {
                       <div>
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="text-lg font-semibold font-mono">
-                            <Link href={`/service-requests/${request.id}`}>{request.requestNumber}</Link>
+                            <Link to={`/service-requests/${request.id}`}>{request.requestNumber}</Link>
                           </h3>
                           {getStatusBadge(request.status)}
                           <Badge className={`${getPriorityBadge(request.priority)} border`}>
