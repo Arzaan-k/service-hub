@@ -1194,6 +1194,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get schedules for all technicians for a specific date
+  app.get("/api/technicians/schedules", authenticateUser, async (req, res) => {
+    try {
+      const { date } = req.query;
+      const targetDate = date ? new Date(date as string) : new Date();
+
+      // Get all technicians
+      const technicians = await storage.getAllTechnicians();
+
+      // Get schedules for each technician
+      const schedules = await Promise.all(
+        technicians.map(async (technician: any) => {
+          try {
+            const schedule = await storage.getTechnicianSchedule(technician.id, targetDate.toISOString().split('T')[0]);
+            return {
+              technician,
+              schedule
+            };
+          } catch (error) {
+            console.error(`Error fetching schedule for technician ${technician.id}:`, error);
+            return {
+              technician,
+              schedule: []
+            };
+          }
+        })
+      );
+
+      res.json({
+        date: targetDate.toISOString().split('T')[0],
+        schedules
+      });
+    } catch (error) {
+      console.error("Error fetching technician schedules:", error);
+      res.status(500).json({ error: "Failed to fetch technician schedules" });
+    }
+  });
+
   app.get("/api/technicians/skills/:skill", authenticateUser, async (req, res) => {
     try {
       const technicians = await storage.getTechniciansBySkill(req.params.skill);
