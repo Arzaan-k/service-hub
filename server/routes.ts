@@ -3015,18 +3015,158 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { deviceId } = req.params;
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
-      
+
       console.log('📱 Fetching real device data for:', deviceId);
       const deviceData = await orbcommClient.getDeviceData(deviceId);
-      
+
       if (!deviceData) {
         return res.status(404).json({ error: 'Device not found' });
       }
-      
+
       res.json(deviceData);
     } catch (error) {
       console.error('ORBCOMM device data error:', error);
       res.status(500).json({ error: 'Failed to fetch device data' });
+    }
+  });
+
+  // Live ORBCOMM data with container matching - Reefer Units and Device Status tables
+  app.get('/api/orbcomm/live-data', authenticateUser, async (req, res) => {
+    try {
+      console.log('🚀 Fetching live ORBCOMM data with container matching');
+
+      const { getOrbcommClient } = await import('./services/orbcomm-real');
+      const orbcommClient = getOrbcommClient();
+
+      if (!orbcommClient.isConnected) {
+        return res.status(503).json({
+          error: 'ORBCOMM service not connected',
+          message: 'Live data feed is currently unavailable'
+        });
+      }
+
+      // Get all ORBCOMM devices
+      const orbcommDevices = await orbcommClient.getAllDevices();
+      console.log(`📡 Retrieved ${orbcommDevices.length} ORBCOMM devices`);
+
+      // Get all containers from database
+      const allContainers = await storage.getAllContainers();
+      console.log(`📦 Retrieved ${allContainers.length} containers from database`);
+
+      const reeferUnits = [];
+      const deviceStatus = [];
+
+      // Process each ORBCOMM device and match with containers
+      for (const orbcommDevice of orbcommDevices) {
+        const deviceData = await orbcommClient.getDeviceData(orbcommDevice.deviceId);
+
+        if (!deviceData) {
+          console.log(`⚠️ No data available for device ${orbcommDevice.deviceId}`);
+          continue;
+        }
+
+        // Find matching container by Reefer ID (AssetID)
+        const matchingContainer = allContainers.find(container =>
+          container.containerCode === deviceData.lastAssetId ||
+          container.containerCode === orbcommDevice.deviceId
+        );
+
+        if (!matchingContainer) {
+          console.log(`⚠️ No matching container found for Reefer ID: ${deviceData.lastAssetId || orbcommDevice.deviceId}`);
+          continue;
+        }
+
+        console.log(`✅ Matched Reefer ID ${deviceData.lastAssetId || orbcommDevice.deviceId} to Container ${matchingContainer.containerCode}`);
+
+        // Extract status indicators
+        const temperature = deviceData.temperature;
+        const powerStatus = deviceData.powerStatus;
+        const batteryLevel = deviceData.batteryLevel;
+        const errorCodes = deviceData.errorCodes || [];
+
+        // Determine state indicators
+        const cc = orbcommDevice.status === 'active' ? '🟢' : '🔴'; // Communication status
+        const alm = errorCodes.length > 0 ? '🔔' : '✅'; // Alarm status
+        const run = powerStatus === 'on' ? '▶️' : '⏸️'; // Running status
+        const pwr = powerStatus === 'on' ? '🔌' : '🔋'; // Power status
+
+        // Extract OEM from device data or use default
+        const oem = deviceData.oem || deviceData.OEM || 'ORBCOMM';
+
+        // Format event time to IST
+        const eventTime = deviceData.timestamp ?
+          new Date(deviceData.timestamp).toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          }) : 'N/A';
+
+        // Extract location
+        const city = deviceData.location ?
+          `${deviceData.location.latitude.toFixed(4)}, ${deviceData.location.longitude.toFixed(4)}` :
+          'Unknown';
+
+        // Reefer Units Information Table Data
+        reeferUnits.push({
+          stateIndicators: `${cc} ${alm} ${run} ${pwr}`,
+          cc, alm, run, pwr, // Individual indicators for easier processing
+          oem,
+          reeferId: deviceData.lastAssetId || orbcommDevice.deviceId,
+          containerId: matchingContainer.containerCode,
+          event: deviceData.eventType || 'Status Update',
+          eventTime,
+          deviceFence: 'N/A', // ORBCOMM typically doesn't provide geofence data in this format
+          serverFence: 'N/A',
+          city,
+          temperature,
+          powerStatus,
+          batteryLevel,
+          errorCodes,
+          container: matchingContainer // Include full container info
+        });
+
+        // Device Status Table Data
+        deviceStatus.push({
+          deviceId: orbcommDevice.deviceId,
+          deviceBat: batteryLevel ? `${batteryLevel}V` : 'N/A',
+          reporting: deviceData.reportingInterval || '15 min', // Default ORBCOMM reporting interval
+          geofenceRevision: 'N/A',
+          cellG: deviceData.cellularType || '4G',
+          cellSi: deviceData.signalStrength ? `${deviceData.signalStrength}/5` : 'N/A',
+          comments: errorCodes.length > 0 ? errorCodes.join(', ') : 'Normal',
+          reeferId: deviceData.lastAssetId || orbcommDevice.deviceId,
+          containerId: matchingContainer.containerCode,
+          status: orbcommDevice.status
+        });
+      }
+
+      console.log(`✅ Processed ${reeferUnits.length} reefer units and ${deviceStatus.length} device statuses`);
+
+      res.json({
+        success: true,
+        dataSource: 'REAL_ORBCOMM_LIVE_DATA',
+        timestamp: new Date().toISOString(),
+        reeferUnits: {
+          total: reeferUnits.length,
+          data: reeferUnits
+        },
+        deviceStatus: {
+          total: deviceStatus.length,
+          data: deviceStatus
+        },
+        message: 'Live ORBCOMM data matched with container database. Only containers with matching Reefer IDs are included.'
+      });
+
+    } catch (error) {
+      console.error('❌ ORBCOMM live data error:', error);
+      res.status(500).json({
+        error: 'Failed to fetch live ORBCOMM data',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
