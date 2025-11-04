@@ -1148,58 +1148,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/technicians/available", authenticateUser, async (req, res) => {
-    try {
-      const technicians = await storage.getAvailableTechnicians();
-      res.json(technicians);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch available technicians" });
-    }
-  });
-
-  // Enhanced Technician Management according to PRD
-  app.get("/api/technicians/:id", authenticateUser, async (req, res) => {
-    try {
-      // In development, if :id looks like a user id, try resolving by userId too
-      let technician = await storage.getTechnician(req.params.id);
-      if (!technician && process.env.NODE_ENV === 'development') {
-        const all = await storage.getAllTechnicians();
-        technician = all.find((t: any) => t.userId === req.params.id) as any;
-      }
-      if (!technician) {
-        return res.status(404).json({ error: "Technician not found" });
-      }
-      res.json(technician);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch technician" });
-    }
-  });
-
-  app.get("/api/technicians/:id/performance", authenticateUser, async (req, res) => {
-    try {
-      const performance = await storage.getTechnicianPerformance(req.params.id);
-      res.json(performance);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch technician performance" });
-    }
-  });
-
-  app.get("/api/technicians/:id/schedule", authenticateUser, async (req, res) => {
-    try {
-      const { date } = req.query;
-      const schedule = await storage.getTechnicianSchedule(req.params.id, date as string);
-      res.json(schedule);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch technician schedule" });
-    }
-  });
-
-  // Test route to check if routes are being registered
-  app.get("/api/test-schedules", (req, res) => {
-    res.json({ message: "Test route works", query: req.query });
-  });
-
-  // Get schedules for all technicians for a specific date - moved up to avoid conflicts
+  // Get schedules for all technicians for a specific date - MUST come before /:id routes
   app.get("/api/technicians/schedules", authenticateUser, async (req, res) => {
     console.log("Technician schedules route called with query:", req.query);
     try {
@@ -1240,6 +1189,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error fetching technician schedules:", error);
       res.status(500).json({ error: "Failed to fetch technician schedules" });
     }
+  });
+
+  app.get("/api/technicians/available", authenticateUser, async (req, res) => {
+    try {
+      const technicians = await storage.getAvailableTechnicians();
+      res.json(technicians);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch available technicians" });
+    }
+  });
+
+  // Enhanced Technician Management according to PRD
+  app.get("/api/technicians/:id", authenticateUser, async (req, res) => {
+    try {
+      // In development, if :id looks like a user id, try resolving by userId too
+      let technician = await storage.getTechnician(req.params.id);
+      if (!technician && process.env.NODE_ENV === 'development') {
+        const all = await storage.getAllTechnicians();
+        technician = all.find((t: any) => t.userId === req.params.id) as any;
+      }
+      if (!technician) {
+        return res.status(404).json({ error: "Technician not found" });
+      }
+      res.json(technician);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch technician" });
+    }
+  });
+
+  app.get("/api/technicians/:id/performance", authenticateUser, async (req, res) => {
+    try {
+      const performance = await storage.getTechnicianPerformance(req.params.id);
+      res.json(performance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch technician performance" });
+    }
+  });
+
+
+  app.get("/api/technicians/:id/schedule", authenticateUser, async (req, res) => {
+    try {
+      const { date } = req.query;
+      const schedule = await storage.getTechnicianSchedule(req.params.id, date as string);
+      res.json(schedule);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch technician schedule" });
+    }
+  });
+
+  // Test route to check if routes are being registered
+  app.get("/api/test-schedules", (req, res) => {
+    res.json({ message: "Test route works", query: req.query });
   });
 
   app.get("/api/technicians/skills/:skill", authenticateUser, async (req, res) => {
