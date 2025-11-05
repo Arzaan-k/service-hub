@@ -54,7 +54,36 @@ export class RagAdapter {
         return mockResponse;
       }
 
-      // Generate response using OpenAI with retrieved context
+      // If NVIDIA key not present, return retrieval-only composed answer from Qdrant
+      if (!this.nvidiaApiKey) {
+        const composed = searchResults.slice(0, 3).map((r, idx) => {
+          const src = `${r.metadata.brand || 'Manual'} ${r.metadata.model || ''}`.trim();
+          const page = r.metadata.pageNum ? ` (Page ${r.metadata.pageNum})` : '';
+          return `Source ${idx + 1} - ${src}${page}:
+${r.text}`;
+        }).join('\n\n');
+
+        const answer = `Here are relevant excerpts from your manuals that match the question "${request.query}":\n\n${composed}\n\nIf you need, I can refine steps based on these excerpts.`;
+
+        const steps = this.extractStepsFromResponse(answer);
+        const suggestedParts = this.extractPartsFromResponse(answer);
+        const sources = await this.getSourceInfo(searchResults);
+        const confidence = this.determineConfidence(searchResults, answer);
+
+        const ragResponse: RagQueryResponse = {
+          answer,
+          steps,
+          sources,
+          confidence,
+          suggested_spare_parts: suggestedParts,
+          request_id: `rag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        };
+
+        await this.storeQuery(request, ragResponse);
+        return ragResponse;
+      }
+
+      // Generate response using NVIDIA with retrieved context
       const context = searchResults.map(result =>
         `From ${result.metadata.brand || 'Manual'} ${result.metadata.model || ''} (Page ${result.metadata.pageNum || 'N/A'}):\n${result.text}`
       ).join('\n\n');
@@ -102,7 +131,9 @@ Please provide a detailed troubleshooting response based on the manual content.`
       }
 
       const data = await response.json();
+      console.log('NVIDIA API Response:', JSON.stringify(data, null, 2));
       const answer = data.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response. Please try rephrasing your question.';
+      console.log('Extracted Answer:', answer);
 
       // Extract steps from the response (look for numbered lists)
       const steps = this.extractStepsFromResponse(answer);
@@ -128,10 +159,44 @@ Please provide a detailed troubleshooting response based on the manual content.`
       // Store the query in database
       await this.storeQuery(request, ragResponse);
 
+      console.log('Final RAG Response:', JSON.stringify(ragResponse, null, 2));
       return ragResponse;
     } catch (error) {
-      console.error('RAG query failed, falling back to mock response:', error.message);
-      // Fall back to mock response when service is unavailable
+      console.error('RAG query failed, composing retrieval-only response:', (error as any)?.message || error);
+      try {
+        // Try to still answer using retrieved chunks
+        const fallbackResults = await cloudQdrantStore.search(request.query, 5, { model: request.unit_model });
+        if (fallbackResults.length > 0) {
+          const composed = fallbackResults.slice(0, 3).map((r, idx) => {
+            const src = `${r.metadata.brand || 'Manual'} ${r.metadata.model || ''}`.trim();
+            const page = r.metadata.pageNum ? ` (Page ${r.metadata.pageNum})` : '';
+            return `Source ${idx + 1} - ${src}${page}:
+${r.text}`;
+          }).join('\n\n');
+
+          const answer = `Here are relevant excerpts from your manuals that match the question "${request.query}":\n\n${composed}`;
+          const steps = this.extractStepsFromResponse(answer);
+          const suggestedParts = this.extractPartsFromResponse(answer);
+          const sources = await this.getSourceInfo(fallbackResults);
+          const confidence = this.determineConfidence(fallbackResults, answer);
+
+          const ragResponse: RagQueryResponse = {
+            answer,
+            steps,
+            sources,
+            confidence,
+            suggested_spare_parts: suggestedParts,
+            request_id: `rag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          };
+
+          await this.storeQuery(request, ragResponse);
+          return ragResponse;
+        }
+      } catch (_) {
+        // ignore and fall through to mock
+      }
+
+      // Fall back to mock response when service is unavailable and no chunks
       const mockResponse = this.getMockResponse(request);
       await this.storeQuery(request, mockResponse);
       return mockResponse;

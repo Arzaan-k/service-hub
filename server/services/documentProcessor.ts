@@ -1,43 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { cloudQdrantStore, ChunkMetadata } from './cloudQdrantStore';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-// Import pdf-parse using CommonJS require
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-
-let pdfParseFn: any = null;
-async function getPdfParse() {
-  if (!pdfParseFn) {
-    try {
-      const pdfRequire = require('pdf-parse');
-      const { PDFParse } = pdfRequire;
-      
-      if (!PDFParse || typeof PDFParse !== 'function') {
-        throw new Error('PDFParse class not found');
-      }
-      
-      // Create a wrapper function that uses PDFParse class like the old API
-      pdfParseFn = async (buffer: Buffer) => {
-        const parser = new PDFParse(buffer);
-        await parser.load();
-        const text = parser.getText();
-        const info = parser.getInfo();
-        
-        // Return in the expected format
-        return {
-          text: text || '',
-          numpages: info?.pages || 1,
-          info: info,
-        };
-      };
-    } catch (e: any) {
-      console.error('Failed to load pdf-parse:', e.message);
-      throw e;
-    }
-  }
-  return pdfParseFn;
-}
+// Set up PDF.js worker
+GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 import { db } from '../db';
 import { manualChunks } from '../../shared/schema';
 
@@ -87,17 +55,58 @@ export class DocumentProcessor {
       let pdfData: any = null;
 
       if (fileExtension === '.pdf') {
-        // Parse PDF
+        // Parse PDF using pdfjs-dist
         try {
-          const pdfParse = await getPdfParse();
-          if (!pdfParse || typeof pdfParse !== 'function') {
-            throw new Error('pdfParse function not available');
+          console.log('🔄 Using pdfjs-dist to parse PDF...');
+          const loadingTask = getDocument({ data: new Uint8Array(dataBuffer) });
+          const pdf = await loadingTask.promise;
+          
+          numPages = pdf.numPages;
+          console.log(`✅ PDF loaded successfully: ${numPages} pages`);
+          
+          // Extract text from all pages
+          const pageTexts: string[] = [];
+          
+          for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+            try {
+              const page = await pdf.getPage(pageNum);
+              const textContent = await page.getTextContent();
+              
+              // Combine text items
+              const pageText = textContent.items
+                .map((item: any) => item.str)
+                .join(' ');
+              
+              if (pageText.trim().length > 0) {
+                pageTexts.push(pageText);
+              }
+            } catch (pageError) {
+              console.warn(`⚠️  Warning: Could not extract text from page ${pageNum}:`, pageError.message);
+              // Add empty page to maintain page count
+              pageTexts.push('');
+            }
           }
-          pdfData = await pdfParse(dataBuffer);
-          text = pdfData.text || '';
-          numPages = pdfData.numpages || 1;
+          
+          // Combine all page texts
+          text = pageTexts.join('\n\n--- PAGE BREAK ---\n\n');
+          console.log(`✅ PDF text extraction complete: ${text.length} characters extracted`);
+          
+          // Create mock pdfData to maintain compatibility
+          pdfData = {
+            text,
+            numpages: numPages,
+            info: {
+              Title: path.basename(filePath, path.extname(filePath)),
+              Author: 'Unknown',
+              Subject: 'Service Manual',
+              Creator: 'ContainerGenie RAG System',
+              Producer: 'pdfjs-dist',
+              CreationDate: new Date().toISOString()
+            }
+          };
+          
         } catch (pdfError) {
-          console.error('PDF parsing failed, treating as text file:', pdfError);
+          console.error('❌ PDF parsing failed, treating as text file:', pdfError);
           text = dataBuffer.toString('utf8');
           pdfData = null;
           numPages = 1; // Assume single page for text files
@@ -226,43 +235,51 @@ export class DocumentProcessor {
   }
 
   /**
-   * Extract pages from PDF text (PDF-parse gives us all text, we need to split by pages)
+   * Extract pages from PDF text (pdfjs-dist gives us all text with page breaks)
    */
   private extractPages(fullText: string, numPages: number): string[] {
-    // This is a simple approach - in a real implementation, you'd want more sophisticated
-    // page detection, especially for complex PDFs
-    const pages: string[] = [];
-    const avgCharsPerPage = fullText.length / numPages;
+    // Split by the page break marker we added during extraction
+    const pageBreakMarker = '\n\n--- PAGE BREAK ---\n\n';
+    
+    if (fullText.includes(pageBreakMarker)) {
+      // Use the page breaks we added during extraction
+      const pages = fullText.split(pageBreakMarker);
+      return pages.map(page => page.trim()).filter(page => page.length > 0);
+    } else {
+      // Fallback to simple character-based splitting
+      const pages: string[] = [];
+      const avgCharsPerPage = Math.ceil(fullText.length / numPages);
 
-    let currentPos = 0;
-    for (let i = 0; i < numPages; i++) {
-      const pageStart = currentPos;
-      const pageEnd = i === numPages - 1 ? fullText.length : Math.min(
-        fullText.length,
-        pageStart + avgCharsPerPage + 1000 // Add some buffer
-      );
+      let currentPos = 0;
+      for (let i = 0; i < numPages; i++) {
+        const pageStart = currentPos;
+        const pageEnd = i === numPages - 1 ? fullText.length : Math.min(
+          fullText.length,
+          pageStart + avgCharsPerPage + 1000 // Add some buffer
+        );
 
-      // Try to find a good page break (look for page headers/footers)
-      let actualEnd = pageEnd;
-      const pageBreakIndicators = ['Page ', 'PAGE ', '\f', '\n\n\n'];
+        // Try to find a good page break (look for page headers/footers)
+        let actualEnd = pageEnd;
+        const pageBreakIndicators = ['Page ', 'PAGE ', '\f', '\n\n\n'];
 
-      for (const indicator of pageBreakIndicators) {
-        const indicatorIndex = fullText.lastIndexOf(indicator, pageEnd);
-        if (indicatorIndex > pageStart && indicatorIndex < pageEnd + 2000) {
-          actualEnd = indicatorIndex;
-          break;
+        for (const indicator of pageBreakIndicators) {
+          const indicatorIndex = fullText.lastIndexOf(indicator, pageEnd);
+          if (indicatorIndex > pageStart && indicatorIndex < pageEnd + 2000) {
+            actualEnd = indicatorIndex;
+            break;
+          }
         }
+
+        const pageText = fullText.substring(pageStart, actualEnd).trim();
+        if (pageText.length > 0) {
+          pages.push(pageText);
+        }
+
+        currentPos = actualEnd;
       }
 
-      const pageText = fullText.substring(pageStart, actualEnd).trim();
-      if (pageText.length > 0) {
-        pages.push(pageText);
-      }
-
-      currentPos = actualEnd;
+      return pages;
     }
-
-    return pages;
   }
 
   /**

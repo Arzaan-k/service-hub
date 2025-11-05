@@ -25,7 +25,7 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
   };
 
   return (
-    <div className="bg-card border border-alerts/20 rounded-lg p-6">
+    <div className="bg-card border border-alerts/20 rounded-lg p-6 h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-alerts/10 rounded-lg">
@@ -36,7 +36,7 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
         <button className="text-xs text-alerts hover:underline">View All</button>
       </div>
 
-      <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin">
+      <div className="space-y-3 flex-1 overflow-y-auto pr-2 scrollbar-thin">
         {alerts.slice(0, 5).map((alert) => {
           const container = containers.find((c) => c.id === alert.containerId);
           const colors = getSeverityColors(alert.severity);

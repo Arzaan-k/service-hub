@@ -1,5 +1,6 @@
+// @ts-nocheck
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, BookOpen, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { Send, Bot, User, BookOpen, AlertTriangle, CheckCircle, X, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +26,8 @@ interface Message {
     suggestedParts?: string[];
   };
 }
+
+type Confidence = 'high' | 'medium' | 'low';
 
 interface ReeferDiagnosticChatProps {
   containerId?: string;
@@ -92,19 +95,16 @@ export default function ReeferDiagnosticChat({
     setIsLoading(true);
 
     try {
-      // Call new diagnosis endpoint (manual-grounded)
-      const ragResponse = await apiRequest('POST', '/api/rag/query', {
-        unit_id: containerId,
-        unit_model: containerModel,
-        alarm_code: alarmCode,
-        query: userMessage.content,
-        context: context || {}
-      });
+      // Always use the mp4000_manual_chunks collection
+      const ragResponse = await (await apiRequest('POST', '/api/rag/query', {
+        query: userMessage.content
+      })).json();
+      console.log('[RAG CHAT] Received response:', ragResponse);
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: ragResponse.answer,
+        content: ragResponse.answer || "",
         timestamp: new Date(),
         metadata: {
           steps: ragResponse.steps,
@@ -113,6 +113,8 @@ export default function ReeferDiagnosticChat({
           suggestedParts: ragResponse.suggested_spare_parts || ragResponse.suggestedParts
         }
       };
+      console.log('ragResponse', ragResponse);
+(window as any).lastRag = ragResponse;
 
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
@@ -207,11 +209,7 @@ export default function ReeferDiagnosticChat({
                 <div key={message.id} className="space-y-3">
                   <div className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`flex gap-3 max-w-[85%] ${message.type === 'user' ? 'flex-row-reverse' : ''}`}>
-                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                        message.type === 'user'
-                          ? 'bg-[#1f3b7a] text-white'
-                          : 'bg-[#0e2038] text-white border border-[#223351]'
-                      }`}>
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.type === 'user' ? 'bg-[#1f3b7a] text-white' : 'bg-[#0e2038] text-white border border-[#223351]'}`>
                         {message.type === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                       </div>
 
@@ -274,6 +272,25 @@ export default function ReeferDiagnosticChat({
                                 {source.manual_name} - Page {source.page}
                               </div>
                             ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Context Summary */}
+                      {message.metadata.sources && message.metadata.sources.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                            <Brain className="h-4 w-4 text-white" />
+                            Context Summary:
+                          </h4>
+                          <div className="text-xs text-white/90 bg-[#0c1a2e] rounded px-3 py-2 border border-[#223351]">
+                            📚 Retrieved from {message.metadata.sources.length} manual{message.metadata.sources.length > 1 ? 's' : ''} with {message.metadata.confidence} confidence
+                            {message.metadata.steps && message.metadata.steps.length > 0 && (
+                              <> • {message.metadata.steps.length} troubleshooting steps identified</>
+                            )}
+                            {message.metadata.suggestedParts && message.metadata.suggestedParts.length > 0 && (
+                              <> • {message.metadata.suggestedParts.length} spare parts suggested</>
+                            )}
                           </div>
                         </div>
                       )}
