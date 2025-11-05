@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { apiRequest } from '@/lib/queryClient';
 
 interface Message {
@@ -95,7 +94,6 @@ export default function ReeferDiagnosticChat({
     setIsLoading(true);
 
     try {
-      // Always use the mp4000_manual_chunks collection
       const ragResponse = await (await apiRequest('POST', '/api/rag/query', {
         query: userMessage.content
       })).json();
@@ -113,14 +111,11 @@ export default function ReeferDiagnosticChat({
           suggestedParts: ragResponse.suggested_spare_parts || ragResponse.suggestedParts
         }
       };
-      console.log('ragResponse', ragResponse);
-(window as any).lastRag = ragResponse;
 
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('RAG query failed:', error);
 
-      // Show error message to user instead of mock response
       const errorResponse = getErrorMessage();
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -195,8 +190,7 @@ export default function ReeferDiagnosticChat({
                     <p className="text-sm font-medium text-white">
                       {alarmCode
                         ? `Ask about ${alarmCode} troubleshooting`
-                        : "Ask me anything about reefer maintenance"
-                      }
+                        : "Ask me anything about reefer maintenance"}
                     </p>
                     <p className="text-xs text-white/80">
                       I can help with alarms, diagnostics, and repair procedures
@@ -209,15 +203,14 @@ export default function ReeferDiagnosticChat({
                 <div key={message.id} className="space-y-3">
                   <div className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`flex gap-3 max-w-[85%] ${message.type === 'user' ? 'flex-row-reverse' : ''}`}>
-                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.type === 'user' ? 'bg-[#1f3b7a] text-white' : 'bg-[#0e2038] text-white border border-[#223351]'}`>
+                      {/* ✅ FIXED LINE BELOW */}
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.type === 'user' ? 'bg-[#1f3b7a] text-white' : 'bg-[#0e2038] text-white border border-[#223351]'}`}>
                         {message.type === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                       </div>
 
-                      <div className={`rounded-lg px-4 py-3 ${
-                        message.type === 'user'
-                          ? 'bg-[#1f3b7a] text-white'
-                          : 'bg-[#0e2038] border border-[#223351] text-white'
-                      }`}>
+                      <div className={`rounded-lg px-4 py-3 ${message.type === 'user'
+                        ? 'bg-[#1f3b7a] text-white'
+                        : 'bg-[#0e2038] border border-[#223351] text-white'}`}>
                         <p className="text-sm whitespace-pre-wrap text-white">{message.content}</p>
                       </div>
                     </div>
@@ -275,25 +268,6 @@ export default function ReeferDiagnosticChat({
                           </div>
                         </div>
                       )}
-
-                      {/* Context Summary */}
-                      {message.metadata.sources && message.metadata.sources.length > 0 && (
-                        <div className="space-y-2">
-                          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-                            <Brain className="h-4 w-4 text-white" />
-                            Context Summary:
-                          </h4>
-                          <div className="text-xs text-white/90 bg-[#0c1a2e] rounded px-3 py-2 border border-[#223351]">
-                            📚 Retrieved from {message.metadata.sources.length} manual{message.metadata.sources.length > 1 ? 's' : ''} with {message.metadata.confidence} confidence
-                            {message.metadata.steps && message.metadata.steps.length > 0 && (
-                              <> • {message.metadata.steps.length} troubleshooting steps identified</>
-                            )}
-                            {message.metadata.suggestedParts && message.metadata.suggestedParts.length > 0 && (
-                              <> • {message.metadata.suggestedParts.length} spare parts suggested</>
-                            )}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -346,8 +320,8 @@ export default function ReeferDiagnosticChat({
 
           {alarmCode && (
             <div className="mt-2 text-xs text-white/80">
-            💡 Try asking: "What causes {alarmCode}?" or "How to fix {alarmCode}?"
-          </div>
+              💡 Try asking: "What causes {alarmCode}?" or "How to fix {alarmCode}?"
+            </div>
           )}
         </div>
       </CardContent>

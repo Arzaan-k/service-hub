@@ -20,6 +20,7 @@ interface RagQueryResponse {
     manual_name: string;
     page: number;
   }>;
+  references: string[]; // Add references field for clean citations
   confidence: 'high' | 'medium' | 'low';
   suggested_spare_parts?: string[];
   request_id: string;
@@ -37,10 +38,18 @@ export class RagAdapter {
 
   async query(request: RagQueryRequest): Promise<RagQueryResponse> {
     try {
+      // Debug: Check what manuals are in the database
+      try {
+        const allManuals = await db.select({ id: manuals.id, title: manuals.title }).from(manuals);
+        console.log('DEBUG: All manuals in database:', allManuals);
+      } catch (error) {
+        console.error('DEBUG: Error querying manuals:', error);
+      }
+
       // Perform vector search to find relevant chunks
       const searchResults = await cloudQdrantStore.search(
         request.query,
-        8, // Get top 8 results for better context
+        5, // Get top 5 results
         {
           model: request.unit_model,
           // Add more filters as needed
@@ -48,158 +57,84 @@ export class RagAdapter {
       );
 
       if (searchResults.length === 0) {
-        // Fall back to mock response if no results found
-        const mockResponse = this.getMockResponse(request);
-        await this.storeQuery(request, mockResponse);
-        return mockResponse;
-      }
-
-      // If NVIDIA key not present, return retrieval-only composed answer from Qdrant
-      if (!this.nvidiaApiKey) {
-        const composed = searchResults.slice(0, 3).map((r, idx) => {
-          const src = `${r.metadata.brand || 'Manual'} ${r.metadata.model || ''}`.trim();
-          const page = r.metadata.pageNum ? ` (Page ${r.metadata.pageNum})` : '';
-          return `Source ${idx + 1} - ${src}${page}:
-${r.text}`;
-        }).join('\n\n');
-
-        const answer = `Here are relevant excerpts from your manuals that match the question "${request.query}":\n\n${composed}\n\nIf you need, I can refine steps based on these excerpts.`;
-
-        const steps = this.extractStepsFromResponse(answer);
-        const suggestedParts = this.extractPartsFromResponse(answer);
-        const sources = await this.getSourceInfo(searchResults);
-        const confidence = this.determineConfidence(searchResults, answer);
-
-        const ragResponse: RagQueryResponse = {
-          answer,
-          steps,
-          sources,
-          confidence,
-          suggested_spare_parts: suggestedParts,
+        const noResultsResponse: RagQueryResponse = {
+          answer: "No relevant information found in the manual.",
+          steps: [],
+          sources: [],
+          references: [], // Add empty references
+          confidence: 'low',
+          suggested_spare_parts: [],
           request_id: `rag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         };
-
-        await this.storeQuery(request, ragResponse);
-        return ragResponse;
+        await this.storeQuery(request, noResultsResponse);
+        return noResultsResponse;
       }
 
-      // Generate response using NVIDIA with retrieved context
-      const context = searchResults.map(result =>
-        `From ${result.metadata.brand || 'Manual'} ${result.metadata.model || ''} (Page ${result.metadata.pageNum || 'N/A'}):\n${result.text}`
-      ).join('\n\n');
+      // Return the most relevant text passages with source information
+      const passages: string[] = [];
+      const processedSources = new Set<string>();
+      const references: string[] = [];
 
-      const systemPrompt = `You are an expert refrigeration unit technician helping with troubleshooting and maintenance. Use the provided manual excerpts to give accurate, helpful advice.
+      for (const result of searchResults) {
+        const manualId = result.metadata.manualId;
+        const pageNum = result.metadata.pageNum || 'N/A';
+        console.error('DEBUG: Processing search result with manualId:', manualId, 'pageNum:', pageNum);
 
-Guidelines:
-- Provide step-by-step troubleshooting procedures when applicable
-- Include specific alarm codes, part numbers, and technical details from the manuals
-- Suggest spare parts when relevant
-- Be concise but thorough
-- If information is incomplete, say so and suggest next steps
-- Always cite the source manual and page when possible
+        // Get manual name from database
+        let manualName = 'Service Manual';
+        try {
+          const [manual] = await db.select({ name: manuals.name, sourceUrl: manuals.sourceUrl }).from(manuals).where(eq(manuals.id, manualId)).limit(1);
+          console.error('DEBUG: Manual lookup for ID', manualId, ':', manual);
+          if (manual) {
+            manualName = manual.name || 'Service Manual';
+            console.error('DEBUG: Found manual name:', manualName);
+          } else {
+            console.error('DEBUG: No manual found for ID:', manualId);
+            // Try to find similar manuals or log all manuals for debugging
+            const allManuals = await db.select({ id: manuals.id, name: manuals.name }).from(manuals).limit(5);
+            console.error('DEBUG: First 5 manuals in DB:', allManuals);
+          }
+        } catch (error) {
+          console.error('Error getting manual name for ID', manualId, ':', error);
+        }
 
-Context from manuals:
-${context}`;
-
-      const userPrompt = `Question: ${request.query}
-${request.alarm_code ? `Alarm Code: ${request.alarm_code}` : ''}
-${request.unit_model ? `Unit Model: ${request.unit_model}` : ''}
-${request.context?.alert_id ? `Alert Context: This relates to an active alert` : ''}
-
-Please provide a detailed troubleshooting response based on the manual content.`;
-
-      // Use NVIDIA API for free LLM generation
-      const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.nvidiaApiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'meta/llama3-8b-instruct', // Free NVIDIA model
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          max_tokens: 1500,
-          temperature: 0.1, // Low temperature for factual responses
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`NVIDIA API error: ${response.status} ${response.statusText}`);
+        const sourceKey = `${manualName}_page_${pageNum}`;
+        if (!processedSources.has(sourceKey)) {
+          passages.push(result.text);
+          processedSources.add(sourceKey);
+          references.push(`from ${manualName} page ${pageNum}`);
+        }
       }
 
-      const data = await response.json();
-      console.log('NVIDIA API Response:', JSON.stringify(data, null, 2));
-      const answer = data.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response. Please try rephrasing your question.';
-      console.log('Extracted Answer:', answer);
-
-      // Extract steps from the response (look for numbered lists)
-      const steps = this.extractStepsFromResponse(answer);
-
-      // Extract suggested parts
-      const suggestedParts = this.extractPartsFromResponse(answer);
-
-      // Get source information
-      const sources = await this.getSourceInfo(searchResults);
-
-      // Determine confidence based on search results and response quality
-      const confidence = this.determineConfidence(searchResults, answer);
+      const fullAnswer = passages.join('\n\n---\n\n') + '\n\nReferences:\n' + references.join('\n');
 
       const ragResponse: RagQueryResponse = {
-        answer,
-        steps,
-        sources,
-        confidence,
-        suggested_spare_parts: suggestedParts,
+        answer: fullAnswer,
+        steps: [],
+        sources: await this.getSourceInfo(searchResults),
+        references: references, // Add references array
+        confidence: 'high',
+        suggested_spare_parts: [],
         request_id: `rag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       };
 
       // Store the query in database
       await this.storeQuery(request, ragResponse);
 
-      console.log('Final RAG Response:', JSON.stringify(ragResponse, null, 2));
       return ragResponse;
     } catch (error) {
-      console.error('RAG query failed, composing retrieval-only response:', (error as any)?.message || error);
-      try {
-        // Try to still answer using retrieved chunks
-        const fallbackResults = await cloudQdrantStore.search(request.query, 5, { model: request.unit_model });
-        if (fallbackResults.length > 0) {
-          const composed = fallbackResults.slice(0, 3).map((r, idx) => {
-            const src = `${r.metadata.brand || 'Manual'} ${r.metadata.model || ''}`.trim();
-            const page = r.metadata.pageNum ? ` (Page ${r.metadata.pageNum})` : '';
-            return `Source ${idx + 1} - ${src}${page}:
-${r.text}`;
-          }).join('\n\n');
-
-          const answer = `Here are relevant excerpts from your manuals that match the question "${request.query}":\n\n${composed}`;
-          const steps = this.extractStepsFromResponse(answer);
-          const suggestedParts = this.extractPartsFromResponse(answer);
-          const sources = await this.getSourceInfo(fallbackResults);
-          const confidence = this.determineConfidence(fallbackResults, answer);
-
-          const ragResponse: RagQueryResponse = {
-            answer,
-            steps,
-            sources,
-            confidence,
-            suggested_spare_parts: suggestedParts,
-            request_id: `rag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-          };
-
-          await this.storeQuery(request, ragResponse);
-          return ragResponse;
-        }
-      } catch (_) {
-        // ignore and fall through to mock
-      }
-
-      // Fall back to mock response when service is unavailable and no chunks
-      const mockResponse = this.getMockResponse(request);
-      await this.storeQuery(request, mockResponse);
-      return mockResponse;
+      console.error('RAG query failed:', (error as any)?.message || error);
+      const errorResponse: RagQueryResponse = {
+        answer: "No relevant information found in the manual.",
+        steps: [],
+        sources: [],
+        references: [], // Add empty references
+        confidence: 'low',
+        suggested_spare_parts: [],
+        request_id: `rag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      };
+      await this.storeQuery(request, errorResponse);
+      return errorResponse;
     }
   }
 
@@ -237,163 +172,22 @@ ${r.text}`;
    */
   private async getSourceInfo(searchResults: any[]): Promise<Array<{ manual_id: string; manual_name: string; page: number }>> {
     const sources: Array<{ manual_id: string; manual_name: string; page: number }> = [];
-    
-    // Create a Set to track unique manual IDs
-    const uniqueManualIds = new Set<string>();
-    
-    for (const result of searchResults) {
-      const manualId = result.metadata.manualId;
-      
-      // Skip if we've already included this manual
-      if (uniqueManualIds.has(manualId)) continue;
-      
-      uniqueManualIds.add(manualId);
-      
-      try {
-        // Get manual details
-        const [manual] = await db.select().from(manuals).where(eq(manuals.id, manualId));
-        
-        if (manual) {
-          sources.push({
-            manual_id: manualId,
-            manual_name: manual.title,
-            page: result.metadata.pageNum || 1
-          });
-        }
-      } catch (error) {
-        console.error(`Failed to get manual info for ${manualId}:`, error);
-      }
-    }
-    
-    return sources;
-  }
-  
-  /**
-   * Determine confidence level based on search results and response
-   */
-  private determineConfidence(searchResults: any[], answer: string): 'high' | 'medium' | 'low' {
-    // No results means low confidence
-    if (searchResults.length === 0) return 'low';
-    
-    // Check if top result has a high score
-    const topScore = searchResults[0]?.score || 0;
-    
-    // Check if answer contains uncertainty phrases
-    const uncertaintyPhrases = [
-      "I'm not sure", 
-      "I don't know", 
-      "I cannot find", 
-      "I don't have enough information",
-      "unclear",
-      "insufficient information"
-    ];
-    
-    const hasUncertainty = uncertaintyPhrases.some(phrase => 
-      answer.toLowerCase().includes(phrase.toLowerCase())
-    );
-    
-    if (hasUncertainty) return 'low';
-    if (topScore > 0.8) return 'high';
-    if (topScore > 0.6) return 'medium';
-    return 'low';
-  }
-  
-  /**
-   * Generate a mock response when no results are found
-   */
-  private getMockResponse(request: RagQueryRequest): RagQueryResponse {
-    return {
-      answer: `I don't have specific information about "${request.query}" in my knowledge base. For accurate assistance with this issue, I recommend:
-
-1. Check the manufacturer's manual for your specific model ${request.unit_model || ''}
-2. Contact technical support with your unit details and alarm code ${request.alarm_code || ''}
-3. Consider scheduling a technician visit for in-person diagnosis
-
-Would you like me to help you schedule a service appointment?`,
-      steps: [
-        "Check the manufacturer's manual for your specific model",
-        "Contact technical support with your unit details",
-        "Consider scheduling a technician visit for in-person diagnosis"
-      ],
-      sources: [],
-      confidence: 'low',
-      suggested_spare_parts: [],
-      request_id: `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    };
-  }
-
-  /**
-   * Extract numbered steps from the response text
-   */
-  private extractStepsFromResponse(response: string): string[] {
-    const steps: string[] = [];
-
-    // Look for numbered lists (1., 2., etc.)
-    const lines = response.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      // Match patterns like "1.", "2)", "(1)", etc.
-      if (/^\d+[\.)]\s/.test(trimmed) || /^\(\d+\)\s/.test(trimmed)) {
-        // Remove the numbering and clean up
-        const step = trimmed.replace(/^\d+[\.)]\s*/, '').replace(/^\(\d+\)\s*/, '');
-        if (step.length > 10) { // Only include substantial steps
-          steps.push(step);
-        }
-      }
-    }
-
-    return steps;
-  }
-
-  /**
-   * Extract suggested parts from the response
-   */
-  private extractPartsFromResponse(response: string): string[] {
-    const parts: string[] = [];
-
-    // Look for common part-related keywords
-    const partKeywords = ['sensor', 'board', 'harness', 'relay', 'compressor', 'fan', 'motor', 'valve', 'switch', 'thermostat', 'controller'];
-    const lines = response.toLowerCase().split('\n');
-
-    for (const line of lines) {
-      for (const keyword of partKeywords) {
-        if (line.includes(keyword)) {
-          // Extract the part name (look for capitalized words around the keyword)
-          const words = line.split(' ');
-          const partIndex = words.findIndex(word => word.includes(keyword));
-          if (partIndex !== -1) {
-            // Get surrounding words to form part name
-            const start = Math.max(0, partIndex - 2);
-            const end = Math.min(words.length, partIndex + 3);
-            const partName = words.slice(start, end).join(' ').replace(/[^\w\s-]/g, '').trim();
-
-            if (partName.length > 3 && !parts.includes(partName)) {
-              parts.push(partName);
-            }
-          }
-        }
-      }
-    }
-
-    return parts.slice(0, 5); // Limit to 5 parts
-  }
-
-  /**
-   * Get source information for search results
-   */
-  private async getSourceInfo(searchResults: any[]): Promise<Array<{ manual_id: string; manual_name: string; page: number }>> {
-    const sources: Array<{ manual_id: string; manual_name: string; page: number }> = [];
 
     for (const result of searchResults.slice(0, 3)) { // Limit to top 3 sources
       try {
-        // Get manual name from database
+        console.log('DEBUG: Processing result for manualId:', result.metadata.manualId);
+        // Get manual information from database
         const manual = await db
           .select({ name: manuals.name })
           .from(manuals)
           .where(eq(manuals.id, result.metadata.manualId))
           .limit(1);
 
-        const manualName = manual[0]?.name || 'Unknown Manual';
+        console.log('DEBUG: Manual query result:', manual);
+
+        // Use the manual name directly
+        const manualName = manual[0]?.name || 'Service Manual';
+        console.log('DEBUG: Final manualName:', manualName);
 
         sources.push({
           manual_id: result.metadata.manualId,
@@ -412,9 +206,9 @@ Would you like me to help you schedule a service appointment?`,
 
     return sources;
   }
-
+  
   /**
-   * Determine confidence level based on search results and response quality
+   * Determine confidence level based on search results and response
    */
   private determineConfidence(searchResults: any[], response: string): 'high' | 'medium' | 'low' {
     // High confidence: Multiple good matches with high scores
@@ -430,55 +224,7 @@ Would you like me to help you schedule a service appointment?`,
     // Low confidence: Few or no matches, generic response
     return 'low';
   }
-
-  private getMockResponse(request: RagQueryRequest): RagQueryResponse {
-    const responses = {
-      default: {
-        answer: "I've analyzed the available manuals for your unit. Here's what I found:",
-        steps: [
-          "Check the alarm code against the unit's diagnostic manual",
-          "Verify sensor connections and wiring",
-          "Test the component mentioned in the alarm",
-          "Replace faulty parts if identified",
-          "Clear the alarm and test the system"
-        ],
-        sources: [{
-          manual_id: "123",
-          manual_name: `${request.unit_model || 'Thermo King'} Service Manual`,
-          page: 45
-        }],
-        confidence: 'medium' as const,
-        suggested_spare_parts: ["Sensor assembly", "Control board", "Wiring harness"],
-        request_id: `mock-${Date.now()}`
-      },
-
-      alarm17: {
-        answer: "Alarm 17 typically indicates a return air sensor fault on Thermo King units.",
-        steps: [
-          "Locate the return air sensor (usually in the evaporator section)",
-          "Check sensor wiring for continuity and secure connections",
-          "Test sensor resistance (should be approximately 10kΩ at 25°C)",
-          "Replace sensor if resistance is out of specification",
-          "Clear alarm and verify temperature control operation"
-        ],
-        sources: [{
-          manual_id: "456",
-          manual_name: "Thermo King SL-500 Troubleshooting Guide",
-          page: 42
-        }],
-        confidence: 'high' as const,
-        suggested_spare_parts: ["Return air temperature sensor", "Sensor wiring harness"],
-        request_id: `mock-${Date.now()}`
-      }
-    };
-
-    if (request.alarm_code === 'Alarm 17' || request.query.toLowerCase().includes('alarm 17')) {
-      return responses.alarm17;
-    }
-
-    return responses.default;
-  }
-
+  
   // Get query history for a user
   async getUserQueryHistory(userId: string, limit: number = 50): Promise<any[]> {
     try {
@@ -624,7 +370,14 @@ Would you like me to help you schedule a service appointment?`,
         context: { source: 'alert_suggestion' }
       };
 
-      return await this.query(request);
+      const response = await this.query(request);
+      
+      // Add references to the answer if available
+      if (response && response.references && response.references.length > 0) {
+        response.answer += `\n\nReferences:\n${response.references.join('\n')}`;
+      }
+      
+      return response;
     } catch (error) {
       console.error('Failed to get alert suggestions:', error);
       return null;
