@@ -10,6 +10,7 @@ interface RagQueryRequest {
   alarm_code?: string;
   query: string;
   context?: any;
+  selectedManual?: string;
 }
 
 interface RagQueryResponse {
@@ -52,6 +53,7 @@ export class RagAdapter {
         5, // Get top 5 results
         {
           model: request.unit_model,
+          manual: request.selectedManual,
           // Add more filters as needed
         }
       );
@@ -157,7 +159,10 @@ export class RagAdapter {
             sources: response.sources,
             confidence: response.confidence,
             suggestedParts: response.suggested_spare_parts || [],
-            context: request.context || {}
+            context: {
+              ...request.context,
+              selectedManual: request.selectedManual
+            }
           });
         }
       }
