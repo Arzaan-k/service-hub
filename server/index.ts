@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeOrbcommConnection, populateOrbcommDevices } from "./services/orbcomm";
 import { vectorStore } from "./services/vectorStore";
+import { cloudQdrantStore } from './services/cloudQdrantStore';
 import { db } from "./db";
 
 const app = express();
@@ -120,6 +121,16 @@ app.use((req, res, next) => {
   } catch (error) {
     console.error('❌ Error initializing vector store:', error);
     // Don't fail server startup for vector store issues
+  }
+
+  // Initialize Cloud Qdrant (used for RAG chunks)
+  console.log('[SERVER] Initializing Cloud Qdrant store...');
+  try {
+    await cloudQdrantStore.initializeCollection();
+    console.log('✅ Cloud Qdrant store initialized successfully');
+  } catch (error) {
+    console.error('❌ Error initializing Cloud Qdrant store:', (error as any)?.message || error);
+    // Do not block server start; retrieval will gracefully return no results
   }
 
   // Ensure database schema is up to date

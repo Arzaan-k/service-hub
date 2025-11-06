@@ -27,6 +27,8 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
   return (
     <div className="bg-gray-900 border border-gray-700 rounded-lg flex flex-col h-full">
       <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+    <div className="bg-card border border-alerts/20 rounded-lg p-6 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-red-500/20 rounded-lg">
             <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
@@ -38,11 +40,10 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
         <button className="text-xs text-red-400 hover:text-red-300 transition-colors">View All</button>
       </div>
 
-      <div className="flex-1 overflow-hidden px-6 py-4">
-        <div className="h-full overflow-y-auto space-y-3 pr-2">
-          {alerts && alerts.length > 0 ? alerts.slice(0, 5).map((alert) => {
-            const container = containers.find((c) => c.id === alert.containerId);
-            const colors = getSeverityColors(alert.severity);
+      <div className="space-y-3 flex-1 overflow-y-auto pr-2 scrollbar-thin">
+        {alerts.slice(0, 5).map((alert) => {
+          const container = containers.find((c) => c.id === alert.containerId);
+          const colors = getSeverityColors(alert.severity);
 
             return (
               <div 

@@ -33,7 +33,7 @@ export interface SearchResult {
   score: number;
 }
 
-class FreeEmbeddings {
+export class FreeEmbeddings {
   private extractor: any = null;
   private modelName = 'Xenova/all-MiniLM-L6-v2';
 
@@ -306,6 +306,36 @@ export class CloudQdrantStore {
     } catch (error) {
       console.error('❌ Error getting Cloud Qdrant stats:', error);
       return { count: 0, manuals: [] };
+    }
+  }
+
+  /**
+   * Return a small sample of stored chunks for debugging/inspection
+   */
+  async listSamples(limit: number = 5): Promise<SearchResult[]> {
+    try {
+      const response = await this.qdrant.scroll(this.collectionName, {
+        limit,
+        with_payload: true,
+        with_vector: false
+      });
+
+      const points = response.points || [];
+      return points.map((p: any) => ({
+        id: p.payload?.originalId || p.id,
+        text: p.payload?.text || '',
+        metadata: {
+          manualId: p.payload?.manualId || '',
+          pageNum: p.payload?.pageNum,
+          startOffset: p.payload?.startOffset,
+          endOffset: p.payload?.endOffset,
+          ...(p.payload?.metadata || {})
+        } as ChunkMetadata,
+        score: 0
+      }));
+    } catch (error) {
+      console.error('❌ Error listing sample chunks from Cloud Qdrant:', error);
+      return [];
     }
   }
 
