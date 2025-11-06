@@ -1,0 +1,405 @@
+[
+  {
+    "id": "TC001",
+    "title": "Successful IoT Container Data Sync",
+    "description": "Verify that IoT-enabled containers sync real-time data successfully with Orbcomm API and the system accurately detects alerts with at least 80% accuracy.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Connect 90 IoT containers to the system"
+      },
+      {
+        "type": "action",
+        "description": "Simulate real-time data feed from Orbcomm API for all containers"
+      },
+      {
+        "type": "assertion",
+        "description": "Check that data from all containers is received and synced in the platform"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that alert detection accuracy is at least 80%"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Manual Service Request Creation and Workflow",
+    "description": "Validate manual service request flow for non-IoT containers initiated via service coordinator dashboard, ensuring automated workflow triggers and status updates.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login to service coordinator dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Create a service request manually for a non-IoT container"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify service request appears in system with correct details"
+      },
+      {
+        "type": "assertion",
+        "description": "Check automated workflow triggers parts availability check, scheduling, and technician assignment"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm service request status updates correctly during workflow"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "AI-Powered Alert Classification Accuracy",
+    "description": "Test the AI alert classification engine to ensure it achieves over 85% accuracy in classifying container alerts into correct categories.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Feed a mixed dataset of container alerts generated from Orbcomm API into the AI classification system"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify AI classifies alerts with >85% accuracy by comparing outputs with ground truth"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Technician Daily Workflow via WhatsApp",
+    "description": "Ensure technicians can successfully complete their daily workflow steps using WhatsApp interactive messages including schedule acknowledgement, travel start/arrival, service start/completion, and documentation upload.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Receive daily schedule interactive message on WhatsApp"
+      },
+      {
+        "type": "action",
+        "description": "Acknowledge schedule for the day"
+      },
+      {
+        "type": "action",
+        "description": "Mark travel start and arrival at container site"
+      },
+      {
+        "type": "action",
+        "description": "Mark service start and service completion"
+      },
+      {
+        "type": "action",
+        "description": "Upload required service documentation via WhatsApp media"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify each step is correctly recorded and reflected in the system"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Client Portal Authentication and Dashboard Access",
+    "description": "Verify client self-service portal authentication and ensure real-time dashboards display container health, alerts, and service requests properly with WebSocket updates.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to client portal login page"
+      },
+      {
+        "type": "action",
+        "description": "Authenticate using valid client credentials with multi-factor authentication"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm successful login and access to dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify dashboard displays real-time container health, alerts, and service requests"
+      },
+      {
+        "type": "action",
+        "description": "Trigger container update from Orbcomm API"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm dashboard updates in real-time via WebSocket"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Automated Scheduling Engine Optimization",
+    "description": "Test that the AI-driven scheduling engine optimizes technician assignments daily and performs within 5% of optimal efficiency.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Input daily service requests and technician availability data"
+      },
+      {
+        "type": "action",
+        "description": "Run scheduling optimizer"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify daily technician assignments are generated"
+      },
+      {
+        "type": "assertion",
+        "description": "Validate scheduling performance is within 5% of calculated optimal metric"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "WhatsApp Business API Integration for Customer Notifications",
+    "description": "Ensure end-to-end WhatsApp Business API integration sends interactive message templates for client notifications, technician workflows, and administrator alerts.",
+    "category": "integration",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger various notifications for clients, technicians, and administrators"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify each notification is delivered with correct message templates over WhatsApp"
+      },
+      {
+        "type": "assertion",
+        "description": "Check interactivity of message templates, such as buttons and quick replies"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Automated Invoicing and Payment Tracking",
+    "description": "Test automated invoicing generation and payment status tracking integrated with Razorpay and Stripe, including prepaid and postpaid customer workflows with real-time updates and reminders.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Generate invoices automatically post-service completion"
+      },
+      {
+        "type": "action",
+        "description": "Process payments for prepaid customer using Razorpay/Stripe"
+      },
+      {
+        "type": "action",
+        "description": "Trigger payment reminders for postpaid customer"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify invoice correctness and real-time payment status updates"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm reminders and payment notifications sent accurately"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Inventory Management Spare Parts Tracking and Reservation",
+    "description": "Verify real-time inventory tracking for spare parts and successful reservation during service request workflows to ensure parts availability.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Check current spare parts inventory levels"
+      },
+      {
+        "type": "action",
+        "description": "Reserve required parts for an active service request"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify inventory is updated in real-time reflecting reservations"
+      },
+      {
+        "type": "assertion",
+        "description": "Attempt to reserve parts beyond inventory quantity and validate error handling"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "System Performance Under Load",
+    "description": "Validate system scalability and performance by simulating 1000+ concurrent users and 10,000 daily Orbcomm API calls, ensuring uptime above 99% and API p95 response times below 500ms.",
+    "category": "performance",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate 1000+ concurrent authenticated users performing typical operations"
+      },
+      {
+        "type": "action",
+        "description": "Simulate 10,000 daily Orbcomm API calls with alert data"
+      },
+      {
+        "type": "assertion",
+        "description": "Monitor system uptime for at least 99% during the test period"
+      },
+      {
+        "type": "assertion",
+        "description": "Measure API response times and verify p95 response time is under 500ms"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Security Compliance - Multi-Factor Authentication and Data Encryption",
+    "description": "Test security mechanisms including multi-factor authentication enforcement, encrypted data storage, and audit logging to ensure compliance with data protection regulations.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt user login with valid credentials and verify multi-factor authentication prompt"
+      },
+      {
+        "type": "action",
+        "description": "Authenticate using second factor"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm access granted only after successful multi-factor authentication"
+      },
+      {
+        "type": "action",
+        "description": "Access data storage layer and verify data is stored encrypted"
+      },
+      {
+        "type": "action",
+        "description": "Perform security relevant actions (login, service request creation, payment) and review audit logs"
+      },
+      {
+        "type": "assertion",
+        "description": "Validate audit logs record relevant details and are tamper-resistant"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Admin Dashboard Real-Time Monitoring and Manual Overrides",
+    "description": "Verify the admin dashboard provides accurate real-time metrics, monitoring views, and supports manual overrides in workflows with correct reporting and analytics.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login to admin dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Check that real-time container health, alert metrics, and workload stats are displayed and updated live"
+      },
+      {
+        "type": "action",
+        "description": "Perform manual override of service request assignment"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify override reflects immediately in system and workflows"
+      },
+      {
+        "type": "action",
+        "description": "Generate reports and analytics from dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm accuracy and completeness of reports"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Error Handling for Orbcomm API Failure",
+    "description": "Test system behavior and notifications when Orbcomm API fails or returns invalid data.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate Orbcomm API failure or invalid data response"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify system logs the error and triggers alert for administrators"
+      },
+      {
+        "type": "assertion",
+        "description": "Check that client and admin dashboards display fallback or error messages appropriately"
+      },
+      {
+        "type": "assertion",
+        "description": "Ensure system continues processing other workflows without crash"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Customer Feedback Collection and Issue Escalation Workflow",
+    "description": "Validate automated collection of customer feedback post-service and triggering of issue escalation workflows for negative responses.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Complete a service request and trigger automated feedback solicitation message to customer"
+      },
+      {
+        "type": "action",
+        "description": "Submit positive feedback"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify feedback is recorded and no escalation workflow triggered"
+      },
+      {
+        "type": "action",
+        "description": "Submit negative feedback"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm issue escalation workflow initiates with notifications to support team"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "System Uptime and Monitoring Infrastructure",
+    "description": "Verify robust system monitoring infrastructure accurately tracks uptime and system health, triggering alerts on threshold breaches.",
+    "category": "performance",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate system under normal and degraded conditions"
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm monitoring tools report accurate uptime and performance metrics"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify alerting mechanisms trigger correctly on system degradation or downtime"
+      }
+    ]
+  }
+]
