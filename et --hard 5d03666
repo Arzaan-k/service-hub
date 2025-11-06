@@ -1,0 +1,23 @@
+[33mcommit 0edee3c5c9c4ebf98fda1dc780c9c3ab809c5a8a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: arzaanK <arzaanK@gmail.com>
+Date:   Mon Nov 3 15:13:10 2025 +0530
+
+    Remove vectors.json from Git LFS tracking and git index
+
+[33mcommit ce67f7c79f08230066cddce1ee524d8871ec8e21[m
+Author: arzaanK <arzaanK@gmail.com>
+Date:   Mon Nov 3 14:46:15 2025 +0530
+
+    Set up Git LFS for vectors.json to handle large files
+
+[33mcommit 85dac4ee517ad2c94f6cff0e10875e8d40fd628b[m
+Author: arzaanK <arzaanK@gmail.com>
+Date:   Mon Nov 3 14:35:23 2025 +0530
+
+    Remove large vectors.json file and update .gitignore
+
+[33mcommit 53a809fdfd8aead7c04c633630b6c2d55fb8fa7a[m
+Author: arzaanK <arzaanK@gmail.com>
+Date:   Mon Nov 3 14:28:24 2025 +0530
+
+    added RAG half way completed
