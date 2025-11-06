@@ -1,4 +1,8 @@
+import { Express } from 'express';
+import { ragAdapter } from './services/ragAdapter';
 
+export const registerRoutes = (app: Express) => {
+  app.post('/api/rag/query', async (req, res) => {
 
 import type { Express } from "express";
 import { createServer, type Server } from "http";
@@ -3274,270 +3278,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/admin/whatsapp/send-template', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
     try {
-      const { to, templateName, parameters, languageCode } = req.body || {};
-      if (!to || !templateName) return res.status(400).json({ error: 'to and templateName required' });
-      const result = await sendTemplateMessage(String(to).replace(/\D/g, ''), templateName, languageCode || 'en', parameters || []);
+      const result = await ragAdapter.query(req.body);
       res.json(result);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to send template' });
+      console.error('Error in RAG query:', error);
+      res.status(500).json({ message: 'Error processing RAG query' });
     }
   });
 
-  // Proxy endpoint for OpenStreetMap Nominatim API to avoid CORS issues
-  app.get("/api/proxy/nominatim", async (req: any, res) => {
-    try {
-      const { q, ...otherParams } = req.query;
-      
-      if (!q) {
-        return res.status(400).json({ error: 'Query parameter "q" is required' });
-      }
-
-      const url = new URL('https://nominatim.openstreetmap.org/search');
-      url.searchParams.append('q', q);
-      url.searchParams.append('format', 'json');
-      
-      // Add other parameters
-      Object.entries(otherParams).forEach(([key, value]) => {
-        if (key !== 'q') {
-          url.searchParams.append(key, value as string);
-        }
-      });
-
-      const response = await fetch(url.toString(), {
-        headers: {
-          'User-Agent': 'ContainerGenie/1.0 (contact: support@container-genie.local)',
-          'Accept-Language': 'en'
-        }
-      });
-
-      const data = await response.json();
-      res.json(data);
-    } catch (error) {
-      console.error('Nominatim proxy error:', error);
-      res.status(500).json({ error: 'Failed to fetch location data' });
+  app.get('/api/rag/history', async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
     }
-  });
-
-
-
-  // Get troubleshooting suggestions for an alert
-  app.post("/api/alerts/:id/troubleshoot", authenticateUser, async (req: any, res) => {
     try {
-      const alertId = req.params.id;
-
-      // Get alert details
-      const alert = await storage.getAlert(alertId);
-      if (!alert) {
-        return res.status(404).json({ error: 'Alert not found' });
-      }
-
-      // Get container details
-      const container = await storage.getContainer(alert.containerId);
-      if (!container) {
-        return res.status(404).json({ error: 'Container not found' });
-      }
-
-      // Get troubleshooting suggestions
-      const suggestions = await ragAdapter.getAlertSuggestions(
-        container.id,
-        alert.alertType,
-        container.type
-      );
-
-      if (!suggestions) {
-        return res.status(404).json({ error: 'No troubleshooting suggestions available' });
-      }
-
-      res.json(suggestions);
-    } catch (error) {
-      console.error('Alert troubleshooting error:', error);
-      res.status(500).json({ error: 'Failed to get troubleshooting suggestions' });
-    }
-  });
-
-  // Admin endpoints for manual management
-  app.get("/api/manuals", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: any, res) => {
-    try {
-      const manuals = await ragAdapter.getManuals();
-      res.json(manuals);
-    } catch (error) {
-      console.error('Failed to get manuals:', error);
-      res.status(500).json({ error: 'Failed to retrieve manuals' });
-    }
-  });
-
-  app.post("/api/manuals/upload", upload.single('file'), authenticateUser, requireRole("admin", "super_admin"), async (req: any, res) => {
-    try {
-      console.log('=== UPLOAD REQUEST ===');
-      console.log('Content-Type:', req.headers['content-type']);
-      console.log('Body:', req.body);
-      console.log('File:', req.file);
-      console.log('Raw body length:', req.rawBody ? req.rawBody.length : 'no raw body');
-
-      const { name, version, meta } = req.body;
-      const file = req.file;
-
-      if (!name) {
-        return res.status(400).json({ error: 'Manual name is required' });
-      }
-
-      if (!file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-
-      // Create manual entry first to get the ID
-      const manual = await ragAdapter.uploadManual({
-        name,
-        sourceUrl: `uploaded_${Date.now()}_${file.originalname}`,
-        uploadedBy: req.user.id,
-        version,
-        meta: meta ? JSON.parse(meta) : undefined
-      });
-
-      // Save the uploaded file to disk
-      const filePath = await documentProcessor.saveUploadedFile(file, manual.id);
-
-      // Update the manual record with the actual file path
-      const updatedManual = await ragAdapter.updateManual(manual.id, {
-        sourceUrl: filePath
-      });
-
-      console.log(`Manual uploaded successfully: ${name} (${file.originalname})`);
-
-      res.json({
-        ...updatedManual,
-        message: "Manual uploaded successfully",
-        fileInfo: {
-          originalName: file.originalname,
-          size: file.size,
-          mimetype: file.mimetype,
-          savedPath: filePath
-        }
-      });
-    } catch (error) {
-      console.error('Manual upload error:', error);
-      res.status(500).json({ error: 'Failed to upload manual' });
-    }
-  });
-
-  // Delete manual
-  app.delete("/api/manuals/:id", authenticateUser, requireRole("admin", "super_admin"), async (req: any, res) => {
-    try {
-      const manualId = req.params.id;
-
-      await ragAdapter.deleteManual(manualId);
-      res.json({ message: 'Manual deleted successfully' });
-    } catch (error) {
-      console.error('Manual delete error:', error);
-      res.status(500).json({ error: 'Failed to delete manual' });
-    }
-  });
-
-  // Process manual for RAG (extract text and create chunks)
-  app.post("/api/manuals/:id/process", authenticateUser, requireRole("admin", "super_admin"), async (req: any, res) => {
-    try {
-      const manualId = req.params.id;
-
-      // Get manual info
-      const manual = await ragAdapter.getManual(manualId);
-      if (!manual) {
-        return res.status(404).json({ error: 'Manual not found' });
-      }
-
-      console.log(`Processing manual: ${manual.name} (${manual.sourceUrl})`);
-
-      // Check if file exists
-      if (!fs.existsSync(manual.sourceUrl)) {
-        return res.status(404).json({ error: 'Manual file not found on disk' });
-      }
-
-      // Process the PDF file
-      const result = await documentProcessor.processPDFFile(manual.sourceUrl, manualId);
-
-      if (result.success) {
-        res.json({
-          message: 'Manual processed successfully for RAG',
-          manualId,
-          chunksCreated: result.chunksCreated,
-          textLength: result.textLength,
-          processingTime: result.processingTime
-        });
-      } else {
-        res.status(500).json({
-          error: 'Failed to process manual',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      console.error('Manual processing error:', error);
-      res.status(500).json({ error: 'Failed to process manual' });
-    }
-  });
-
-  // Process all uploaded manuals (bulk)
-  app.post("/api/manuals/process-all", authenticateUser, requireRole("admin", "super_admin"), async (req: any, res) => {
-    try {
-      const manuals = await ragAdapter.getManuals();
-      let processed = 0;
-      const details: any[] = [];
-
-      for (const m of manuals) {
-        try {
-          if (!m.sourceUrl) {
-            details.push({ id: m.id, name: m.name, status: 'skipped', reason: 'no sourceUrl' });
-            continue;
-          }
-          if (!fs.existsSync(m.sourceUrl)) {
-            details.push({ id: m.id, name: m.name, status: 'skipped', reason: 'file missing' });
-            continue;
-          }
-          const result = await documentProcessor.processPDFFile(m.sourceUrl, m.id);
-          if (result.success) {
-            processed += 1;
-            details.push({ id: m.id, name: m.name, status: 'processed', chunksCreated: result.chunksCreated });
-          } else {
-            details.push({ id: m.id, name: m.name, status: 'failed', error: result.error });
-          }
-        } catch (e: any) {
-          details.push({ id: m.id, name: m.name, status: 'failed', error: e?.message || String(e) });
-        }
-      }
-
-      res.json({ total: manuals.length, processed, details });
-    } catch (error) {
-      console.error('Bulk manual processing error:', error);
-      res.status(500).json({ error: 'Failed to process manuals' });
-    }
-  });
-
-  // Get container-specific query history
-  app.get("/api/containers/:id/rag-history", authenticateUser, async (req: any, res) => {
-    try {
-      const containerId = req.params.id;
-      const limit = parseInt(req.query.limit) || 20;
-
-      // Check if user has access to this container
-      const container = await storage.getContainer(containerId);
-      if (!container) {
-        return res.status(404).json({ error: 'Container not found' });
-      }
-
-      // Allow access if user is admin/super_admin or owns the container
-      if (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'coordinator') {
-        const customer = await storage.getCustomerByUserId(req.user.id);
-        if (!customer || container.currentCustomerId !== customer.id) {
-          return res.status(403).json({ error: 'Access denied' });
-        }
-      }
-
-      const history = await ragAdapter.getContainerQueryHistory(containerId, limit);
+      const history = await ragAdapter.getUserQueryHistory(userId);
       res.json(history);
     } catch (error) {
-      console.error('Container RAG history error:', error);
-      res.status(500).json({ error: 'Failed to retrieve container query history' });
+      console.error('Error fetching RAG history:', error);
+      res.status(500).json({ message: 'Error fetching RAG history' });
     }
   });
 
-
-  return httpServer;
-}
+  return app;
+};

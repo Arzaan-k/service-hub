@@ -137,15 +137,17 @@ export default function Dashboard() {
           <KPICards stats={stats} />
 
           {/* Map & Alerts */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+            <div className="lg:col-span-2 h-full flex flex-col">
               <ErrorBoundary>
                 <GlobalFleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
-            <ErrorBoundary>
-              <AlertPanel alerts={alerts || []} containers={containers || []} />
-            </ErrorBoundary>
+            <div className="h-full">
+              <ErrorBoundary>
+                <AlertPanel alerts={alerts || []} containers={containers || []} />
+              </ErrorBoundary>
+            </div>
           </div>
 
           {/* Service Requests & WhatsApp */}
