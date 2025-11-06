@@ -1,0 +1,3936 @@
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+
+A WebSocket Data Feed API to be Implemented by CAPS Customers
+
+Version 1.1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 1 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+VERSION CONTROL SHEET
+
+Document Title
+CAPS Distribution Hub: Customer WebSocket Client
+
+
+Description
+
+A WebSocket Data Feed API to be Implemented by CAPS Customers
+
+Original Issue Date
+September 29, 2017
+
+
+Originator
+
+Mike Hansen
+
+
+
+
+
+
+
+Version
+
+Description of Change
+Date
+Contributor
+
+
+
+
+
+1.0
+
+Original draft
+2017-09-29
+MH
+
+
+
+
+
+1.1
+
+* More than one event may be returned when a value for
+2018-02-12
+MH
+
+
+PrecedingEventID is not provided in the GetEvents call
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 2 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+Table of Contents
+
+TERMS AND ABBREVIATIONS.................................................................................................................................
+5
+1
+INTRODUCTION .............................................................................................................................................
+6
+
+1.1
+PURPOSE.........................................................................................................................................................
+6
+
+1.2
+DOCUMENTATION CONVENTIONS.........................................................................................................................
+7
+
+1.3
+TARGET AUDIENCE ............................................................................................................................................
+7
+
+1.4
+STANDARDS .....................................................................................................................................................
+7
+2
+SYSTEM INTERACTIONS .................................................................................................................................
+8
+3
+NETWORK......................................................................................................................................................
+9
+
+3.1
+NETWORK CONNECTIVITY REQUIREMENTS .............................................................................................................
+9
+
+3.2
+MAXIMUM REQUEST RATE .................................................................................................................................
+9
+4
+SECURITY.....................................................................................................................................................
+10
+
+4.1
+CONNECTION .................................................................................................................................................
+10
+
+4.2
+PROTOCOL.....................................................................................................................................................
+10
+
+4.3
+AUTHENTICATION AND AUTHORIZATION ..............................................................................................................
+10
+
+4.4
+OTHER ..........................................................................................................................................................
+10
+5
+CDH WEBSOCKET API...................................................................................................................................
+11
+
+5.1
+ESTABLISHING A CONNECTION ...........................................................................................................................
+11
+
+5.2
+REQUESTS AND RESPONSES...............................................................................................................................
+13
+
+5.2.1
+Requests .................................................................................................................................................
+14
+
+5.2.2
+Responses ..............................................................................................................................................
+15
+
+5.3
+ERROR HANDLING ...........................................................................................................................................
+16
+
+5.4
+API CALLS .....................................................................................................................................................
+17
+
+5.4.1
+GetEvents ...............................................................................................................................................
+17
+6
+DATA TYPES.................................................................................................................................................
+21
+7
+ERRORS AND WARNINGS ............................................................................................................................
+22
+
+7.1
+ERROR LISTING ...............................................................................................................................................
+22
+
+7.1.1
+ERROR CODES THAT APPLY TO CONNECTION ESTABLISHMENT .................................................................................
+22
+
+7.1.2
+ERROR CODES THAT APPLY TO ALL API CALLS ......................................................................................................
+23
+
+7.1.3
+ERROR CODES THAT APPLY TO SPECIFIC API CALLS................................................................................................
+23
+
+7.2
+WARNING LISTING ..........................................................................................................................................
+24
+
+
+
+Table of Tables
+
+Table 1 - Terms and Abbreviations	5
+Table 2 - fault Response Description	17
+Table 3 - Complete API Listing	17
+Table 4 - API: GetEvents	18
+
+
+
+
+
+
+
+
+
+Page 3 of 24
+
+Container and Port Solutions
+
+
+
+
+
+
+
+
+
+ORBCOMM, Inc. Proprietary and Confidential Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+Table of Figures
+
+Figure 1 - System Interaction Diagram .........................................................................................................
+8
+Figure 2 - Establishing a Connection ...........................................................................................................
+12
+Figure 3 - JSON Documentation Convention ..............................................................................................
+13
+Figure 4 - Typical CWC-CDH Conversation ..................................................................................................
+14
+Figure 5
+- Example API Request ..................................................................................................................
+15
+Figure 6
+- Example API Response ................................................................................................................
+15
+Figure 7
+- Example API Response with Warning .........................................................................................
+15
+Figure 8
+- fault Response with Example Data .............................................................................................
+16
+
+
+
+
+Related Documents and Reference Material
+
+•	RFC 6455: THE WEBSOCKET PROTOCOL - https://datatracker.ietf.org/doc/rfc6455/
+
+•	RFC 2616: HYPERTEXT TRANSFER PROTOCOL -- HTTP/1.1 - http://www.ietf.org/rfc/rfc2616.txt
+
+•	RFC 2617: HTTP AUTHENTICATION: BASIC AND DIGEST ACCESS AUTHENTICATION -
+
+http://www.ietf.org/rfc/rfc2617.txt
+
+•	RFC 4627: THE APPLICATION/JSON MEDIA TYPE FOR JAVASCRIPT OBJECT NOTATION (JSON) -
+
+http://www.ietf.org/rfc/rfc4627.txt
+
+•	GENERAL INFORMATION ON JSON - www.json.org
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 4 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+Terms and Abbreviations
+
+Table 1 - Terms and Abbreviations
+
+
+API
+Application Programming Interface
+
+
+
+
+APN
+Access Point Name
+
+
+
+
+CAPS
+ORBCOMM’s Container and Port Solutions group
+
+
+
+
+CDH
+CAPS Distribution Hub
+
+
+
+
+CWC
+Customer WebSocket Client
+
+
+
+
+HTTP
+Hypertext Transfer Protocol
+
+
+
+
+HTTPS
+Hypertext Transfer Protocol over SSL
+
+
+
+
+IoT
+Internet of Things
+
+
+
+
+JSON
+JavaScript Object Notation
+
+
+
+
+RC
+ReeferConnect
+
+
+
+
+RCU
+ReeferConnect telematics device
+
+
+
+
+Reefer
+Refrigerated container
+
+
+
+
+REST
+Representational State Transfer
+
+
+
+
+RFC
+Request for Comment
+
+
+
+
+SaaS
+Software as a Service
+
+
+
+
+SOAP
+Simple Object Access Protocol
+
+
+
+
+SSL
+Secure Sockets Layer
+
+
+
+
+TLS
+Transport Layer Security
+
+
+
+
+UI
+User Interface
+
+
+
+
+UTF-8
+Unicode Transformation Format having 8-bit characters
+
+
+
+
+XML
+Extensible Markup Language
+
+
+
+
+
+
+
+
+
+
+
+Page 5 of 24
+
+Container and Port Solutions
+
+
+
+
+
+
+
+
+ORBCOMM, Inc. Proprietary and Confidential Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+1	INTRODUCTION
+
+ORBCOMM’s Container and Port Solutions (CAPS) group offers two IoT SaaS platforms for tracking 
+and controlling transportation assets, ReeferConnect (RC) and M2Connect (M2C). The ReeferConnect 
+platform provides end-to-end monitoring and control of refrigerated containers (reefers) and 
+M2Connect is primarily for gensets. Both solutions have hardware and software aspects.
+
+The hardware element in both solutions is a telematics device that is physically attached and electrically 
+wired to an asset. The device travels with the asset and serves as the conduit for the exchange of 
+telemetry data and control operations between the asset and SaaS platform. The device communicates 
+with RC or M2C via satellite or cellular networks.
+
+The SaaS platforms provide web-based user interfaces and, for integrating customer backend systems, 
+web-based APIs.
+
+An end user will typically use the web UI to check on vital asset data; including location, power state, 
+alarms, etc.; which are collected both periodically and on-demand. In addition, the user may send 
+commands to perform actions such as changing a refrigerated container’s temperature set point.
+
+Customer systems will typically use the web-based APIs for time-critical and data-heavy interactions, 
+such as submitting bookings and collecting asset data. In most cases, the customer application acts 
+as the client, originating network connections to the platform and providing or requesting data. One 
+of those APIs – the WebSocket Data Feed API – is the subject of this document.
+
+The WebSocket Data Feed API promotes speed and efficient handling of voluminous data by eliminating the 
+tremendous network overhead of SOAP and REST style solutions. Asset event data is quickly routed through 
+the CAPS SaaS platforms and made available to customers in a near real-time stream.
+
+1.1  Purpose
+
+This document is a guide for ORBCOMM customers who are building a customer-side application 
+(referred to as the “CDH Customer WebSocket Client” or “CWC”) to collect asset data from the 
+CAPS Distribution Hub (CDH). CWC is a WebSocket client that makes calls to CDH. CWC initiates all 
+communications, i.e., all TCP connections. CDH uses those TCP connections to stream data to CWC.
+
+This guide provides detailed technical information and is the primary technical reference for CWC. It 
+includes:
+
+•	CWC–CDH system interactions, process flows and operational details
+
+•	CDH standards
+
+•	Environment/network configuration requirements
+
+•	Security overview and requirements
+
+•	CDH WebSocket API details, including calls, parameters, error codes, etc.
+
+
+
+
+
+
+Page 6 of 24
+
+Container and Port Solutions
+
+
+
+
+
+
+ORBCOMM, Inc. Proprietary and Confidential Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+This guide does not include environment specifics, e.g., server IP addresses, firewall configurations, 
+credentials for authentication, etc.
+
+1.2  Documentation Conventions
+
+In this document:
+
+-	“request” refers to a call originated by CWC
+
+-	“response” refers to a reply from CDH
+
+
+1.3  Target Audience
+
+This document is an overview and reference guide for software developers looking to build an 
+application that leverages the CDH WebSocket API. Developers should be familiar with the 
+functionality of the ORBCOMM SaaS platform. In addition, developers should have a solid 
+understanding of WebSockets.
+
+1.4  Standards
+
+See Related Documents and Reference Material.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 7 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+2	SYSTEM INTERACTIONS
+
+
+
+
+
+
+
+
+
+
+
+
+Customer’s
+
+CWC Client
+
+Application
+
+
+
+
+
+
+
+
+Web Browsers
+Web Browser
+AccessingWebBrowser
+Accessing
+ORBCOMMAccessing
+ORBCOMM
+SaaS WebORBCOMMUI
+ReeferConnect
+
+ReeferConnectWebUI
+Web UI
+
+
+
+
+
+
+
+
+Devices
+
+
+
+
+
+
+
+
+
+
+
+
+
+Request
+ORBCOMM
+
+
+Data
+
+
+
+
+
+
+
+Reply
+CDH
+
+
+
+
+
+
+w/ Data
+WebSocket
+
+
+Reply
+Service
+
+Internet
+w/ Data
+
+
+Cloud
+
+
+
+
+
+
+
+
+
+
+ORBCOMM SaaS
+
+Platform
+
+
+
+
+
+
+
+
+Private
+
+A
+P
+N
+
+
+Figure 1 - System Interaction Diagram
+
+
+
+
+The diagram above shows the major system interactions and protocols. Patterns shown in the diagram 
+are not meant to exhaustively represent all possibilities.
+
+•	Blue shapes denote customer elements
+
+•	Green shapes denote ORBCOMM elements that reside in ORBCOMM data centers
+
+
+
+
+Page 8 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+3	NETWORK
+
+
+3.1  Network Connectivity Requirements
+
+CWC will access CDH via the public Internet. CWC will therefore require the capability to create/open 
+outbound connections from the customer’s hosting network through the public Internet to an 
+ORBCOMM data center endpoint. Communications will be directed to a TLS-secured TCP port.
+
+CDH never initiates/opens an outbound network connection to CWC, so there is no need for the 
+customer to establish any inbound firewall rules.
+
+Some proxy servers, especially older ones, do not allow WebSocket traffic. Newer proxy servers that do 
+not allow WebSocket traffic can typically be configured to allow it. CDH WebSocket traffic is always 
+encrypted, which minimizes the possibility of proxy problems.
+
+3.2  Maximum Request Rate
+
+CDH may reject requests that arrive at an unsustainable rate or simultaneous requests for the 
+same data. Both are indicative of incorrect CWC behavior.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 9 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+4	SECURITY
+
+
+4.1  Connection
+
+CDH never initiates/opens an outbound network connection to CWC, so there is no need for the 
+customer to establish any inbound firewall rules.
+
+Access to CDH is limited to a whitelist configured in ORBCOMM firewalls. Customers will provide 
+their possible source IPs and those IPs will be added to the whitelist.
+
+4.2  Protocol
+
+All communications between CWC and CDH occur over a secure WebSocket channel (wss). WSS 
+conversations are encrypted by TLS. To ensure the most secure encryption channel, CDH expects 
+customer systems to use TLS 1.2.
+
+A hash key in an HTTP header1 provides the means for the client to recognize server replies as 
+current and belonging to the ongoing conversation.
+
+Custom messaging facilitates the validation of requests and responses while minimizing the threat of 
+injection that can take advantage of tunnelled standard protocols having larger, more generic scopes.
+
+4.3  Authentication and Authorization
+
+CDH uses HTTP Basic Authentication to authenticate and authorize clients.
+
+HTTP basic authentication requires CWC to pass its credentials, username and password, to CDH 
+every time a connection is opened. The username and password are transported in the standard HTTP 
+Authorization header. The header takes the form:
+
+Authorization: Basic username:password
+
+The username:password string is encoded in ASCII base 64.
+
+For example, the username TestUser and password TestPW are transmitted in the HTTP header as 
+follows:
+Authorization: Basic VGVzdFVzZXI6VGVzdFBX
+
+4.4  Other
+
+The use of additional security measures, e.g., digital certificate exchange, is possible, but not 
+currently available.
+
+
+
+
+1	Sec-WebSocket-Key
+
+
+
+
+Page 10 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+5	CDH WEBSOCKET API
+
+CDH websocket messages, both requests and responses, are transmitted as JSON and use the default 
+UTF-8 encoding.
+
+JSON examples in this document are formatted for readability. JSON sent by CDH will not contain 
+whitespace, except to separate individual JSON messages.
+
+5.1  Establishing a Connection
+
+All connections between CWC and CDH are initiated by CWC. All communication is strictly of the request-
+response paradigm, with CWC making a request and CDH sending a response. No unsolicited or 
+asynchronous calls will be initiated by CDH. Because WebSockets are layered on the TCP protocol (and 
+compatible with the HTTP protocol), all responses occur over TCP connections originated by CWC. CWC 
+should have a robust connection management strategy that employs timeouts and retries. Timeout and 
+retry parameters may vary depending on the requests submitted and/or expected data volumes.
+
+Per the WebSocket protocol, CWC initiates a connection by sending a request that contains HTTP 
+headers. This is a GET request to wss://wamc.wamcentral.net:44355/cdh2, where the HTTP headers 
+include a directive to upgrade to the WebSocket protocol. For example, the HTTP headers sent by CWC 
+look as follows:
+
+
+
+GET /cdh HTTP/1.1
+
+Connection:Upgrade
+
+Host: wamc.wamcentral.net:44355
+
+Origin3:null
+
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+
+Sec-WebSocket-Version:13
+
+Upgrade:websocket
+
+Sec-WebSocket-Protocol: cdh.orbcomm.com
+
+
+
+
+
+
+
+
+
+2	This URI is subject to change.
+
+3	This header is for use in browser-based scenarios and, thus, is not checked by CDH.
+
+
+
+
+Page 11 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+Sec-WebSocket-Version: 13 corresponds to the WebSocket standard used by CDH, IETF RFC 6455. The 
+value must be 13.
+
+The subprotocol requested by CWC must be the private subprotocol cdh.orbcomm.com.
+
+When the connection is correctly established, CDH replies, for example, with the following 
+HTTP headers:
+
+
+
+HTTP/1.1 101 Switching Protocols
+
+Connection:Upgrade
+
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+
+Upgrade:websocket
+
+Sec-WebSocket-Protocol: cdh.orbcomm.com
+
+
+
+
+
+
+
+Until the connection upgrade has succeeded, standard HTTP Status messages, e.g., 200 OK and 400 Bad 
+Request, apply, as do HTTP-style authentication requests, redirection, etc.
+
+
+
+
+
+
+Internet
+Customer’s	Cloud
+CWC Client
+
+Application
+
+
+
+
+
+GET
+
+wss://wamc.wamcentr
+
+al.net:44355/cdh/
+
+WebSockets upgrade requested
+
+
+WebSockets upgrade granted
+
+
+
+
+
+
+
+ORBCOMM
+
+CDH
+
+WebSocket
+
+Service
+
+
+
+
+
+
+
+Figure 2 - Establishing a Connection
+
+
+Note: Future consideration will be made for supporting the Sec-WebSocket-Extensions:
+permessage-deflate message compression extension for websockets.
+
+
+
+
+
+
+
+Page 12 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+5.2  Requests and Responses
+
+Requests and responses are both JSON-formatted messages. Requests may contain whitespace.
+Responses will not contain whitespace, except for the newline character (\n), which separates individual
+JSON messages.
+
+The JSON documentation convention is shown below.
+
+
+
+
+
+
+Bold variable 
+name; Must appear
+
+
+
+Non-bold variable
+name; May or may
+not appear
+
+
+
+
+
+
+
+Bold variable (constant);
+
+{
+
+Must appear as shown
+
+
+
+(for future expansion)
+
+
+“RequestName”: {
+
+
+
+
+
+
+
+
+“Param1” : ”Value1”,
+Non-bold variable;
+
+
+
+“Param2” : “Value2”
+
+
+
+
+
+May be null/empty
+
+
+
+}
+
+
+
+}
+
+
+
+
+
+
+Italicized variable;
+
+
+
+
+
+
+
+
+
+
+
+Shows example value
+
+
+
+
+
+Figure 3 - JSON Documentation Convention
+
+
+
+A typical conversation:
+
+(1)	CWC connects to CDH, opening a wss connection via the CDH URI
+
+(2)	CWC provides an HTTP basic authentication header as described in section 4.3
+
+(3)	CDH authenticates CWC
+
+(4)	CWC requests a connection upgrade to WebSockets version 13
+
+(5)	CDH grants the upgrade request
+
+(6)	CWC requests event data
+
+(7)	CDH returns event data
+
+(8)	Steps (6) and (7) loop any number of times until CWC chooses to exit the conversation (or CDH 
+detects extended silence per the ping/pong pattern of the WebSocket protocol, in which case it 
+closes the connection)
+
+(9)	CWC terminates the connection by initiating the WebSocket closing handshake
+
+The websocket portion of the conversation is shown below.
+
+
+
+
+
+
+
+
+
+
+
+
+Page 13 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Customer’s
+
+CWC Client
+
+Application
+
+
+
+
+
+
+
+
+
+
+Internet
+
+Cloud
+
+
+
+
+
+
+
+GET
+
+wss://wamc.wamcentr
+
+al.net:44355/cdh/
+
+WebSockets upgrade requested
+
+
+WebSockets upgrade granted
+
+
+Times
+{Request ... } for
+
+
+
+
+
+GetEvents
+
+N
+
+
+
+
+
+Repe
+ated
+{Response ... }
+
+
+
+
+
+containing event data stream
+
+
+
+
+Initiate Close
+
+Confirm Close
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ORBCOMM
+
+CDH
+
+WebSocket
+
+Service
+
+
+
+
+
+Figure 4 - Typical CWC-CDH Conversation
+
+5.2.1  Requests
+
+This section describes the structure of CWC request messages. For detailed descriptions of individual 
+API calls, see later sections of this document.
+
+All requests are masked per the requirements of the WebSocket protocol specified by RFC 6455.
+
+CDH may reject requests that arrive at an unsustainable rate or simultaneous requests for the 
+same data. Both are indicative of incorrect CWC behavior.
+
+All requests are JSON-formatted messages as shown below.
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 14 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+{
+
+“GetEvents”: {
+
+“EventType” : ”all”
+
+etc…
+
+}
+
+}
+
+Figure 5 - Example API Request
+
+5.2.2  Responses
+
+All CDH responses are JSON-formatted. Responses will not contain any whitespace, except the newline 
+character (\n), which separates individual JSON messages.
+
+
+{"Event":{"EventClass":"DeviceMessage",etc…}}
+
+{"Event":{"EventClass":"DeviceMessage",etc…}}
+
+Figure 6 - Example API Response
+
+A successful response that includes all or some portion of the expected data may include a warning. An 
+error response will not contain any requested data. Both warnings and errors are represented by a 
+JSON faults object in the response body.
+
+
+{
+
+"Event": {
+
+"EventClass": "DeviceMessage",
+
+etc…
+
+},
+
+“faults” : [
+
+“fault” : {
+
+“faultId” : “21EC2020-3AEA-1069-A2DD-08002B30309D”,
+
+etc…
+
+}
+
+]
+
+}
+
+Figure 7 - Example API Response with Warning4
+
+
+
+
+
+
+
+
+
+4	Formatted with whitespace for easier reading.
+
+
+
+
+Page 15 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+5.3  Error Handling
+
+CDH can return different types of errors:
+
+•	HTTP Status Codes
+
+o	Authentication and navigation errors per series 4xx 
+o Server and system errors per series 5xx
+
+o  WebSocket resource and negotiation errors per series 4xx
+
+•	Application errors
+
+An HTTP Status Code of the 5xx series indicates a system-level problem like an overly busy web server. 
+Such errors should be addressed by system administrators. If/when CWC receives a server error from 
+CDH, the use of a retry scheme is typically the best course of action.
+
+An HTTP Status Code of the 4xx series may result from invalid attempts to authenticate, invalid HTTP 
+requests, invalid HTTP request parameters, etc.
+
+Application errors are defined by the CDH WebSocket subprotocol as described in this document. They 
+are encapsulated in JSON messages. CDH returns specific error codes to alert CWC to various error 
+conditions. An error may or may not occur repeatedly if the same request is retried. The information 
+later in this section indicates when to retry.
+
+When warnings are received in a CDH response, but no errors are received, the response will contain the 
+requested output, e.g., “Events” will be present, unless the warning precludes that per the warning’s 
+description in this document. The presence of an error, regardless of whether warnings are also present, 
+always precludes the return of the expected output. In other words, errors are never accompanied by 
+the expected/requested return value, e.g., “Events” will be absent, but they may be accompanied by 
+warnings.
+
+There is a single format for warnings and errors. A faultSeverity variable differentiates them. The format 
+is described below. Faults, whether one or more, always appear inside a faults array object (not shown).
+
+
+“fault” : {
+
+“faultId” : “21EC2020-3AEA-1069-A2DD-08002B30309D”,
+
+“faultSeverity : “error”,
+
+“faultCanRetry : “no”,
+
+“faultCode : “2001”,
+
+“faultText : “Unallocated partition number”,
+
+“exceptionText : “”,
+
+“stack” : “”
+
+}
+
+Figure 8 - fault Response with Example Data
+
+
+
+
+
+
+Page 16 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+
+
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+
+
+
+2/12/2018
+
+Table 2 - fault Response Description
+
+
+
+
+
+
+JSON Value
+
+Description
+
+faultId
+
+
+The faultId element contains a GUID that provides absolute tracking for a particular
+
+
+
+
+
+fault. For example, if an exception is caught while processing a request, CDH will log
+
+
+
+
+
+the exception. The exception can then serve as a means to facilitate the support
+
+
+
+
+
+process if faultId is supplied.
+
+faultSeverity
+
+The faultSeverity element contains either “error” or “warning”, indicating the severity
+
+
+
+
+of the fault. An error will not be accompanied by the expected results, i.e., event
+
+
+
+
+data, for the request. A warning will be accompanied by the expected results.
+
+faultCanRetry
+
+
+The faultCanRetry element contains either “yes” or “no”. The former indicates that a
+
+
+
+
+
+retry of the same request may be warranted. The latter indicates that a retry will
+
+
+
+
+
+result in the same fault. This value is only relevant when faultSeverity is error. A retry
+
+
+
+
+
+for a warning is never necessary. When faultSeverity is warning, CWC should be
+
+
+
+
+
+tolerant of both the presence and absence of this element, which, if present, will
+
+
+
+
+
+contain an empty value.
+
+faultCode
+
+The faultCode element contains a fault code that represents a specific type of error.
+
+
+
+
+This document lists the applicable fault codes for each service request.
+
+faultText
+
+
+The faultText element contains the fault description. The fault code and description
+
+
+
+
+
+are a distinct pair, i.e., they have a one-to-one relationship. This document provides
+
+
+
+
+
+the faultText for every faultCode.
+
+exceptionText
+
+A fault message may contain debugging information in this element. CWC should be
+
+
+
+
+tolerant of both the presence and absence of this element.
+
+stack
+
+
+A fault message may contain debugging information in this element. The client
+
+
+
+
+
+application should be tolerant of both the presence and absence of this element.
+
+
+5.4  API Calls
+
+CDH provides the WebSocket APIs enumerated below.5
+
+Table 3 - Complete API Listing
+
+API Call
+Description
+
+
+GetEvents
+Request event data from CDH
+
+
+
+
+
+In the following sections, for each API method, all possible faults are enumerated, excluding faults that apply 
+globally. For details on all faults, both API-specific and global, see the Errors and Warnings section.
+
+5.4.1  GetEvents
+
+The GetEvents API allows clients to retrieve event data from CDH. Data bursts may be tuned by 
+modifying request parameters.
+
+
+
+
+5	At this time, the only existing call is GetEvents.
+
+
+
+
+Page 17 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+Event data formats are described under separate cover and depend on the SaaS platform in use.
+
+CDH holds customer event data for a minimum of 30 days. If CWC has not requested the data prior 
+to the elapsed time, the data may no longer be available to CWC.
+
+Table 4 - API: GetEvents
+
+
+API Name	GetEvents
+
+Description	Get events from CDH. After making this request, CWC should not make any new requests until all 
+requested events have been provided by CDH or the connection has been closed. If the customer
+
+
+
+
+data has multiple partitions, one request can be pending for each partition. Any desire for
+
+
+
+
+partitions should be discussed with the ORBCOMM CAPS team.
+
+
+
+
+
+JSON
+
+{
+
+
+Request
+
+“GetEvents”: {
+
+
+Structure
+
+“EventType” : ”all”,
+
+
+
+
+“EventPartition” : 1,
+
+
+
+
+“PrecedingEventID” : ”68f62bbf-39a3-487d-a674-e06816ad3600”,
+
+
+
+
+“FollowingEventID” : ”782c8267-caa3-4613-9595-6d9edc836c33”,
+
+
+
+
+“MaxEventCount” : 1000
+
+}
+
+}
+
+
+
+JSON
+
+Name
+Data Type
+Purpose
+
+
+
+
+Request
+
+EventType
+EVENT_TYPE
+Identifies the type of events being requested.
+
+
+
+
+Parameters
+
+
+
+Currently, no filtering is available and all events
+
+
+
+
+
+
+
+
+are provided to CWC. Thus, the value for this
+
+
+
+
+
+
+
+
+parameter must be all.
+
+
+
+
+
+
+EventPartition
+PARTITION
+If data volume is high enough to warrant multiple
+
+
+
+
+
+
+
+
+instances of CDH, partitions will be configured.
+
+
+
+
+
+
+
+
+Each partition will contain some segment of the
+
+
+
+
+
+
+
+
+event data. Each instance of CDH will govern data
+
+
+
+
+
+
+
+
+for a particular partition and a corresponding
+
+
+
+
+
+
+
+
+instance of CWC will retrieve events from the
+
+
+
+
+
+
+
+
+partition. In most cases, there will be only one
+
+
+
+
+
+
+
+
+partition and CWC will provide a value of 1 for
+
+
+
+
+
+
+
+
+this parameter.
+
+
+
+
+
+
+PrecedingEventID
+PRE_EVENT_ID
+Typically, this is the UUID of the latest message
+
+
+
+
+
+
+
+
+received by CWC as it continues to receive data
+
+
+
+
+
+
+
+
+from CDH in near real-time. It indicates the
+
+
+
+
+
+
+
+
+starting point of the events being requested and
+
+
+
+
+
+
+
+
+is specific to a partition number. Thus, CDH will
+
+
+
+
+
+
+
+
+start its reply by sending the very next event
+
+
+
+
+
+
+
+
+within the partition that follows
+
+
+
+
+
+
+
+
+PrecedingEventID. PrecedingEventID can also be
+
+
+
+
+
+
+Page 18 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+
+
+
+
+
+
+used to index into older event data if/when CWC
+
+
+
+
+
+
+
+
+
+encounters an error and loses information or
+
+
+
+
+
+
+
+
+
+must otherwise repeat a previous request. If a
+
+
+
+
+
+
+
+
+
+value for PrecedingEventID is not provided, the
+
+
+
+
+
+
+
+
+
+most recent events will be returned and prior
+
+
+
+
+
+
+
+
+
+events, even if not previously transmitted to
+
+
+
+
+
+
+
+
+
+CWC, will not be included in the response.
+
+
+
+
+
+
+
+FollowingEventID
+POST_EVENT_ID
+FollowingEventID must be null/empty if
+
+
+
+
+
+
+
+
+
+PrecedingEventID is null/empty. FollowingEventID
+
+
+
+
+
+
+
+
+
+indicates the ending point of the events being
+
+
+
+
+
+
+
+
+
+requested. This is useful when CWC must index
+
+
+
+
+
+
+
+
+
+into older event data, which would typically be
+
+
+
+
+
+
+
+
+
+necessary only for recovery. CDH will send
+
+
+
+
+
+
+
+
+
+sequential event data until it reaches the event
+
+
+
+
+
+
+
+
+
+identified by FollowingEventID. At that point, the
+
+
+
+
+
+
+
+
+
+request is fulfilled and CDH stops sending events.
+
+
+
+
+
+
+
+
+
+The event identified by FollowingEventID is not
+
+
+
+
+
+
+
+
+
+transmitted to CWC. If a value for
+
+
+
+
+
+
+
+
+
+FollowingEventID is not provided, CDH does not
+
+
+
+
+
+
+
+
+
+identify the last event to transmit by an ID.
+
+
+
+
+
+
+
+MaxEventCount
+MAX_EVENT_COUNT
+This is the maximum number of events that will
+
+
+
+
+
+
+
+
+
+be returned by CDH in response to the request.
+
+
+
+
+
+
+
+
+
+Depending on the request, events may be
+
+
+
+
+
+
+
+
+
+shuttled to CWC as they arrive, so any amount of
+
+
+
+
+
+
+
+
+
+time may transpire between the transmission of
+
+
+
+
+
+
+
+
+
+events. The ping/pong control frames of the
+
+
+
+
+
+
+
+
+
+websocket protocol serve to keep the connection
+
+
+
+
+
+
+
+
+
+open during this time. Still, CDH may close the
+
+
+
+
+
+
+
+
+
+connection before the count is reached and CWC
+
+
+
+
+
+
+
+
+
+should account for the possibility. If a value for
+
+
+
+
+
+
+
+
+
+MaxEventCount is not provided, CDH will send
+
+
+
+
+
+
+
+
+
+events indefinitely.
+
+
+
+
+
+
+
+
+
+JSON
+
+MAY REPEAT ANY NUMBER OF TIMES. NEWLINE DELIMITED.7 ONE JSON MESSAGE PER EVENT.
+
+
+
+
+Response
+
+{
+
+
+
+
+
+
+
+Structure6
+
+
+"EventClass": "DeviceMessage",
+
+
+
+The content of event messages is described under separate cover
+
+}
+
+
+
+
+
+
+
+
+
+6	Formatted here with whitespace for easier reading.
+
+7	Formatted here with whitespace for easier reading.
+
+
+
+
+Page 19 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+JSON
+
+Name
+
+Data Type
+Purpose
+
+
+Response
+
+EventClass
+
+EVENT_CLASS
+EventClass indicates the type of event and
+
+
+Parameters
+
+
+
+
+is the key that identifies the variables that
+
+
+
+
+
+
+
+will be received in the message
+
+
+
+
+Event variables as described
+
+EventClass is the key for cross-referencing
+
+
+
+
+under separate cover
+
+other documents
+
+
+
+
+
+
+
+
+API-specific
+
+faultCode
+faultText
+
+
+
+Faults
+
+2001
+Unallocated partition number
+
+
+
+
+
+2002
+Preceding event not found
+
+
+
+
+
+2003
+Following event must be null/empty when preceding event is not provided
+
+
+
+
+2004
+Following event not found
+
+
+
+
+
+2005
+Following event precedes preceding event
+
+
+
+
+2006
+Response already in progress
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 20 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+6	DATA TYPES
+
+The data types of all request parameters sent to CDH are listed below.
+
+-	If the data type is numeric, the minimum and maximum values are shown.
+
+-	If the data type is a character string, the minimum and maximum lengths are shown. All 
+string data types are defined by the set of printable extended ASCII characters, except where 
+noted otherwise.
+
+-	If the data type is a set of specific strings, the strings are enumerated in a bulleted list. 
+Such values should be treated as case-sensitive.
+
+
+
+Data Type Name
+
+Data Type
+
+Min Value or
+
+Max Value or
+
+
+
+
+
+
+Length
+
+Length
+
+
+
+
+
+
+
+
+
+
+
+EVENT_TYPE
+
+• all
+
+N/A
+
+N/A
+
+
+
+
+
+
+
+
+
+
+PARTITION
+
+integer
+1
+4
+
+
+PRE_EVENT_ID
+
+string; UUID formatted with hyphens:
+
+36
+
+36
+
+
+
+
+68F62BBF-39A3-487D-A674-
+
+
+
+
+
+
+
+
+E06816AD3600
+
+
+
+
+
+POST_EVENT_ID
+
+string; UUID formatted with hyphens:
+36
+36
+
+
+
+
+68F62BBF-39A3-487D-A674-
+
+
+
+
+
+
+
+
+E06816AD3600
+
+
+
+
+
+
+MAX_EVENT_COUNT
+
+integer
+
+1
+
+50,000
+
+EVENT_CLASS
+
+string
+
+N/A
+
+N/A
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 21 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+
+
+7	ERRORS AND WARNINGS
+
+-	A token such as %1% in the faultText column indicate variable information that depends on 
+the context of the fault.
+
+-	It is possible for a response to contain more than one warning along with an error.
+
+-	A response never contains more than a single error.
+
+-	If a response contains an error, it will not contain any of the return data originally expected.
+
+-	If a response contains one or more warnings (and no error), it will still contain the 
+expected return data, depending on the descriptions of the warnings.
+
+-	The exceptionText and stack values, if provided, will vary depending on the low-level reason for 
+the fault.
+
+
+7.1
+Error Listing
+
+
+
+
+
+
+
+
+
+
+7.1.1
+
+Error Codes That Apply to Connection Establishment
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+fault
+
+
+faultText
+
+fault
+
+fault
+
+Cause and Troubleshooting
+
+Code
+
+
+
+
+
+Severity
+
+Can
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Retry
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1001
+
+
+Unknown error
+
+
+error
+
+
+yes
+
+
+Unknown; Manifests as HTTP Status Code 503, Service
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Unavailable
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1002
+
+
+Authentication
+
+error
+
+no
+
+Manifests as HTTP Status Code 401, Unauthorized.
+
+
+
+
+
+failed
+
+
+
+
+
+
+
+Credentials provided in HTTP Header are incorrect.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Check user name and password.
+
+
+
+
+
+
+
+
+
+
+
+
+
+1003
+
+
+Unrecognized
+
+
+error
+
+
+no
+
+
+Manifests as HTTP Status Code 404, Not Found. Request
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+request
+
+
+
+
+
+
+
+
+URL is incorrect. Ensure that the request follows the API
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+specification.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 22 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+2/12/2018
+
+7.1.2
+
+Error Codes That Apply to All API Calls
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+fault
+
+faultText
+
+fault
+
+fault
+
+Cause and Troubleshooting
+Code
+
+
+
+
+Severity
+
+Can
+
+
+
+
+
+
+
+
+
+
+
+
+
+Retry
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1101
+
+
+Missing
+
+
+error
+
+
+no
+
+
+A required parameter is missing. The “%1%” token is
+
+
+
+
+
+parameter: %1%
+
+
+
+
+
+
+
+
+replaced by the parameter name.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1102
+
+
+Invalid value
+
+error
+
+no
+
+The value does not meet the requirement specified in
+
+
+
+
+(%1%) for
+
+
+
+
+
+
+
+this document. The “%1%” token is replaced by the
+
+
+
+
+parameter %2%
+
+
+
+
+
+
+
+invalid value. The “%2%” token is replaced by the
+
+
+
+
+
+
+
+
+
+
+
+
+
+parameter name.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+7.1.3
+
+Error Codes That Apply to Specific API Calls
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+fault
+
+faultText
+
+fault
+
+fault
+
+Cause and Troubleshooting
+
+Code
+
+
+
+
+Severity
+
+Can
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Retry
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+2001
+
+
+Unallocated
+
+
+error
+
+
+no
+
+
+The partition number has not been allocated to the
+
+
+
+
+
+
+partition
+
+
+
+
+
+
+
+
+client.
+
+
+
+
+
+
+number
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+2002
+
+
+Preceding event
+
+error
+
+no
+
+The event ID provided did not resolve to an event
+
+
+
+
+
+not found
+
+
+
+
+
+
+
+within the requested partition. If the event is older than
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+three months, it is possible that it has been purged.
+
+
+
+
+
+
+
+
+
+
+
+
+
+2003
+
+
+Following event
+
+
+error
+
+
+no
+
+
+Following event must be null/empty when preceding
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+must be
+
+
+
+
+
+
+
+
+event is not provided
+
+
+
+
+
+
+null/empty
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+when preceding
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+event is not
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+provided
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+2004
+
+
+Following event
+
+error
+
+no
+
+The event ID provided did not resolve to an event
+
+
+
+
+
+not found
+
+
+
+
+
+
+
+within the requested partition. If the event is older than
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+three months, it is possible that it has been purged.
+
+
+
+
+
+
+
+
+
+
+
+
+
+2005
+
+
+Following event
+
+
+error
+
+
+no
+
+
+The event identified by FollowingEventID must have a
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+precedes
+
+
+
+
+
+
+
+
+later availability date/time than the event identified by
+
+
+
+
+
+
+preceding event
+
+
+
+
+
+
+
+
+PrecedingEventID.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+2006
+
+
+Response
+
+error
+
+No
+
+CDH is in the process of responding to the last request
+
+
+
+
+
+already in
+
+
+
+
+
+
+
+made by CWC. Only one request/response exchange
+
+
+
+
+
+progress
+
+
+
+
+
+
+
+can be in progress on any single websocket connection
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+at any given time. Depending on the request, responses
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+can take an indefinite amount of time as they can
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+depend on the indeterminable arrival time of device
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 23 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1
+
+
+
+
+CAPS Distribution Hub: Customer WebSocket Client
+
+
+
+
+
+2/12/2018
+
+
+
+
+
+
+
+fault
+faultText
+
+fault
+fault
+
+Cause and Troubleshooting
+Code
+
+
+Severity
+Can
+
+
+
+
+
+
+Retry
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+messages and other events.
+
+
+
+
+
+
+
+
+
+7.2	Warning Listing
+
+None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Page 24 of 24	ORBCOMM, Inc.
+Container and Port Solutions	Proprietary and Confidential
+
+Document Version 1.1

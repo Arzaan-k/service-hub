@@ -1,0 +1,475 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Base Colors */
+  --background: hsl(225, 100%, 5%);
+  --foreground: hsl(0, 0%, 95%);
+  --card: hsl(225, 100%, 8%);
+  --card-foreground: hsl(0, 0%, 95%);
+  --popover: hsl(225, 100%, 10%);
+  --popover-foreground: hsl(0, 0%, 95%);
+  --border: hsl(225, 50%, 25%);
+  --input: hsl(225, 100%, 8%);
+  --ring: hsl(225, 100%, 50%);
+  --radius: 0.5rem;
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Semantic Colors - Primary Actions */
+  --primary: hsl(225, 100%, 50%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --primary-light: hsl(225, 100%, 60%);
+  --primary-dark: hsl(225, 100%, 40%);
+
+  /* Semantic Colors - Secondary/Neutral */
+  --secondary: hsl(225, 50%, 15%);
+  --secondary-foreground: hsl(0, 0%, 100%);
+  --muted: hsl(225, 50%, 15%);
+  --muted-foreground: hsl(225, 30%, 70%);
+
+  /* Functional Area Colors */
+  --dashboard: hsl(225, 100%, 50%); /* Primary Blue - Dashboard/Overview */
+  --dashboard-foreground: hsl(0, 0%, 100%);
+  --dashboard-light: hsl(225, 100%, 60%);
+  --dashboard-dark: hsl(225, 100%, 40%);
+
+  --containers: hsl(187, 52%, 67%); /* Light Cyan - Containers/Fleet */
+  --containers-foreground: hsl(225, 100%, 5%);
+  --containers-light: hsl(187, 52%, 75%);
+  --containers-dark: hsl(187, 52%, 55%);
+
+  --alerts: hsl(0, 84%, 60%); /* Red - Alerts/Issues */
+  --alerts-foreground: hsl(0, 0%, 100%);
+  --alerts-light: hsl(0, 84%, 70%);
+  --alerts-dark: hsl(0, 84%, 50%);
+
+  --service: hsl(32, 100%, 54%); /* Orange - Service Requests */
+  --service-foreground: hsl(225, 100%, 5%);
+  --service-light: hsl(32, 100%, 64%);
+  --service-dark: hsl(32, 100%, 44%);
+
+  --technicians: hsl(225, 100%, 50%); /* Primary Blue - Technicians */
+  --technicians-foreground: hsl(0, 0%, 100%);
+  --technicians-light: hsl(225, 100%, 60%);
+  --technicians-dark: hsl(225, 100%, 40%);
+
+  --scheduling: hsl(187, 52%, 67%); /* Light Cyan - Scheduling */
+  --scheduling-foreground: hsl(225, 100%, 5%);
+  --scheduling-light: hsl(187, 52%, 75%);
+  --scheduling-dark: hsl(187, 52%, 55%);
+
+  --clients: hsl(187, 52%, 67%); /* Light Cyan - Clients */
+  --clients-foreground: hsl(225, 100%, 5%);
+  --clients-light: hsl(187, 52%, 75%);
+  --clients-dark: hsl(187, 52%, 55%);
+
+  --whatsapp: hsl(187, 52%, 67%); /* Light Cyan - WhatsApp */
+  --whatsapp-foreground: hsl(0, 0%, 100%);
+  --whatsapp-light: hsl(187, 52%, 75%);
+  --whatsapp-dark: hsl(187, 52%, 55%);
+
+  --inventory: hsl(32, 100%, 54%); /* Orange - Inventory */
+  --inventory-foreground: hsl(225, 100%, 5%);
+  --inventory-light: hsl(32, 100%, 64%);
+  --inventory-dark: hsl(32, 100%, 44%);
+
+  --analytics: hsl(225, 100%, 50%); /* Primary Blue - Analytics */
+  --analytics-foreground: hsl(0, 0%, 100%);
+  --analytics-light: hsl(225, 100%, 60%);
+  --analytics-dark: hsl(225, 100%, 40%);
+
+  /* Status Colors */
+  --success: hsl(187, 52%, 67%);
+  --success-foreground: hsl(225, 100%, 5%);
+  --warning: hsl(32, 100%, 54%);
+  --warning-foreground: hsl(225, 100%, 5%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --info: hsl(225, 100%, 50%);
+  --info-foreground: hsl(0, 0%, 100%);
+
+  /* Legacy support */
+  --accent: hsl(225, 100%, 50%);
+  --accent-foreground: hsl(0, 0%, 100%);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--background);
+  color: var(--foreground);
+  overflow-x: hidden;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
+}
+
+/* Enhanced dropdown visibility - All dropdown types */
+[data-radix-select-content],
+[data-radix-popover-content],
+[data-radix-dropdown-menu-content],
+[data-radix-context-menu-content],
+[data-radix-menubar-content] {
+  background-color: hsl(225, 100%, 8%) !important;
+  background: hsl(225, 100%, 8%) !important;
+  border: 1px solid hsl(225, 50%, 20%) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3) !important;
+  opacity: 1 !important;
+}
+
+/* All dropdown items - White text */
+[data-radix-select-item],
+[data-radix-popover-item],
+[data-radix-dropdown-menu-item],
+[data-radix-context-menu-item],
+[data-radix-menubar-item] {
+  color: hsl(0, 0%, 100%) !important;
+  font-weight: 400;
+}
+
+/* Hover states for all dropdown items */
+[data-radix-select-item]:hover,
+[data-radix-select-item][data-highlighted],
+[data-radix-popover-item]:hover,
+[data-radix-popover-item][data-highlighted],
+[data-radix-dropdown-menu-item]:hover,
+[data-radix-dropdown-menu-item][data-highlighted],
+[data-radix-context-menu-item]:hover,
+[data-radix-context-menu-item][data-highlighted],
+[data-radix-menubar-item]:hover,
+[data-radix-menubar-item][data-highlighted] {
+  background-color: hsl(225, 100%, 50%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+/* Dropdown labels and separators */
+[data-radix-dropdown-menu-label],
+[data-radix-context-menu-label],
+[data-radix-menubar-label],
+[cmdk-group-heading] {
+  color: hsl(0, 0%, 100%) !important;
+}
+
+[data-radix-dropdown-menu-separator],
+[data-radix-context-menu-separator],
+[data-radix-menubar-separator] {
+  background-color: hsl(225, 50%, 20%) !important;
+}
+
+/* Command palette components */
+[cmdk-root] {
+  background-color: hsl(225, 100%, 8%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+[cmdk-input] {
+  background-color: hsl(225, 100%, 8%) !important;
+  color: hsl(0, 0%, 100%) !important;
+  border-color: hsl(225, 50%, 20%) !important;
+}
+
+[cmdk-input]::placeholder {
+  color: hsl(225, 30%, 70%) !important;
+}
+
+[cmdk-item] {
+  color: hsl(0, 0%, 100%) !important;
+}
+
+[cmdk-item]:hover,
+[cmdk-item][data-selected='true'] {
+  background-color: hsl(225, 100%, 50%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+[cmdk-empty] {
+  color: hsl(225, 30%, 70%) !important;
+}
+
+[cmdk-separator] {
+  background-color: hsl(225, 50%, 20%) !important;
+}
+
+/* Inputs within dropdowns */
+[data-radix-select-content] input,
+[data-radix-popover-content] input,
+[data-radix-dropdown-menu-content] input,
+[data-radix-context-menu-content] input,
+[data-radix-menubar-content] input,
+[cmdk-root] input {
+  background-color: hsl(225, 100%, 8%) !important;
+  color: hsl(0, 0%, 100%) !important;
+  border-color: hsl(225, 50%, 20%) !important;
+}
+
+[data-radix-select-content] input::placeholder,
+[data-radix-popover-content] input::placeholder,
+[data-radix-dropdown-menu-content] input::placeholder,
+[data-radix-context-menu-content] input::placeholder,
+[data-radix-menubar-content] input::placeholder,
+[cmdk-root] input::placeholder {
+  color: hsl(225, 30%, 70%) !important;
+}
+
+/* Fix select element text visibility */
+select option {
+  background-color: hsl(225, 100%, 8%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+select option:checked {
+  background-color: hsl(225, 100%, 50%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+select:focus option:checked {
+  background-color: hsl(225, 100%, 50%) !important;
+  color: hsl(0, 0%, 100%) !important;
+}
+
+/* Pulse animation */
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.pulse-indicator {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.pulse-dot {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.status-active {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Map container */
+.map-container {
+  height: 400px;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Transitions */
+.transition-smooth {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: var(--card);
+}
+
+/* Semantic Color Utilities - Direct CSS Classes */
+.bg-containers { background-color: #4ade80; }
+.bg-alerts { background-color: #ef4444; }
+.bg-service { background-color: #f97316; }
+.bg-technicians { background-color: #a855f7; }
+.bg-scheduling { background-color: #06b6d4; }
+.bg-clients { background-color: #14b8a6; }
+.bg-whatsapp { background-color: #22c55e; }
+.bg-inventory { background-color: #eab308; }
+.bg-analytics { background-color: #d946ef; }
+.bg-dashboard { background-color: #3b82f6; }
+
+.text-containers { color: #4ade80; }
+.text-alerts { color: #ef4444; }
+.text-service { color: #f97316; }
+.text-technicians { color: #a855f7; }
+.text-scheduling { color: #06b6d4; }
+.text-clients { color: #14b8a6; }
+.text-whatsapp { color: #22c55e; }
+.text-inventory { color: #eab308; }
+.text-analytics { color: #d946ef; }
+.text-dashboard { color: #3b82f6; }
+
+.border-containers { border-color: #4ade80; }
+.border-alerts { border-color: #ef4444; }
+.border-service { border-color: #f97316; }
+.border-technicians { border-color: #a855f7; }
+.border-scheduling { border-color: #06b6d4; }
+.border-clients { border-color: #14b8a6; }
+.border-whatsapp { border-color: #22c55e; }
+.border-inventory { border-color: #eab308; }
+.border-analytics { border-color: #d946ef; }
+.border-dashboard { border-color: #3b82f6; }
+
+/* Component Type Indicators */
+.component-header {
+  @apply flex items-center gap-2 mb-4;
+}
+
+.component-icon {
+  @apply p-2 rounded-lg;
+}
+
+.component-title {
+  @apply text-lg font-semibold text-foreground;
+}
+
+/* Status Indicators */
+.status-indicator {
+  @apply w-2 h-2 rounded-full;
+}
+
+.status-active {
+  @apply animate-pulse;
+}
+
+/* Enhanced Hover Effects */
+.hover-lift {
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.hover-lift:hover {
+  @apply transform -translate-y-1 shadow-lg;
+}
+
+/* Color-coded borders for different sections */
+.section-containers {
+  @apply border-l-4;
+  border-left-color: #4ade80;
+}
+
+.section-alerts {
+  @apply border-l-4;
+  border-left-color: #ef4444;
+}
+
+.section-service {
+  @apply border-l-4;
+  border-left-color: #f97316;
+}
+
+.section-technicians {
+  @apply border-l-4;
+  border-left-color: #a855f7;
+}
+
+.section-scheduling {
+  @apply border-l-4;
+  border-left-color: #06b6d4;
+}
+
+.section-clients {
+  @apply border-l-4;
+  border-left-color: #14b8a6;
+}
+
+.section-whatsapp {
+  @apply border-l-4;
+  border-left-color: #22c55e;
+}
+
+.section-inventory {
+  @apply border-l-4;
+  border-left-color: #eab308;
+}
+
+.section-analytics {
+  @apply border-l-4;
+  border-left-color: #d946ef;
+}
+
+.section-dashboard {
+  @apply border-l-4;
+  border-left-color: #3b82f6;
+}
+
+/* Additional semantic color utilities */
+.bg-containers\/10 { background-color: rgba(74, 222, 128, 0.1); }
+.bg-alerts\/10 { background-color: rgba(239, 68, 68, 0.1); }
+.bg-service\/10 { background-color: rgba(249, 115, 22, 0.1); }
+.bg-technicians\/10 { background-color: rgba(168, 85, 247, 0.1); }
+.bg-scheduling\/10 { background-color: rgba(6, 182, 212, 0.1); }
+.bg-clients\/10 { background-color: rgba(20, 184, 166, 0.1); }
+.bg-whatsapp\/10 { background-color: rgba(34, 197, 94, 0.1); }
+.bg-inventory\/10 { background-color: rgba(234, 179, 8, 0.1); }
+.bg-analytics\/10 { background-color: rgba(217, 70, 239, 0.1); }
+.bg-dashboard\/10 { background-color: rgba(59, 130, 246, 0.1); }
+
+.bg-containers\/20 { background-color: rgba(74, 222, 128, 0.2); }
+.bg-alerts\/20 { background-color: rgba(239, 68, 68, 0.2); }
+.bg-service\/20 { background-color: rgba(249, 115, 22, 0.2); }
+.bg-technicians\/20 { background-color: rgba(168, 85, 247, 0.2); }
+.bg-scheduling\/20 { background-color: rgba(6, 182, 212, 0.2); }
+.bg-clients\/20 { background-color: rgba(20, 184, 166, 0.2); }
+.bg-whatsapp\/20 { background-color: rgba(34, 197, 94, 0.2); }
+.bg-inventory\/20 { background-color: rgba(234, 179, 8, 0.2); }
+.bg-analytics\/20 { background-color: rgba(217, 70, 239, 0.2); }
+.bg-dashboard\/20 { background-color: rgba(59, 130, 246, 0.2); }
+
+.border-containers\/20 { border-color: rgba(74, 222, 128, 0.2); }
+.border-alerts\/20 { border-color: rgba(239, 68, 68, 0.2); }
+.border-service\/20 { border-color: rgba(249, 115, 22, 0.2); }
+.border-technicians\/20 { border-color: rgba(168, 85, 247, 0.2); }
+.border-scheduling\/20 { border-color: rgba(6, 182, 212, 0.2); }
+.border-clients\/20 { border-color: rgba(20, 184, 166, 0.2); }
+.border-whatsapp\/20 { border-color: rgba(34, 197, 94, 0.2); }
+.border-inventory\/20 { border-color: rgba(234, 179, 8, 0.2); }
+.border-analytics\/20 { border-color: rgba(217, 70, 239, 0.2); }
+.border-dashboard\/20 { border-color: rgba(59, 130, 246, 0.2); }
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
