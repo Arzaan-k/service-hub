@@ -129,8 +129,8 @@ Please provide a detailed troubleshooting response based on the manual content.`
       await this.storeQuery(request, ragResponse);
 
       return ragResponse;
-    } catch (error) {
-      console.error('RAG query failed, falling back to mock response:', error.message);
+    } catch (error: any) {
+      console.error('RAG query failed, falling back to mock response:', error?.message || error);
       // Fall back to mock response when service is unavailable
       const mockResponse = this.getMockResponse(request);
       await this.storeQuery(request, mockResponse);
@@ -161,8 +161,8 @@ Please provide a detailed troubleshooting response based on the manual content.`
           });
         }
       }
-    } catch (error) {
-      console.error('Failed to store RAG query:', error.message);
+    } catch (error: any) {
+      console.error('Failed to store RAG query:', error?.message || error);
       // Don't throw - logging failure shouldn't break the main flow
     }
   }
@@ -191,7 +191,7 @@ Please provide a detailed troubleshooting response based on the manual content.`
         if (manual) {
           sources.push({
             manual_id: manualId,
-            manual_name: manual.title,
+            manual_name: manual.name,
             page: result.metadata.pageNum || 1
           });
         }
@@ -233,29 +233,6 @@ Please provide a detailed troubleshooting response based on the manual content.`
     return 'low';
   }
   
-  /**
-   * Generate a mock response when no results are found
-   */
-  private getMockResponse(request: RagQueryRequest): RagQueryResponse {
-    return {
-      answer: `I don't have specific information about "${request.query}" in my knowledge base. For accurate assistance with this issue, I recommend:
-
-1. Check the manufacturer's manual for your specific model ${request.unit_model || ''}
-2. Contact technical support with your unit details and alarm code ${request.alarm_code || ''}
-3. Consider scheduling a technician visit for in-person diagnosis
-
-Would you like me to help you schedule a service appointment?`,
-      steps: [
-        "Check the manufacturer's manual for your specific model",
-        "Contact technical support with your unit details",
-        "Consider scheduling a technician visit for in-person diagnosis"
-      ],
-      sources: [],
-      confidence: 'low',
-      suggested_spare_parts: [],
-      request_id: `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    };
-  }
 
   /**
    * Extract numbered steps from the response text
@@ -311,59 +288,6 @@ Would you like me to help you schedule a service appointment?`,
     }
 
     return parts.slice(0, 5); // Limit to 5 parts
-  }
-
-  /**
-   * Get source information for search results
-   */
-  private async getSourceInfo(searchResults: any[]): Promise<Array<{ manual_id: string; manual_name: string; page: number }>> {
-    const sources: Array<{ manual_id: string; manual_name: string; page: number }> = [];
-
-    for (const result of searchResults.slice(0, 3)) { // Limit to top 3 sources
-      try {
-        // Get manual name from database
-        const manual = await db
-          .select({ name: manuals.name })
-          .from(manuals)
-          .where(eq(manuals.id, result.metadata.manualId))
-          .limit(1);
-
-        const manualName = manual[0]?.name || 'Unknown Manual';
-
-        sources.push({
-          manual_id: result.metadata.manualId,
-          manual_name: manualName,
-          page: result.metadata.pageNum || 1
-        });
-      } catch (error) {
-        console.error('Error getting source info:', error);
-        sources.push({
-          manual_id: result.metadata.manualId,
-          manual_name: 'Service Manual',
-          page: result.metadata.pageNum || 1
-        });
-      }
-    }
-
-    return sources;
-  }
-
-  /**
-   * Determine confidence level based on search results and response quality
-   */
-  private determineConfidence(searchResults: any[], response: string): 'high' | 'medium' | 'low' {
-    // High confidence: Multiple good matches with high scores
-    if (searchResults.length >= 3 && searchResults[0].score > 0.8) {
-      return 'high';
-    }
-
-    // Medium confidence: Some matches or response contains specific technical details
-    if (searchResults.length >= 2 || response.includes('page') || /\b\d{2}-\d{4}-\d{3}\b/.test(response)) {
-      return 'medium';
-    }
-
-    // Low confidence: Few or no matches, generic response
-    return 'low';
   }
 
   private getMockResponse(request: RagQueryRequest): RagQueryResponse {

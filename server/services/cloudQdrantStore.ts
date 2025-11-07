@@ -53,7 +53,7 @@ class FreeEmbeddings {
     for (const text of texts) {
       try {
         const output = await extractor(text, { pooling: 'mean', normalize: true });
-        const embedding = Array.from(output.data);
+        const embedding = Array.from(output.data as number[]);
         embeddings.push(embedding);
       } catch (error) {
         console.error('Error generating embedding for text:', error);
@@ -69,7 +69,7 @@ class FreeEmbeddings {
 
     try {
       const output = await extractor(text, { pooling: 'mean', normalize: true });
-      return Array.from(output.data);
+      return Array.from(output.data as number[]);
     } catch (error) {
       console.error('Error generating embedding for query:', error);
       return new Array(384).fill(0);
@@ -100,7 +100,7 @@ export class CloudQdrantStore {
       console.log('🔗 Connecting to Cloud Qdrant...');
 
       // Test connection
-      await this.qdrant.api('get', '/health');
+      await this.qdrant.getCollections();
       console.log('✅ Cloud Qdrant connection successful');
 
       // Create collection if it doesn't exist
@@ -242,12 +242,33 @@ export class CloudQdrantStore {
       // Generate embedding for the query
       const queryEmbedding = await this.embeddings.embedQuery(query);
 
-      // Build filter for Qdrant
+      // Build filter for Qdrant with improved model/brand filtering
       let filterConditions: any = {};
+      const mustConditions: any[] = [];
+
       if (filter?.manualId) {
-        filterConditions.must = [
-          { key: 'manualId', match: { value: filter.manualId } }
-        ];
+        mustConditions.push({ key: 'manualId', match: { value: filter.manualId } });
+      }
+
+      // Support filtering by model name (for manual selection dropdown)
+      if (filter?.model) {
+        // Try to match model in metadata
+        mustConditions.push({ 
+          key: 'metadata.model', 
+          match: { text: filter.model } 
+        });
+      }
+
+      // Support filtering by brand
+      if (filter?.brand) {
+        mustConditions.push({ 
+          key: 'metadata.brand', 
+          match: { text: filter.brand } 
+        });
+      }
+
+      if (mustConditions.length > 0) {
+        filterConditions.must = mustConditions;
       }
 
       // Search in Qdrant
@@ -261,14 +282,14 @@ export class CloudQdrantStore {
 
       // Convert results
       return searchResult.map(hit => ({
-        id: hit.payload?.originalId || hit.id, // Use original ID from payload
-        text: hit.payload?.text || '',
+        id: String(hit.payload?.originalId || hit.id || ''), // Use original ID from payload
+        text: String(hit.payload?.text || ''),
         metadata: {
-          manualId: hit.payload?.manualId || '',
+          manualId: String(hit.payload?.manualId || ''),
           pageNum: hit.payload?.pageNum,
           startOffset: hit.payload?.startOffset,
           endOffset: hit.payload?.endOffset,
-          ...hit.payload?.metadata
+          ...(hit.payload?.metadata || {})
         } as ChunkMetadata,
         score: hit.score || 0
       }));
@@ -335,7 +356,7 @@ export class CloudQdrantStore {
         // Extract originalIds from payloads
         for (const point of response.points) {
           if (point.payload?.originalId) {
-            existingIds.add(point.payload.originalId);
+            existingIds.add(String(point.payload.originalId));
           }
         }
 
@@ -345,7 +366,7 @@ export class CloudQdrantStore {
         }
 
         // Set offset for next batch
-        offset = response.points[response.points.length - 1].id;
+        offset = String(response.points[response.points.length - 1].id);
 
         if (existingIds.size % 10000 === 0) {
           console.log(`   📋 Found ${existingIds.size.toLocaleString()} existing IDs so far...`);
