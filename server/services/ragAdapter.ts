@@ -129,8 +129,13 @@ Please provide a detailed troubleshooting response based on the manual content.`
       await this.storeQuery(request, ragResponse);
 
       return ragResponse;
+<<<<<<< HEAD
     } catch (error) {
       console.error('RAG query failed, falling back to mock response:', error.message);
+=======
+    } catch (error: any) {
+      console.error('RAG query failed, falling back to mock response:', error?.message || error);
+>>>>>>> all-ui-working
       // Fall back to mock response when service is unavailable
       const mockResponse = this.getMockResponse(request);
       await this.storeQuery(request, mockResponse);
@@ -161,8 +166,13 @@ Please provide a detailed troubleshooting response based on the manual content.`
           });
         }
       }
+<<<<<<< HEAD
     } catch (error) {
       console.error('Failed to store RAG query:', error.message);
+=======
+    } catch (error: any) {
+      console.error('Failed to store RAG query:', error?.message || error);
+>>>>>>> all-ui-working
       // Don't throw - logging failure shouldn't break the main flow
     }
   }
@@ -191,7 +201,11 @@ Please provide a detailed troubleshooting response based on the manual content.`
         if (manual) {
           sources.push({
             manual_id: manualId,
+<<<<<<< HEAD
             manual_name: manual.title,
+=======
+            manual_name: manual.name,
+>>>>>>> all-ui-working
             page: result.metadata.pageNum || 1
           });
         }
@@ -233,6 +247,7 @@ Please provide a detailed troubleshooting response based on the manual content.`
     return 'low';
   }
   
+<<<<<<< HEAD
   /**
    * Generate a mock response when no results are found
    */
@@ -256,6 +271,8 @@ Would you like me to help you schedule a service appointment?`,
       request_id: `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     };
   }
+=======
+>>>>>>> all-ui-working
 
   /**
    * Extract numbered steps from the response text
@@ -313,6 +330,7 @@ Would you like me to help you schedule a service appointment?`,
     return parts.slice(0, 5); // Limit to 5 parts
   }
 
+<<<<<<< HEAD
   /**
    * Get source information for search results
    */
@@ -366,6 +384,8 @@ Would you like me to help you schedule a service appointment?`,
     return 'low';
   }
 
+=======
+>>>>>>> all-ui-working
   private getMockResponse(request: RagQueryRequest): RagQueryResponse {
     const responses = {
       default: {

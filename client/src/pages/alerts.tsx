@@ -182,7 +182,11 @@ export default function Alerts() {
               }, {}) || {};
 
               return Object.entries(alertsByContainer).map(([containerId, { container, alerts: containerAlerts }]: [string, any]) => (
+<<<<<<< HEAD
                 <div key={containerId} className="bg-card border border-border rounded-lg p-4  flex flex-col h-full">
+=======
+                <div key={containerId} className="bg-card border border-border rounded-lg p-4">
+>>>>>>> all-ui-working
                   {/* Container Header */}
                   <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
                     <div>
@@ -205,8 +209,12 @@ export default function Alerts() {
                   </div>
 
                   {/* Scrollable Alerts List */}
+<<<<<<< HEAD
                   <div className="space-y-3 flex-1 overflow-y-auto min-h-0">
 
+=======
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+>>>>>>> all-ui-working
                     {containerAlerts.map((alert: any) => (
                       <AlertItem
                         key={alert.id}

@@ -50,3 +50,7 @@ try {
 
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> all-ui-working

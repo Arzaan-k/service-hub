@@ -112,3 +112,7 @@ Expected output:
 
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> all-ui-working

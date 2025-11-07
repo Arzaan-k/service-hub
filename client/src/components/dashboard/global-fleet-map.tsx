@@ -889,7 +889,11 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
   }, {} as Record<string, number>);
 
   return (
+<<<<<<< HEAD
     <Card className="h-full flex flex-col">
+=======
+    <Card>
+>>>>>>> all-ui-working
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Globe className="h-5 w-5" />
@@ -942,7 +946,11 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
           </Button>
         </div>
       </CardHeader>
+<<<<<<< HEAD
       <CardContent className="flex-1 flex flex-col">
+=======
+      <CardContent>
+>>>>>>> all-ui-working
         <div className="mb-3 flex items-center gap-2">
           <select
             value={region}
@@ -962,7 +970,11 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
           </div>
         )}
         
+<<<<<<< HEAD
         <div ref={mapRef} className="w-full flex-1 rounded-lg border min-h-96" />
+=======
+        <div ref={mapRef} className="w-full h-96 rounded-lg border" />
+>>>>>>> all-ui-working
         
         <div className="mt-4 space-y-3">
           <div className="flex flex-wrap gap-4 text-sm">

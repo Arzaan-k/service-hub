@@ -18,3 +18,7 @@ testQdrant();
 
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> all-ui-working

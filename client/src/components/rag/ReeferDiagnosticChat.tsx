@@ -7,8 +7,16 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+<<<<<<< HEAD
 import { apiRequest } from '@/lib/queryClient';
 
+=======
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { apiRequest } from '@/lib/queryClient';
+
+type Confidence = 'high' | 'medium' | 'low';
+
+>>>>>>> all-ui-working
 interface Message {
   id: string;
   type: 'user' | 'assistant';
@@ -21,7 +29,11 @@ interface Message {
       manual_name: string;
       page: number;
     }>;
+<<<<<<< HEAD
     confidence: 'high' | 'medium' | 'low';
+=======
+    confidence: Confidence;
+>>>>>>> all-ui-working
     suggestedParts?: string[];
   };
 }
@@ -35,6 +47,25 @@ interface ReeferDiagnosticChatProps {
   compact?: boolean;
 }
 
+<<<<<<< HEAD
+=======
+const MANUAL_OPTIONS = [
+  'ThermoKing Mp4000 TK-61110-4-OP',
+  'Manual MP3000',
+  'Manual MP4000',
+  'DAIKIN LXE10E-A14 LXE10E-A15',
+  'Thermoking MAGNUM SL mP4000 TK 548414PM',
+  'Manual MP5000',
+  'Daikin LXE10E100 or later Manual',
+  'Daikin LXE10E-A',
+  'Manual Carrier Refrigeration Models 69NT20-274, 69NT40-441, 69NT40-444, 69NT40-454',
+  'Carrier 69NT40-541-505, 508 and 509 Manual',
+  'DAIKIN LXE10E100 or Later LXE10E-A LXE10E-1',
+  'Carrier 69NT40-561-300 to 399',
+  'Starcool Reefer Manual Model SCI-20-40-CA and SCU-20-40 , Model SCI-Basic-CA-CR and SCU'
+];
+
+>>>>>>> all-ui-working
 export default function ReeferDiagnosticChat({
   containerId,
   containerModel,
@@ -46,6 +77,11 @@ export default function ReeferDiagnosticChat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+<<<<<<< HEAD
+=======
+  const [selectedManual, setSelectedManual] = useState('');
+  const [error, setError] = useState<string | null>(null);
+>>>>>>> all-ui-working
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -90,36 +126,76 @@ export default function ReeferDiagnosticChat({
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
+<<<<<<< HEAD
 
     try {
       // Call new diagnosis endpoint (manual-grounded)
       const ragResponse = await apiRequest('POST', '/api/rag/query', {
         unit_id: containerId,
         unit_model: containerModel,
+=======
+    setError(null);
+
+    try {
+      // Call new diagnosis endpoint (manual-grounded)
+      const response = await apiRequest('POST', '/api/rag/query', {
+        unit_id: containerId,
+        unit_model: selectedManual || containerModel,
+>>>>>>> all-ui-working
         alarm_code: alarmCode,
         query: userMessage.content,
         context: context || {}
       });
 
+<<<<<<< HEAD
+=======
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const ragResponse = await response.json();
+
+      // Validate response structure
+      if (!ragResponse || !ragResponse.answer) {
+        throw new Error('Invalid response from server');
+      }
+
+>>>>>>> all-ui-working
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: ragResponse.answer,
         timestamp: new Date(),
         metadata: {
+<<<<<<< HEAD
           steps: ragResponse.steps,
           sources: ragResponse.sources,
           confidence: ragResponse.confidence,
           suggestedParts: ragResponse.suggested_spare_parts || ragResponse.suggestedParts
+=======
+          steps: ragResponse.steps || [],
+          sources: ragResponse.sources || [],
+          confidence: ragResponse.confidence || 'low',
+          suggestedParts: ragResponse.suggested_spare_parts || ragResponse.suggestedParts || []
+>>>>>>> all-ui-working
         }
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+<<<<<<< HEAD
     } catch (error) {
       console.error('RAG query failed:', error);
 
       // Show error message to user instead of mock response
       const errorResponse = getErrorMessage();
+=======
+    } catch (error: any) {
+      console.error('RAG query failed:', error);
+      setError(error?.message || 'Failed to get response');
+
+      // Show error message to user
+      const errorResponse = getErrorMessage(error?.message);
+>>>>>>> all-ui-working
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
@@ -308,6 +384,23 @@ export default function ReeferDiagnosticChat({
         <Separator className="bg-[#223351]" />
 
         <div className="p-4">
+<<<<<<< HEAD
+=======
+          <div className="mb-2">
+            <Select value={selectedManual} onValueChange={setSelectedManual}>
+              <SelectTrigger className="w-full bg-[#0e2038] border-[#223351] text-white">
+                <SelectValue placeholder="Select a manual (optional)" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0e2038] border-[#223351] text-white">
+                {MANUAL_OPTIONS.map((option, index) => (
+                  <SelectItem key={index} value={option} className="text-white hover:bg-[#223351]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+>>>>>>> all-ui-working
           <div className="flex gap-2">
             <Input
               value={inputValue}
@@ -339,10 +432,46 @@ export default function ReeferDiagnosticChat({
 }
 
 // Error message function for when RAG service is unavailable
+<<<<<<< HEAD
 function getErrorMessage() {
   return {
     answer: "Sorry, I'm having trouble accessing the diagnostic database right now. Please try again later or contact support.",
     steps: [],
+=======
+function getErrorMessage(errorMsg?: string) {
+  const isServerError = errorMsg?.includes('Server error');
+  const isNetworkError = errorMsg?.includes('Failed to fetch') || errorMsg?.includes('Network');
+  
+  let answer = "Sorry, I'm having trouble accessing the diagnostic database right now.";
+  let steps: string[] = [];
+  
+  if (isServerError) {
+    answer = "The diagnostic service is currently unavailable. This might be temporary.";
+    steps = [
+      "Wait a moment and try your question again",
+      "Check if you're connected to the internet",
+      "Contact support if the issue persists"
+    ];
+  } else if (isNetworkError) {
+    answer = "Unable to connect to the diagnostic service. Please check your internet connection.";
+    steps = [
+      "Verify your internet connection",
+      "Refresh the page and try again",
+      "Contact your network administrator if the issue persists"
+    ];
+  } else {
+    answer = "I encountered an issue processing your request. Please try rephrasing your question or try again.";
+    steps = [
+      "Try rephrasing your question",
+      "Be more specific about the issue",
+      "Contact support if you continue to experience problems"
+    ];
+  }
+  
+  return {
+    answer,
+    steps,
+>>>>>>> all-ui-working
     sources: [],
     confidence: 'low' as const,
     suggestedParts: []

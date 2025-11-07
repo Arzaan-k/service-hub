@@ -13,6 +13,7 @@ interface AlertPanelProps {
   containers: any[];
 }
 
+<<<<<<< HEAD
 interface AlertCardContentProps {
   alert: Alert;
   container: any;
@@ -59,6 +60,8 @@ function AlertCardContent({ alert, container, colors }: AlertCardContentProps) {
   );
 }
 
+=======
+>>>>>>> all-ui-working
 export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
   const getSeverityColors = (severity: string) => {
     const colors = {
@@ -71,7 +74,11 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
   };
 
   return (
+<<<<<<< HEAD
     <div className="bg-card border border-alerts/20 rounded-lg p-6 h-full flex flex-col">
+=======
+    <div className="bg-card border border-alerts/20 rounded-lg p-6">
+>>>>>>> all-ui-working
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-alerts/10 rounded-lg">
@@ -82,6 +89,7 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
         <button className="text-xs text-alerts hover:underline">View All</button>
       </div>
 
+<<<<<<< HEAD
       <div className="pr-2 scrollbar-thin flex-1">
         <div className="h-full flex flex-col">
           {alerts.length <= 4 ? (
@@ -119,6 +127,54 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
             </div>
           )}
         </div>
+=======
+      <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin">
+        {alerts.slice(0, 5).map((alert) => {
+          const container = containers.find((c) => c.id === alert.containerId);
+          const colors = getSeverityColors(alert.severity);
+
+          return (
+            <div key={alert.id} className={`p-3 ${colors.bg} border ${colors.border} rounded-lg`}>
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-0.5 ${colors.badge} text-white text-xs font-medium rounded uppercase`}
+                  >
+                    {alert.severity}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(alert.detectedAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className={`w-2 h-2 ${colors.badge} rounded-full pulse-indicator`}></div>
+              </div>
+              <p className={`text-sm font-medium ${colors.text} mb-1`}>{alert.title}</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                {container?.containerCode || container?.containerId || "Unknown"}
+              </p>
+              <p className="text-xs text-foreground mb-3">{alert.description}</p>
+              {alert.aiClassification && (
+                <p className="text-xs text-foreground mb-3">
+                  AI Analysis: {alert.aiClassification.rootCause}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium ${colors.badge} text-white rounded hover:opacity-90 transition-smooth`}
+                >
+                  Dispatch Technician
+                </button>
+                <button className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted/20 transition-smooth">
+                  Details
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {alerts.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-8">No active alerts</p>
+        )}
+>>>>>>> all-ui-working
       </div>
     </div>
   );

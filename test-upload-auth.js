@@ -77,3 +77,7 @@ testAuthAndUpload();
 
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> all-ui-working

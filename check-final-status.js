@@ -46,3 +46,7 @@ checkMigrationStatus();
 
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> all-ui-working

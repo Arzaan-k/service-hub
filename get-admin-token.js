@@ -45,3 +45,7 @@ getAdminToken();
 
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> all-ui-working

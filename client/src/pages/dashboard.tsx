@@ -120,6 +120,7 @@ export default function Dashboard() {
     websocket.on("container_location_update", onContainerLocUpdate);
 
     return () => {
+<<<<<<< HEAD
       websocket.off("alert_created", () => {
         queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
         queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
@@ -127,6 +128,10 @@ export default function Dashboard() {
       websocket.off("container_created", () => {
         queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       });
+=======
+      websocket.off("alert_created");
+      websocket.off("container_created");
+>>>>>>> all-ui-working
       websocket.off("device_update", onDeviceUpdate);
       websocket.off("container_location_update", onContainerLocUpdate);
     };
@@ -142,17 +147,28 @@ export default function Dashboard() {
           <KPICards stats={stats} />
 
           {/* Map & Alerts */}
+<<<<<<< HEAD
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <div className="lg:col-span-2 h-full">
+=======
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+>>>>>>> all-ui-working
               <ErrorBoundary>
                 <GlobalFleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
+<<<<<<< HEAD
             <div className="h-full">
               <ErrorBoundary>
                 <AlertPanel alerts={alerts || []} containers={containers || []} />
               </ErrorBoundary>
             </div>
+=======
+            <ErrorBoundary>
+              <AlertPanel alerts={alerts || []} containers={containers || []} />
+            </ErrorBoundary>
+>>>>>>> all-ui-working
           </div>
 
           {/* Service Requests & WhatsApp */}

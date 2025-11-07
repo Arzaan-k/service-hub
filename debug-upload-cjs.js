@@ -79,3 +79,7 @@ debugUpload();
 
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> all-ui-working

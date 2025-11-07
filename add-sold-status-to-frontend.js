@@ -83,3 +83,7 @@ addSoldStatusToFrontend();
 
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> all-ui-working
