@@ -288,15 +288,15 @@ async function handleRealClientRequestService(from: string, user: any, session: 
 
     await sendInteractiveList(
       from,
-      '🔧 *Service Request*\n\nWhich container needs service?\n\n*Select one or multiple containers from the list below.*',
-      'Select Containers',
+      '🔧 *Service Request*\n\nWhich container needs service?\n\n*Select a container from the list below.*',
+      'Select Container',
       [{ title: 'Your Containers', rows }]
     );
     
     // Send instruction message
     await sendTextMessage(
       from,
-      '📌 *Tip:* You can select multiple containers if needed. After selecting, I\'ll ask for error code and description.'
+      '📌 *Tip:* After selecting a container, you can add more containers or proceed with the request.'
     );
   } catch (error) {
     console.error('[WhatsApp] Error in handleRealClientRequestService:', error);
@@ -3727,6 +3727,20 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
 // Handle list selections
 async function handleListSelection(listId: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const conversationState = session.conversationState || {};
+
+  // Handle container selection for service request (real client flow)
+  if (listId.startsWith('select_container_')) {
+    const containerId = listId.replace('select_container_', '');
+    await handleContainerSelection(containerId, from, user, session);
+    return;
+  }
+
+  // Handle container selection for status check (real client flow)
+  if (listId.startsWith('status_container_')) {
+    const containerId = listId.replace('status_container_', '');
+    await showContainerStatus(containerId, from, user, session);
+    return;
+  }
 
   // Technician service selection via list (skip SR-MOCK selections here; handled below)
   if (user.role === 'technician' && listId.startsWith('select_service_') && !listId.includes('SR-MOCK-')) {
