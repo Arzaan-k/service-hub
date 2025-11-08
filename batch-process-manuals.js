@@ -164,7 +164,10 @@ async function batchProcessAllManuals() {
 
 batchProcessAllManuals().catch(console.error);
 
+<<<<<<< Updated upstream
 
 
 
 
+=======
+>>>>>>> Stashed changes

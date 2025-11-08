@@ -8,6 +8,10 @@ import { nanoid } from "nanoid";
 
 const viteLogger = createLogger();
 
+<<<<<<< Updated upstream
+=======
+ 
+>>>>>>> Stashed changes
 /**
  * Simple console logger with timestamp.
  */
@@ -22,6 +26,10 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+<<<<<<< Updated upstream
+=======
+ 
+>>>>>>> Stashed changes
 /**
  * Sets up Vite in middleware mode for Express during development.
  */
@@ -46,6 +54,10 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
   /**
    * Middleware to serve client through Vite
    * (except API routes)
@@ -79,6 +91,11 @@ export async function setupVite(app: Express, server: Server) {
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
+<<<<<<< Updated upstream
+=======
+ 
+ 
+>>>>>>> Stashed changes
       console.error("[VITE] Middleware error:", e);
       next(e);
     }

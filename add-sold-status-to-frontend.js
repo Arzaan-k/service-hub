@@ -53,6 +53,7 @@ async function addSoldStatusToFrontend() {
 
 addSoldStatusToFrontend();
 
+<<<<<<< Updated upstream
 
 
 
@@ -84,3 +85,5 @@ addSoldStatusToFrontend();
 
 
 
+=======
+>>>>>>> Stashed changes

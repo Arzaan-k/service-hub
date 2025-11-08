@@ -106,8 +106,11 @@ async function processAllChunksToQdrant() {
 }
 
 processAllChunksToQdrant().catch(console.error);
+<<<<<<< Updated upstream
 
 
 
 
 
+=======
+>>>>>>> Stashed changes

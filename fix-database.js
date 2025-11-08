@@ -46,4 +46,7 @@ checkAndFixDatabase();
 
 
 
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes

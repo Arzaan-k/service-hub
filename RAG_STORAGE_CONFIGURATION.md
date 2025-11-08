@@ -107,9 +107,13 @@ Expected output:
 
 ---
 
+<<<<<<< Updated upstream
 **System is fully configured and operational! 🎉**
 
 
 
 
 
+=======
+**System is fully configured and operational! 🎉**
+>>>>>>> Stashed changes

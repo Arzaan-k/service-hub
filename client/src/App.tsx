@@ -104,9 +104,12 @@ function Router() {
       <Route path="/orbcomm-data">
         {() => <ProtectedRoute component={OrbcommData} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
+<<<<<<< Updated upstream
       <Route path="/orbcomm/live-data">
         {() => <ProtectedRoute component={OrbcommLiveData} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
+=======
+>>>>>>> Stashed changes
       <Route path="/rag-chat">
         {() => <ProtectedRoute component={RagChat} />}
       </Route>

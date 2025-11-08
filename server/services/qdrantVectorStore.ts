@@ -243,7 +243,10 @@ export class QdrantVectorStore {
 // Export singleton instance
 export const qdrantVectorStore = new QdrantVectorStore();
 
+<<<<<<< Updated upstream
 
 
 
 
+=======
+>>>>>>> Stashed changes

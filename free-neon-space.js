@@ -59,7 +59,10 @@ async function freeNeonSpace() {
 
 freeNeonSpace().catch(console.error);
 
+<<<<<<< Updated upstream
 
 
 
 
+=======
+>>>>>>> Stashed changes

@@ -26,7 +26,10 @@ echo -e "\nDone."
 
 
 
+<<<<<<< Updated upstream
 
 
 
 
+=======
+>>>>>>> Stashed changes

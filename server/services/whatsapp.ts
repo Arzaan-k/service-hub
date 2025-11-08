@@ -55,11 +55,615 @@ function cleanPhone(number: string): string {
 }
 
 // Test number helpers (role-flow testing; production-safe)
+<<<<<<< Updated upstream
 const ROLE_TEST_NUMBERS = new Set(['917021307474', '7021307474']);
+=======
+// Allow configuration via env WHATSAPP_TEST_NUMBERS=comma,separated,digits
+// Removed 918218994855 to use real data for Crystal Group
+const DEFAULT_TEST_NUMBERS = ['917021307474', '7021307474'];
+const ROLE_TEST_NUMBERS = new Set(
+  (process.env.WHATSAPP_TEST_NUMBERS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => s)
+    .map(cleanPhone)
+    .filter(Boolean)
+    .concat(DEFAULT_TEST_NUMBERS)
+);
+>>>>>>> Stashed changes
 function isRoleTestNumber(input: string): boolean {
   return ROLE_TEST_NUMBERS.has(cleanPhone(input));
 }
 
+<<<<<<< Updated upstream
+=======
+// Mock data for dedicated test flows
+const MOCK_CONTAINERS = [
+  {
+    id: 'TEST001',
+    type: 'refrigerated',
+    status: 'active',
+    location: 'Los Angeles',
+    issue: 'Cooling system check',
+    technician: 'John Doe',
+    eta: '2 hours'
+  },
+  {
+    id: 'TEST002',
+    type: 'dry',
+    status: 'active',
+    location: 'Los Angeles',
+    issue: 'Door seal integrity test',
+    technician: 'Jane Smith',
+    eta: '3 hours'
+  },
+  {
+    id: 'TEST003',
+    type: 'refrigerated',
+    status: 'active',
+    location: 'Los Angeles',
+    issue: 'Sensor calibration review',
+    technician: 'Mike Johnson',
+    eta: '90 minutes'
+  }
+];
+
+const MOCK_TECHNICIAN_JOBS = [
+  {
+    id: 'TEST001',
+    label: 'Service TEST001 – 10:00 AM',
+    type: 'Service',
+    location: 'Los Angeles',
+    status: 'Scheduled',
+    client: 'ACME Logistics'
+  },
+  {
+    id: 'TEST002',
+    label: 'Inspect TEST002 – 2:30 PM',
+    type: 'Inspection',
+    location: 'Los Angeles',
+    status: 'Scheduled',
+    client: 'Harbor Traders'
+  },
+  {
+    id: 'TEST003',
+    label: 'Repair TEST003 – 5:00 PM',
+    type: 'Repair',
+    location: 'Los Angeles',
+    status: 'Scheduled',
+    client: 'Fresh Foods Inc'
+  }
+];
+
+async function sendTestRoleSelectionMenu(to: string): Promise<void> {
+  await sendInteractiveButtons(
+    to,
+    '🧪 Select role to test WhatsApp flow:',
+    [
+      { id: 'test_role_technician', title: '🔧 Technician' },
+      { id: 'test_role_client', title: '🏢 Client' }
+    ]
+  );
+}
+
+async function sendTestClientMenu(to: string): Promise<void> {
+  await sendInteractiveButtons(
+    to,
+    '🏢 Client Mode\n\nSelect an option to continue:',
+    [
+      { id: 'test_client_request_service', title: '🧰 Request Service' },
+      { id: 'test_client_status', title: '📊 Status' },
+      { id: 'switch_role', title: '🔄 Switch Role' }
+    ]
+  );
+}
+
+/**
+ * Send real client menu (for actual registered clients, not test mode)
+ */
+async function sendRealClientMenu(to: string): Promise<void> {
+  await sendInteractiveButtons(
+    to,
+    '🏢 *Client Mode*\n\nHow can I help you today?',
+    [
+      { id: 'request_service', title: '🧰 Request Service' },
+      { id: 'status', title: '📊 Status' }
+    ]
+  );
+}
+
+async function sendTestTechnicianMenu(to: string): Promise<void> {
+  await sendInteractiveButtons(
+    to,
+    '🔧 Technician Mode\n\nSelect an option to continue:',
+    [
+      { id: 'test_tech_view_schedule', title: '📋 View Schedule' },
+      { id: 'test_tech_start_service', title: '🧰 Start Service' },
+      { id: 'switch_role', title: '🔄 Switch Role' }
+    ]
+  );
+}
+
+async function promptMockContainerSelection(to: string): Promise<void> {
+  await sendInteractiveButtons(
+    to,
+    '🔧 Service Request\n\nWhich container needs service?',
+    [
+      { id: 'test_client_select_container', title: '📦 Select Container' }
+    ]
+  );
+}
+
+async function sendMockContainerList(to: string): Promise<void> {
+  const bodyLines = ['📦 Select Container', ''];
+  for (const c of MOCK_CONTAINERS) {
+    bodyLines.push(`${c.id} – ${c.type}`);
+    bodyLines.push(`Status: ${c.status} | Location: ${c.location}`);
+    bodyLines.push('');
+  }
+  await sendInteractiveButtons(
+    to,
+    bodyLines.join('\n'),
+    [
+      { id: 'test_container_TEST001', title: 'TEST001' },
+      { id: 'test_container_TEST002', title: 'TEST002' },
+      { id: 'test_container_TEST003', title: 'TEST003' }
+    ]
+  );
+}
+
+function getMockContainerDetail(containerId: string) {
+  return MOCK_CONTAINERS.find(container => container.id === containerId);
+}
+
+async function sendMockScheduleButtons(to: string): Promise<void> {
+  await sendInteractiveButtons(
+    to,
+    '📅 Today\'s Schedule\n\nSelect a job to view details:',
+    MOCK_TECHNICIAN_JOBS.map(job => ({
+      id: `test_job_${job.id}`,
+      title: job.label
+    }))
+  );
+}
+
+function getMockTechnicianJob(jobId: string) {
+  return MOCK_TECHNICIAN_JOBS.find(job => job.id === jobId);
+}
+
+// ========================================
+// REAL CLIENT MODE FUNCTIONS (Dashboard Integration)
+// ========================================
+
+/**
+ * Handle real client service request flow - fetches actual containers from database
+ */
+async function handleRealClientRequestService(from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    console.log(`[WhatsApp] handleRealClientRequestService - user: ${user.name} (${user.id})`);
+    
+    const customer = await storage.getCustomerByUserId(user.id);
+    if (!customer) {
+      console.error(`[WhatsApp] Customer profile not found for user ${user.id}`);
+      await sendTextMessage(from, '❌ Customer profile not found. Please contact support.');
+      return;
+    }
+
+    console.log(`[WhatsApp] Found customer: ${customer.companyName} (${customer.id})`);
+    
+    const containers = await storage.getContainersByCustomer(customer.id);
+    console.log(`[WhatsApp] Fetched ${containers.length} containers for customer ${customer.id}`);
+    console.log(`[WhatsApp] Container details:`, containers.map((c: any) => ({
+      id: c.id,
+      code: c.containerCode,
+      status: c.status,
+      currentCustomerId: c.currentCustomerId
+    })));
+    
+    // Show all containers assigned to client, regardless of status
+    // (deployed, sold, maintenance, etc. are all valid statuses)
+    if (containers.length === 0) {
+      console.error(`[WhatsApp] No containers found for customer ${customer.id} (${customer.companyName})`);
+      await sendTextMessage(from, '❌ No containers assigned to your account. Please contact support.');
+      return;
+    }
+
+    console.log(`[WhatsApp] Proceeding with ${containers.length} containers`);
+
+    // Update session to track service request flow
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        flow: 'real_service_request',
+        step: 'awaiting_container_selection',
+        customerId: customer.id,
+        selectedContainers: []
+      }
+    });
+
+    // Always use list for multi-select capability (WhatsApp lists support multi-selection)
+    const rows = containers.map((c: any) => {
+      const location = (c.currentLocation as any)?.address || (c.currentLocation as any)?.city || 'Unknown';
+      return {
+        id: `select_container_${c.id}`,
+        title: c.containerCode,
+        description: `${c.type} | ${c.status} | ${location}`.substring(0, 72)
+      };
+    });
+
+    await sendInteractiveList(
+      from,
+      '🔧 *Service Request*\n\nWhich container needs service?\n\n*Select a container from the list below.*',
+      'Select Container',
+      [{ title: 'Your Containers', rows }]
+    );
+    
+    // Send instruction message
+    await sendTextMessage(
+      from,
+      '📌 *Tip:* After selecting a container, you can add more containers or proceed with the request.'
+    );
+  } catch (error) {
+    console.error('[WhatsApp] Error in handleRealClientRequestService:', error);
+    await sendTextMessage(from, '❌ Error loading containers. Please try again.');
+  }
+}
+
+/**
+ * Handle container selection for service request (supports multi-select)
+ */
+async function handleContainerSelection(containerId: string, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    const container = await storage.getContainer(containerId);
+    if (!container) {
+      await sendTextMessage(from, '❌ Container not found.');
+      return;
+    }
+
+    const conversationState = session.conversationState || {};
+    const selectedContainers = conversationState.selectedContainers || [];
+    
+    // Add container to selection if not already selected
+    if (!selectedContainers.includes(containerId)) {
+      selectedContainers.push(containerId);
+    }
+
+    // Update session with selected container(s)
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        selectedContainers,
+        step: 'awaiting_more_containers'
+      }
+    });
+
+    // Get container codes for display
+    const containerCodes = [];
+    for (const cId of selectedContainers) {
+      const c = await storage.getContainer(cId);
+      if (c) containerCodes.push(c.containerCode);
+    }
+
+    // Ask if they want to add more containers or proceed
+    await sendTextMessage(
+      from,
+      `✅ *Container Added*\n\n📦 Selected: ${containerCodes.join(', ')}\n\n*Would you like to add more containers or proceed?*`
+    );
+    
+    await sendInteractiveButtons(
+      from,
+      'Choose an option:',
+      [
+        { id: 'add_more_containers', title: '➕ Add More' },
+        { id: 'proceed_with_selection', title: '✅ Proceed' }
+      ]
+    );
+  } catch (error) {
+    console.error('[WhatsApp] Error in handleContainerSelection:', error);
+    await sendTextMessage(from, '❌ Error processing selection. Please try again.');
+  }
+}
+
+/**
+ * Handle error code input from client
+ */
+async function handleErrorCodeInput(errorCode: string, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    const conversationState = session.conversationState || {};
+    
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        errorCode: errorCode.trim(),
+        step: 'awaiting_description'
+      }
+    });
+
+    await sendTextMessage(
+      from,
+      `✅ Error code noted: *${errorCode.trim()}*\n\n📝 *Please describe briefly what's happening* (2–3 sentences):`
+    );
+  } catch (error) {
+    console.error('[WhatsApp] Error in handleErrorCodeInput:', error);
+    await sendTextMessage(from, '❌ Error processing error code. Please try again.');
+  }
+}
+
+/**
+ * Handle issue description input from client
+ */
+async function handleIssueDescriptionInput(description: string, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    const conversationState = session.conversationState || {};
+    
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        issueDescription: description.trim(),
+        step: 'awaiting_photo_choice'
+      }
+    });
+
+    await sendInteractiveButtons(
+      from,
+      `✅ Description received.\n\n📸 *Would you like to attach photos?*`,
+      [
+        { id: 'attach_photos_yes', title: '✅ Yes' },
+        { id: 'attach_photos_no', title: '❌ No' }
+      ]
+    );
+  } catch (error) {
+    console.error('[WhatsApp] Error in handleIssueDescriptionInput:', error);
+    await sendTextMessage(from, '❌ Error processing description. Please try again.');
+  }
+}
+
+/**
+ * Handle photo attachment choice
+ */
+async function handlePhotoChoice(wantsPhotos: boolean, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    const conversationState = session.conversationState || {};
+    
+    if (wantsPhotos) {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: {
+          ...conversationState,
+          step: 'awaiting_photos',
+          beforePhotos: []
+        }
+      });
+
+      await sendTextMessage(
+        from,
+        `📸 *Please send your photos now.*\n\nYou can send multiple images. When done, type *DONE* to submit the service request.`
+      );
+    } else {
+      // No photos - create service request immediately
+      await createServiceRequestFromWhatsApp(from, user, session);
+    }
+  } catch (error) {
+    console.error('[WhatsApp] Error in handlePhotoChoice:', error);
+    await sendTextMessage(from, '❌ Error processing choice. Please try again.');
+  }
+}
+
+/**
+ * Handle photo upload from client
+ */
+async function handlePhotoUpload(mediaId: string, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    const conversationState = session.conversationState || {};
+    const beforePhotos = conversationState.beforePhotos || [];
+    
+    // Store media ID (in production, you'd download and store the actual image)
+    beforePhotos.push(mediaId);
+    
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        beforePhotos
+      }
+    });
+
+    await sendTextMessage(
+      from,
+      `✅ Photo ${beforePhotos.length} received.\n\nSend more photos or type *DONE* to submit.`
+    );
+  } catch (error) {
+    console.error('[WhatsApp] Error in handlePhotoUpload:', error);
+    await sendTextMessage(from, '❌ Error processing photo. Please try again.');
+  }
+}
+
+/**
+ * Create service request from WhatsApp conversation and save to database
+ */
+async function createServiceRequestFromWhatsApp(from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    const conversationState = session.conversationState || {};
+    const { selectedContainers, errorCode, issueDescription, beforePhotos, customerId } = conversationState;
+
+    if (!selectedContainers || selectedContainers.length === 0) {
+      await sendTextMessage(from, '❌ No containers selected. Please start again.');
+      return;
+    }
+
+    // Create service request for each selected container
+    const createdRequests = [];
+    for (const containerId of selectedContainers) {
+      const container = await storage.getContainer(containerId);
+      if (!container) continue;
+
+      const fullDescription = [
+        issueDescription || 'Service requested via WhatsApp',
+        errorCode && errorCode.toUpperCase() !== 'NA' ? `Error Code: ${errorCode}` : ''
+      ].filter(Boolean).join('\n\n');
+
+      const serviceRequest = await storage.createServiceRequest({
+        requestNumber: `SR-${Date.now()}${Math.floor(Math.random() * 1000)}`,
+        containerId: container.id,
+        customerId: customerId,
+        priority: 'normal',
+        status: 'pending',
+        issueDescription: fullDescription,
+        beforePhotos: beforePhotos || [],
+        createdBy: user.id,
+        createdAt: new Date(),
+        requestedAt: new Date()
+      });
+
+      createdRequests.push(serviceRequest);
+    }
+
+    // Clear conversation state
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {}
+    });
+
+    // Send confirmation
+    const requestNumbers = createdRequests.map(r => r.requestNumber).join(', ');
+    await sendTextMessage(
+      from,
+      `✅ *Your service request has been raised!*\n\n📋 Request Number(s): ${requestNumbers}\n\nA technician will contact you soon. You can check the status anytime by selecting "Status" from the menu.`
+    );
+
+    // Show client menu again
+    await sendRealClientMenu(from);
+  } catch (error) {
+    console.error('[WhatsApp] Error in createServiceRequestFromWhatsApp:', error);
+    await sendTextMessage(from, '❌ Error creating service request. Please contact support.');
+  }
+}
+
+/**
+ * Handle real client status check - shows real container status from database
+ */
+async function handleRealClientStatusCheck(from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    console.log(`[WhatsApp] handleRealClientStatusCheck - user: ${user.name} (${user.id})`);
+    
+    const customer = await storage.getCustomerByUserId(user.id);
+    if (!customer) {
+      console.error(`[WhatsApp] Customer profile not found for user ${user.id}`);
+      await sendTextMessage(from, '❌ Customer profile not found.');
+      return;
+    }
+
+    console.log(`[WhatsApp] Found customer: ${customer.companyName} (${customer.id})`);
+    
+    const containers = await storage.getContainersByCustomer(customer.id);
+    console.log(`[WhatsApp] Fetched ${containers.length} containers for status check`);
+    
+    if (containers.length === 0) {
+      console.error(`[WhatsApp] No containers found for customer ${customer.id}`);
+      await sendTextMessage(from, '❌ No containers found for your account.');
+      return;
+    }
+
+    console.log(`[WhatsApp] Showing ${containers.length} containers for status selection`);
+
+    // Update session
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        flow: 'check_status',
+        step: 'awaiting_container_selection_for_status',
+        customerId: customer.id
+      }
+    });
+
+    // Always use list for consistency and better UX
+    const rows = containers.map((c: any) => {
+      const location = (c.currentLocation as any)?.address || (c.currentLocation as any)?.city || 'Unknown';
+      return {
+        id: `status_container_${c.id}`,
+        title: c.containerCode,
+        description: `${c.type} | ${c.status} | ${location}`.substring(0, 72)
+      };
+    });
+
+    await sendInteractiveList(
+      from,
+      '📊 *Status Check*\n\nWhich container\'s status do you want to check?\n\n*Select a container to view its detailed status.*',
+      'Select Container',
+      [{ title: 'Your Containers', rows }]
+    );
+  } catch (error) {
+    console.error('[WhatsApp] Error in handleRealClientStatusCheck:', error);
+    await sendTextMessage(from, '❌ Error loading status. Please try again.');
+  }
+}
+
+/**
+ * Show detailed status for a specific container
+ */
+async function showContainerStatus(containerId: string, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  
+  try {
+    const container = await storage.getContainer(containerId);
+    if (!container) {
+      await sendTextMessage(from, '❌ Container not found.');
+      return;
+    }
+
+    // Get latest metrics if available
+    const metrics = await storage.getContainerMetrics(containerId);
+    const latestMetric = metrics && metrics.length > 0 ? metrics[0] : null;
+
+    // Get active service requests for this container
+    const serviceRequests = await storage.getServiceRequestsByCustomer(session.conversationState?.customerId || '');
+    const containerRequests = serviceRequests.filter((sr: any) => 
+      sr.containerId === containerId && ['pending', 'scheduled', 'in_progress'].includes(sr.status)
+    );
+
+    const location = (container.currentLocation as any)?.address || (container.currentLocation as any)?.city || 'Unknown';
+    const statusMsg = [
+      `📦 *${container.containerCode}*`,
+      '',
+      `🏷️ Type: ${container.type}`,
+      `📍 Location: ${location}`,
+      `✅ Status: ${container.status}`,
+      latestMetric ? `🌡️ Temperature: ${latestMetric.temperature || 'N/A'}°C` : '',
+      latestMetric ? `💧 Humidity: ${latestMetric.humidity || 'N/A'}%` : '',
+      '',
+      containerRequests.length > 0 ? `🔧 *Active Service Requests:*` : '✅ No active service requests',
+      ...containerRequests.map((sr: any) => 
+        `• ${sr.requestNumber} - ${sr.status}\n  ${sr.issueDescription.substring(0, 50)}...`
+      )
+    ].filter(Boolean).join('\n');
+
+    await sendTextMessage(from, statusMsg);
+
+    // Clear conversation state
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {}
+    });
+
+    // Show menu
+    await sendRealClientMenu(from);
+  } catch (error) {
+    console.error('[WhatsApp] Error in showContainerStatus:', error);
+    await sendTextMessage(from, '❌ Error loading container status.');
+  }
+}
+
+>>>>>>> Stashed changes
 export interface WhatsAppMessage {
   to: string;
   type: "text" | "interactive" | "template" | "media" | "flow";
@@ -985,6 +1589,7 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
     // Normalize phone: keep digits only
     const digitsOnly = (phoneNumber || '').replace(/\D/g, '');
     const cleanPhone = digitsOnly;
+<<<<<<< Updated upstream
 
     const { storage } = await import('../storage');
     let user = await storage.getUserByPhoneNumber(cleanPhone);
@@ -1002,13 +1607,66 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
 
     // Special case for test numbers: support country and local formats
     const isTestNumber = cleanPhone === '917021307474' || cleanPhone === '7021307474' || cleanPhone === '917021037474';
+=======
+    console.log(`[WhatsApp Auth] Looking up user for phone: ${phoneNumber} → normalized: ${cleanPhone}`);
+
+    const { storage } = await import('../storage');
+    
+    // Try multiple phone number formats to handle database inconsistencies
+    const phoneVariants = [
+      cleanPhone,                                    // 918218994855
+      `+${cleanPhone}`,                              // +918218994855
+    ];
+    
+    // Add variants with/without country code for Indian numbers
+    if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+      const withoutCountry = cleanPhone.slice(2);    // 8218994855
+      phoneVariants.push(withoutCountry);
+      phoneVariants.push(`+${withoutCountry}`);
+    } else if (cleanPhone.length === 10) {
+      const withIndia = `91${cleanPhone}`;           // 918218994855
+      phoneVariants.push(withIndia);
+      phoneVariants.push(`+${withIndia}`);
+    }
+
+    console.log(`[WhatsApp Auth] Trying phone variants:`, phoneVariants);
+
+    // Try all variants and collect all matching users
+    let users: any[] = [];
+    for (const variant of phoneVariants) {
+      const foundUser = await storage.getUserByPhoneNumber(variant);
+      if (foundUser && !users.find(u => u.id === foundUser.id)) {
+        users.push(foundUser);
+      }
+    }
+
+    // If multiple users found, prioritize client role over others
+    let user = null;
+    if (users.length > 1) {
+      console.log(`[WhatsApp Auth] Found ${users.length} users, prioritizing client role`);
+      user = users.find(u => u.role === 'client') || users[0];
+    } else if (users.length === 1) {
+      user = users[0];
+    }
+
+    if (user) {
+      console.log(`[WhatsApp Auth] Found user: ${user.name} (${user.id}) - Role: ${user.role}`);
+    }
+
+    // Special case for test numbers: support country and local formats (centralized)
+    const isTestNumber = isRoleTestNumber(cleanPhone);
+>>>>>>> Stashed changes
     if (isTestNumber && !user) {
       console.log('🧪 Creating mock user for testing WhatsApp flows');
       // Create a test user for the test number
       user = await storage.createUser({
         phoneNumber: cleanPhone,
         name: 'Test User',
+<<<<<<< Updated upstream
         email: 'test@example.com',
+=======
+        email: `test_${cleanPhone}@example.com`,
+>>>>>>> Stashed changes
         role: 'client', // Default role, can be overridden by testingRole
         password: 'test123',
         isActive: true,
@@ -1023,7 +1681,11 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
         userId: user.id,
         companyName: 'Test Company',
         contactPerson: 'Test Contact',
+<<<<<<< Updated upstream
         email: 'test@example.com',
+=======
+        email: `test_${cleanPhone}@example.com`,
+>>>>>>> Stashed changes
         phone: cleanPhone,
         whatsappNumber: cleanPhone,
         customerTier: 'standard',
@@ -1098,6 +1760,7 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
       };
     }
 
+<<<<<<< Updated upstream
     if (!user.whatsappVerified) {
       return {
         authorized: false,
@@ -1110,11 +1773,31 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
     if (user.role === 'client') {
       roleData = await storage.getCustomerByUserId(user.id);
       if (!roleData) {
+=======
+    // Get role-specific data based on user role
+    let roleData = null;
+    if (user.role === 'client') {
+      console.log(`[WhatsApp Auth] Looking up customer for user ${user.id} (${user.name})`);
+      roleData = await storage.getCustomerByUserId(user.id);
+      if (!roleData) {
+        console.error(`[WhatsApp Auth] Customer profile not found for user ${user.id}`);
+>>>>>>> Stashed changes
         return {
           authorized: false,
           error: "Client profile not found. Please contact support to complete your registration."
         };
       }
+<<<<<<< Updated upstream
+=======
+      console.log(`[WhatsApp Auth] Found customer: ${roleData.companyName} (${roleData.id})`);
+
+      // Auto-enable WhatsApp for clients with customer profiles (backward compatibility)
+      if (!user.whatsappVerified) {
+        console.log(`[WhatsApp Auth] Auto-enabling WhatsApp for client ${user.name}`);
+        await storage.updateUser(user.id, { whatsappVerified: true });
+        user.whatsappVerified = true;
+      }
+>>>>>>> Stashed changes
     } else if (user.role === 'technician') {
       roleData = await storage.getTechnicianByUserId(user.id);
       if (!roleData) {
@@ -1123,6 +1806,25 @@ export async function authorizeWhatsAppMessage(phoneNumber: string): Promise<{au
           error: "Technician profile not found. Please contact support to complete your registration."
         };
       }
+<<<<<<< Updated upstream
+=======
+
+      // Check WhatsApp verification for technicians
+      if (!user.whatsappVerified) {
+        return {
+          authorized: false,
+          error: "WhatsApp access not enabled. Please contact support."
+        };
+      }
+    } else {
+      // For other roles, check WhatsApp verification
+      if (!user.whatsappVerified) {
+        return {
+          authorized: false,
+          error: "WhatsApp access not enabled. Please contact support."
+        };
+      }
+>>>>>>> Stashed changes
     }
 
     return { authorized: true, user, roleData };
@@ -1218,7 +1920,11 @@ export async function handleWebhook(body: any): Promise<any> {
                if (!testingRole) {
                  // Always send an immediate text acknowledgement so the user sees a reply even if interactive fails
                  try {
+<<<<<<< Updated upstream
                    await sendTextMessage(from, '🧪 Hi! Choose a role to test: reply with "technician" or "client". Buttons will appear shortly.');
+=======
+                   await sendTextMessage(from, '🧪 Hi! Choose a role to test using the buttons below.');
+>>>>>>> Stashed changes
                  } catch (e) {
                    console.error('🧪 Immediate text acknowledgement failed:', e);
                  }
@@ -1301,6 +2007,7 @@ export async function handleWebhook(body: any): Promise<any> {
 
                  console.log('🧪 About to send role selection buttons to:', from);
                  try {
+<<<<<<< Updated upstream
                    await sendInteractiveButtons(
                      from,
                      '🧪 Select role to test WhatsApp flow:',
@@ -1309,6 +2016,9 @@ export async function handleWebhook(body: any): Promise<any> {
                        { id: 'test_role_client', title: '🏢 Client' }
                      ]
                    );
+=======
+                   await sendTestRoleSelectionMenu(from);
+>>>>>>> Stashed changes
                    console.log('🧪 Role selection buttons sent successfully');
                  } catch (error) {
                    console.error('🧪 Failed to send role selection buttons:', error);
@@ -1378,6 +2088,7 @@ export async function handleWebhook(body: any): Promise<any> {
 
               // Process the message based on type and user role (with possible testing override)
               await processIncomingMessage(message, user, roleData, session);
+<<<<<<< Updated upstream
 
               // Send a compact menu after processing to avoid duplicate prompts
               try {
@@ -1401,6 +2112,14 @@ export async function handleWebhook(body: any): Promise<any> {
                       { id: 'switch_role', title: '🔄 Switch Role' }
                     ]
                   );
+=======
+              // Send a compact menu after processing to avoid duplicate prompts (test-mode helpers)
+              try {
+                if (testingRole === 'technician') {
+                  await sendTestTechnicianMenu(from);
+                } else if (testingRole === 'client') {
+                  await sendTestClientMenu(from);
+>>>>>>> Stashed changes
                 }
               } catch {}
 
@@ -1554,6 +2273,7 @@ async function handleFlowTestButtonClick(buttonId: string, from: string): Promis
 async function processIncomingMessage(message: any, user: any, roleData: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
   const from = message.from;
+<<<<<<< Updated upstream
 
   try {
     if (message.type === 'text') {
@@ -1565,6 +2285,25 @@ async function processIncomingMessage(message: any, user: any, roleData: any, se
     }
   } catch (error) {
     console.error('Error processing message:', error);
+=======
+  console.log(`[WhatsApp] processIncomingMessage called - from: ${from}, type: ${message.type}, user: ${user?.name}, role: ${user?.role}`);
+
+  try {
+    if (message.type === 'text') {
+      console.log(`[WhatsApp] Message is text type, calling handleTextMessage`);
+      await handleTextMessage(message, user, roleData, session);
+    } else if (message.type === 'interactive') {
+      console.log(`[WhatsApp] Message is interactive type`);
+      await handleInteractiveMessage(message, user, roleData, session);
+    } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+      console.log(`[WhatsApp] Message is media type: ${message.type}`);
+      await handleMediaMessage(message, user, roleData, session);
+    } else {
+      console.log(`[WhatsApp] Unknown message type: ${message.type}`);
+    }
+  } catch (error) {
+    console.error('[WhatsApp] Error processing message:', error);
+>>>>>>> Stashed changes
     await sendTextMessage(from, 'Sorry, I encountered an error processing your message. Please try again.');
   }
 }
@@ -1574,6 +2313,7 @@ async function handleTextMessage(message: any, user: any, roleData: any, session
   const text = message.text?.body?.toLowerCase().trim();
   const from = message.from;
 
+<<<<<<< Updated upstream
   // Testing override for the special number: route by chosen role
   const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
   const testingRole = session.conversationState?.testingRole as string | undefined;
@@ -1584,6 +2324,31 @@ async function handleTextMessage(message: any, user: any, roleData: any, session
     await handleTechnicianTextMessage(text, from, user, roleData, session);
   } else {
     await sendTextMessage(from, 'Your role is not recognized. Please contact support.');
+=======
+  console.log(`[WhatsApp] handleTextMessage called - from: ${from}, text: "${text}", user role: ${user?.role}`);
+
+  // Testing override for the special number: route by chosen role
+  const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
+  const testingRole = session?.conversationState?.testingRole as string | undefined;
+
+  console.log(`[WhatsApp] isTestNumber: ${isTestNumber}, testingRole: ${testingRole}`);
+
+  if (user?.role === 'client' || (isTestNumber && testingRole === 'client')) {
+    console.log(`[WhatsApp] Routing to handleClientTextMessage`);
+    await handleClientTextMessage(text, from, user, roleData, session);
+  } else if (user?.role === 'technician' || (isTestNumber && testingRole === 'technician')) {
+    console.log(`[WhatsApp] Routing to handleTechnicianTextMessage`);
+    await handleTechnicianTextMessage(text, from, user, roleData, session);
+  } else {
+    console.log(`[WhatsApp] No role match - isTestNumber: ${isTestNumber}, testingRole: ${testingRole}`);
+    // For test numbers without a selected role, show role selection buttons instead of error
+    if (isTestNumber && !testingRole) {
+      await sendTestRoleSelectionMenu(from);
+    } else {
+      await sendTextMessage(from, 'Your role is not recognized. Please contact support.');
+    }
+
+>>>>>>> Stashed changes
   }
 }
 
@@ -1593,12 +2358,70 @@ async function handleClientTextMessage(text: string, from: string, user: any, ro
   const conversationState = session.conversationState || {};
   const customer = roleData; // roleData is the customer data for clients
 
+<<<<<<< Updated upstream
   // Handle service request flow steps
   if (conversationState.flow === 'service_request') {
+=======
+  // Check if customer data exists
+  if (!customer) {
+    console.error(`[WhatsApp] Customer profile not found for user ${user?.id} (phone: ${from})`);
+    await sendTextMessage(
+      from,
+      '❌ Your client profile is not found in our system.\n\nPlease contact support to complete your registration.'
+    );
+    return;
+  }
+  
+  console.log(`[WhatsApp] Processing message for customer: ${customer.companyName} (${customer.id})`);
+  console.log(`[WhatsApp] Conversation state:`, JSON.stringify(conversationState, null, 2));
+
+  // Clear leftover legacy flow data for real clients (non-test numbers)
+  const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
+  if (!isTestNumber && conversationState.flow === 'service_request') {
+    console.log(`[WhatsApp] Clearing leftover legacy service_request flow from session for real client`);
+    const { storage } = await import('../storage');
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {}
+    });
+    // Update local reference
+    session.conversationState = {};
+    // Clear the local conversationState object
+    for (const key in conversationState) {
+      delete conversationState[key];
+    }
+    console.log(`[WhatsApp] Session cleared, conversation state is now empty`);
+  }
+
+  // Handle REAL service request flow steps (new dashboard integration)
+  if (conversationState.flow === 'real_service_request') {
+    console.log(`[WhatsApp] In real_service_request flow, step: ${conversationState.step}`);
+    if (conversationState.step === 'awaiting_error_code') {
+      await handleErrorCodeInput(text, from, user, session);
+      return;
+    }
+    if (conversationState.step === 'awaiting_description') {
+      await handleIssueDescriptionInput(text, from, user, session);
+      return;
+    }
+    if (conversationState.step === 'awaiting_photos') {
+      if (text.toUpperCase() === 'DONE') {
+        await createServiceRequestFromWhatsApp(from, user, session);
+      } else {
+        await sendTextMessage(from, '📸 Please send photos or type *DONE* to submit the request.');
+      }
+      return;
+    }
+  }
+
+  // Handle service request flow steps (legacy)
+  if (conversationState.flow === 'service_request') {
+    console.log(`[WhatsApp] In legacy service_request flow - calling handleServiceRequestFlow`);
+>>>>>>> Stashed changes
     await serviceRequestViaWhatsApp.handleServiceRequestFlow({ text: { body: text } }, user, session);
     return;
   }
 
+<<<<<<< Updated upstream
   // Enhanced command handling with detailed client-specific information
   if (text.includes('status') || text.includes('container')) {
     await handleClientContainerStatus(from, customer, storage);
@@ -1624,6 +2447,57 @@ async function handleClientTextMessage(text: string, from: string, user: any, ro
         { id: 'view_invoices', title: '💰 View Invoices' }
       ]
     );
+=======
+
+  console.log(`[WhatsApp] No active flow, processing as new message`);
+
+
+  // Enhanced command handling with detailed client-specific information
+  const lowerText = text.toLowerCase().trim();
+  console.log(`[WhatsApp] Client message text: "${text}" → normalized: "${lowerText}"`);
+  
+  if (lowerText.includes('status') || lowerText.includes('container')) {
+    console.log(`[WhatsApp] Handling status request for ${customer.companyName}`);
+    await handleClientContainerStatus(from, customer, storage);
+  } else if (lowerText.includes('service') || lowerText.includes('help') || lowerText.includes('request')) {
+    console.log(`[WhatsApp] Handling service request for ${customer.companyName}`);
+    await handleClientServiceRequests(from, customer, user, session, storage);
+  } else if (lowerText.includes('invoice') || lowerText.includes('bill') || lowerText.includes('payment')) {
+    console.log(`[WhatsApp] Handling invoice request for ${customer.companyName}`);
+    await handleClientInvoices(from, customer, storage);
+  } else if (lowerText.includes('alert') || lowerText.includes('notification')) {
+    console.log(`[WhatsApp] Handling alerts for ${customer.companyName}`);
+    await handleClientAlerts(from, customer, storage);
+  } else if (lowerText.includes('location') || lowerText.includes('track')) {
+    console.log(`[WhatsApp] Handling tracking for ${customer.companyName}`);
+    await handleClientContainerTracking(from, customer, storage);
+  } else if (lowerText.includes('history') || lowerText.includes('service history')) {
+    console.log(`[WhatsApp] Handling service history for ${customer.companyName}`);
+    await handleClientServiceHistory(from, customer, storage);
+  } else {
+    // For any unrecognized text, send main menu
+    console.log(`[WhatsApp] Sending welcome menu to ${customer.companyName} (${customer.contactPerson})`);
+    try {
+      await sendTextMessage(
+        from,
+        `👋 Welcome ${customer.contactPerson}!\n\n🏢 ${customer.companyName}\n\nHow can I help you today?`
+      );
+      console.log(`[WhatsApp] Welcome message sent successfully`);
+    } catch (error) {
+      console.error(`[WhatsApp] Error sending welcome message:`, error);
+      throw error;
+    }
+    
+    try {
+      console.log(`[WhatsApp] Now sending menu buttons`);
+      await sendRealClientMenu(from);
+      console.log(`[WhatsApp] Menu buttons sent successfully`);
+    } catch (error) {
+      console.error(`[WhatsApp] Error sending menu buttons:`, error);
+      throw error;
+    }
+ 
+>>>>>>> Stashed changes
   }
 }
 
@@ -2291,6 +3165,7 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
 
   // Update conversation state based on button click
   const conversationState = session.conversationState || {};
+<<<<<<< Updated upstream
 
   // Testing override: let the special number choose or switch roles
   const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
@@ -2340,6 +3215,198 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
         ]
       );
     }
+=======
+  // Testing override: let the special number choose or switch roles and access mock flows
+  const isTestNumber = typeof from === 'string' && isRoleTestNumber(from);
+  if (isTestNumber) {
+    if (buttonId === 'switch_role') {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testingRole: null, testFlow: null, testSelectedContainer: null }
+      });
+      await sendTextMessage(from, '🧪 Role cleared. Please select a new role to test:');
+      await sendTestRoleSelectionMenu(from);
+      return;
+    }
+
+    if (buttonId === 'test_role_technician' || buttonId === 'test_role_client') {
+      const testingRole = buttonId === 'test_role_technician' ? 'technician' : 'client';
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testingRole, testFlow: null, testSelectedContainer: null }
+      });
+      await sendTextMessage(from, `🧪 Testing as ${testingRole}.`);
+      if (testingRole === 'technician') {
+        await sendTestTechnicianMenu(from);
+      } else {
+        await sendTestClientMenu(from);
+      }
+      return;
+    }
+
+    if (buttonId === 'test_client_request_service') {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testFlow: 'client_request', testSelectedContainer: null }
+      });
+      await promptMockContainerSelection(from);
+      return;
+    }
+
+    // Map non-test client button IDs to REAL flow (not test/mock)
+    if (buttonId === 'request_service') {
+      await handleRealClientRequestService(from, user, session);
+      return;
+    }
+
+    if (buttonId === 'test_client_select_container') {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testFlow: 'client_select_container' }
+      });
+      await sendMockContainerList(from);
+      return;
+    }
+
+    if (buttonId === 'test_client_status') {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testFlow: 'client_status' }
+      });
+      const statusMessage = ['📊 *Mock Container Status*', ''].concat(
+        MOCK_CONTAINERS.map(container => `• ${container.id} – ${container.type}\n  Status: ${container.status}\n  Location: ${container.location}`)
+      ).join('\n');
+      await sendTextMessage(from, statusMessage);
+      await sendTestClientMenu(from);
+      return;
+    }
+
+    // Handle real client status check (non-test)
+    if (buttonId === 'status' || buttonId === 'check_status') {
+      await handleRealClientStatusCheck(from, user, session);
+      return;
+    }
+
+    if (buttonId === 'test_tech_view_schedule') {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testFlow: 'technician_schedule' }
+      });
+      await sendMockScheduleButtons(from);
+      return;
+    }
+
+    // Map non-test technician IDs to test flow for convenience
+    if (buttonId === 'view_schedule' || buttonId === 'check_schedule') {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testFlow: 'technician_schedule' }
+      });
+      await sendMockScheduleButtons(from);
+      return;
+    }
+
+    if (buttonId === 'test_tech_start_service') {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testFlow: 'technician_start_service' }
+      });
+      await sendTextMessage(from, '🧰 Select a job from today\'s schedule to view service details.');
+      await sendMockScheduleButtons(from);
+      return;
+    }
+
+    if (buttonId === 'start_service') {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: { ...(conversationState || {}), testFlow: 'technician_start_service' }
+      });
+      await sendTextMessage(from, '🧰 Select a job from today\'s schedule to view service details.');
+      await sendMockScheduleButtons(from);
+      return;
+    }
+
+    if (buttonId.startsWith('test_job_')) {
+      const jobId = buttonId.replace('test_job_', '');
+      const job = getMockTechnicianJob(jobId);
+      if (job) {
+        await storage.updateWhatsappSession(session.id, {
+          conversationState: { ...(conversationState || {}), testFlow: 'technician_job_detail', testSelectedJob: jobId }
+        });
+        const jobMessage = `🧾 Job Details: ${job.id}\n- Type: ${job.type}\n- Location: ${job.location}\n- Status: ${job.status}\n- Client: ${job.client}`;
+        await sendTextMessage(from, jobMessage);
+        await sendTestTechnicianMenu(from);
+      }
+      return;
+    }
+
+    if (buttonId.startsWith('test_container_')) {
+      const containerId = buttonId.replace('test_container_', '');
+      const c = getMockContainerDetail(containerId);
+      if (c) {
+        const detailMsg = `🧾 Service Details for ${c.id}\n- Issue: ${c.issue}\n- Status: Pending\n- Technician Assigned: ${c.technician}\n- ETA: ${c.eta}`;
+        await sendTextMessage(from, detailMsg);
+        await sendTestClientMenu(from);
+      }
+      return;
+    }
+  }
+
+  // Handle REAL container selection for service request (non-test)
+  if (buttonId.startsWith('select_container_')) {
+    const containerId = buttonId.replace('select_container_', '');
+    await handleContainerSelection(containerId, from, user, session);
+    return;
+  }
+
+  // Handle REAL container selection for status check (non-test)
+  if (buttonId.startsWith('status_container_')) {
+    const containerId = buttonId.replace('status_container_', '');
+    await showContainerStatus(containerId, from, user, session);
+    return;
+  }
+
+  // Handle photo attachment choice buttons
+  if (buttonId === 'attach_photos_yes') {
+    await handlePhotoChoice(true, from, user, session);
+    return;
+  }
+
+  if (buttonId === 'attach_photos_no') {
+    await handlePhotoChoice(false, from, user, session);
+    return;
+  }
+
+  // Handle multi-container selection buttons
+  if (buttonId === 'add_more_containers') {
+    // Show container list again for additional selection
+    await handleRealClientRequestService(from, user, session);
+    return;
+  }
+
+  if (buttonId === 'proceed_with_selection') {
+    // Proceed to error code input
+    const { storage } = await import('../storage');
+    const conversationState = session.conversationState || {};
+    const selectedContainers = conversationState.selectedContainers || [];
+    
+    if (selectedContainers.length === 0) {
+      await sendTextMessage(from, '❌ No containers selected. Please start again.');
+      await sendRealClientMenu(from);
+      return;
+    }
+
+    // Get container codes for display
+    const containerCodes = [];
+    for (const cId of selectedContainers) {
+      const c = await storage.getContainer(cId);
+      if (c) containerCodes.push(c.containerCode);
+    }
+
+    // Update to error code step
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        step: 'awaiting_error_code'
+      }
+    });
+
+    await sendTextMessage(
+      from,
+      `📦 *Selected Container(s):*\n${containerCodes.join(', ')}\n\n❓ *What error code are you getting?*\n\nType the error code, or reply *NA* if no error code.`
+    );
+>>>>>>> Stashed changes
     return;
   }
 
@@ -2518,7 +3585,11 @@ Select an option below:`;
       break;
 
     case 'request_service':
+<<<<<<< Updated upstream
       await initiateServiceRequestFlow(from, user, session);
+=======
+      await handleRealClientRequestService(from, user, session);
+>>>>>>> Stashed changes
       break;
 
     case 'check_invoices':
@@ -2577,7 +3648,11 @@ What would you like to do?`,
       break;
 
     case 'new_request':
+<<<<<<< Updated upstream
       await initiateServiceRequestFlow(from, user, session);
+=======
+      await handleRealClientRequestService(from, user, session);
+>>>>>>> Stashed changes
       break;
 
     case 'help':
@@ -2868,6 +3943,22 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
 // Handle list selections
 async function handleListSelection(listId: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const conversationState = session.conversationState || {};
+<<<<<<< Updated upstream
+=======
+  // Handle container selection for service request (real client flow)
+  if (listId.startsWith('select_container_')) {
+    const containerId = listId.replace('select_container_', '');
+    await handleContainerSelection(containerId, from, user, session);
+    return;
+  }
+
+  // Handle container selection for status check (real client flow)
+  if (listId.startsWith('status_container_')) {
+    const containerId = listId.replace('status_container_', '');
+    await showContainerStatus(containerId, from, user, session);
+    return;
+  }
+>>>>>>> Stashed changes
 
   // Technician service selection via list (skip SR-MOCK selections here; handled below)
   if (user.role === 'technician' && listId.startsWith('select_service_') && !listId.includes('SR-MOCK-')) {
@@ -3015,6 +4106,16 @@ async function handleMediaMessage(message: any, user: any, roleData: any, sessio
   const mediaId = media?.id || media?.media_id;
   const caption = media?.caption || '';
 
+<<<<<<< Updated upstream
+=======
+  // Handle CLIENT photo uploads during real service request flow
+  if (user.role === 'client' && session.conversationState?.flow === 'real_service_request') {
+    if (session.conversationState?.step === 'awaiting_photos' && mediaId) {
+      await handlePhotoUpload(mediaId, from, user, session);
+      return;
+    }
+  }
+>>>>>>> Stashed changes
   // If technician is in a specific upload step, attach to current service
   if (user.role === 'technician' && session.conversationState?.currentServiceId) {
     const step = session.conversationState?.step;
@@ -3653,7 +4754,15 @@ export async function handleTechnicianCompleteService(technicianId: string, serv
   // Calculate and log service duration
   const service = await storage.getServiceRequest(serviceId);
   if (service) {
+<<<<<<< Updated upstream
     const duration = Math.round((new Date().getTime() - service.actualStartTime.getTime()) / (1000 * 60));
+=======
+    // Guard against null actualStartTime
+    const startMs = service.actualStartTime
+      ? new Date(service.actualStartTime).getTime()
+      : Date.now();
+    const duration = Math.max(0, Math.round((Date.now() - startMs) / (1000 * 60)));
+>>>>>>> Stashed changes
     await storage.updateServiceRequest(serviceId, { serviceDuration: duration });
 
     // Send completion confirmation and next steps

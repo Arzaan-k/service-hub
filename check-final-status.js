@@ -42,8 +42,11 @@ async function checkMigrationStatus() {
 }
 
 checkMigrationStatus();
+<<<<<<< Updated upstream
 
 
 
 
 
+=======
+>>>>>>> Stashed changes

@@ -72,9 +72,12 @@ async function testAuthAndUpload() {
 testAuthAndUpload();
 
 
+<<<<<<< Updated upstream
 
 
 
 
 
 
+=======
+>>>>>>> Stashed changes

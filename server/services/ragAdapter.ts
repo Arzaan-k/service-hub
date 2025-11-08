@@ -129,8 +129,13 @@ Please provide a detailed troubleshooting response based on the manual content.`
       await this.storeQuery(request, ragResponse);
 
       return ragResponse;
+<<<<<<< Updated upstream
     } catch (error) {
       console.error('RAG query failed, falling back to mock response:', error.message);
+=======
+    } catch (error: any) {
+      console.error('RAG query failed, falling back to mock response:', error?.message || error);
+>>>>>>> Stashed changes
       // Fall back to mock response when service is unavailable
       const mockResponse = this.getMockResponse(request);
       await this.storeQuery(request, mockResponse);
@@ -161,12 +166,16 @@ Please provide a detailed troubleshooting response based on the manual content.`
           });
         }
       }
+<<<<<<< Updated upstream
     } catch (error) {
       console.error('Failed to store RAG query:', error.message);
+=======
+    } catch (error: any) {
+      console.error('Failed to store RAG query:', error?.message || error);
+>>>>>>> Stashed changes
       // Don't throw - logging failure shouldn't break the main flow
     }
   }
-  
   /**
    * Get source information from search results
    */
@@ -192,6 +201,10 @@ Please provide a detailed troubleshooting response based on the manual content.`
           sources.push({
             manual_id: manualId,
             manual_name: manual.title,
+<<<<<<< Updated upstream
+=======
+            manual_name: manual.name,
+>>>>>>> Stashed changes
             page: result.metadata.pageNum || 1
           });
         }
@@ -232,7 +245,10 @@ Please provide a detailed troubleshooting response based on the manual content.`
     if (topScore > 0.6) return 'medium';
     return 'low';
   }
+<<<<<<< Updated upstream
   
+=======
+>>>>>>> Stashed changes
   /**
    * Generate a mock response when no results are found
    */
@@ -312,8 +328,12 @@ Would you like me to help you schedule a service appointment?`,
 
     return parts.slice(0, 5); // Limit to 5 parts
   }
+<<<<<<< Updated upstream
 
   /**
+=======
+/**
+>>>>>>> Stashed changes
    * Get source information for search results
    */
   private async getSourceInfo(searchResults: any[]): Promise<Array<{ manual_id: string; manual_name: string; page: number }>> {
@@ -365,7 +385,10 @@ Would you like me to help you schedule a service appointment?`,
     // Low confidence: Few or no matches, generic response
     return 'low';
   }
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
   private getMockResponse(request: RagQueryRequest): RagQueryResponse {
     const responses = {
       default: {

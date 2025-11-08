@@ -1,5 +1,3 @@
-
-
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
@@ -1610,7 +1608,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: defaultPassword,
         role: "client",
         isActive: true,
+<<<<<<< Updated upstream
         whatsappVerified: false,
+=======
+        whatsappVerified: true, // Enable WhatsApp by default for new clients
+>>>>>>> Stashed changes
         emailVerified: false,
       });
       
@@ -1669,6 +1671,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+<<<<<<< Updated upstream
+=======
+  // Enable/Disable WhatsApp for a client
+  app.patch("/api/clients/:id/whatsapp", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
+    try {
+      const { enabled } = req.body;
+      const customer = await storage.getCustomer(req.params.id);
+      
+      if (!customer) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      if (!customer.userId) {
+        return res.status(400).json({ error: "Client has no associated user account" });
+      }
+
+      // Update user's whatsappVerified status
+      await storage.updateUser(customer.userId, {
+        whatsappVerified: enabled === true
+      });
+
+      res.json({ success: true, whatsappEnabled: enabled });
+    } catch (error) {
+      console.error("WhatsApp toggle error:", error);
+      res.status(500).json({ error: "Failed to update WhatsApp status" });
+    }
+  });
+
+
+>>>>>>> Stashed changes
   // Inventory routes
   app.get("/api/inventory", authenticateUser, async (req, res, next) => {
     try {
@@ -2943,7 +2975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ORBCOMM Real Data Status - Only shows real ORBCOMM data, no simulation
-  app.get('/api/orbcomm/real-status', async (req, res) => {
+  app.get('/api/orbcomm/real-status', authenticateUser, async (req, res) => {
     try {
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const client = getOrbcommClient();
@@ -3015,6 +3047,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { deviceId } = req.params;
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
+<<<<<<< Updated upstream
 
       console.log('📱 Fetching real device data for:', deviceId);
       const deviceData = await orbcommClient.getDeviceData(deviceId);
@@ -3023,13 +3056,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Device not found' });
       }
 
+=======
+      console.log('📱 Fetching real device data for:', deviceId);
+      const deviceData = await orbcommClient.getDeviceData(deviceId);
+      
+      if (!deviceData) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+>>>>>>> Stashed changes
       res.json(deviceData);
     } catch (error) {
       console.error('ORBCOMM device data error:', error);
       res.status(500).json({ error: 'Failed to fetch device data' });
     }
   });
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
   // Live ORBCOMM data with container matching - Reefer Units and Device Status tables
   app.get('/api/orbcomm/live-data', authenticateUser, async (req, res) => {
     try {
@@ -3169,7 +3214,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
   // Admin: Verify client for WhatsApp access
   app.post('/api/admin/whatsapp/verify-client', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
     try {
@@ -3540,4 +3588,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   return httpServer;
+}
+
+// Remove or merge any duplicate DeviceData interfaces
+interface DeviceData {
+  deviceId: string;
+  temperature?: number;
+  powerStatus?: 'on' | 'off';
+  batteryLevel?: number;
+  errorCodes?: string[];
+  timestamp?: Date;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  lastAssetId?: string;
+  oem?: string;
+  eventType?: string;
+  reportingInterval?: string;
+  cellularType?: string;
+  signalStrength?: number;
 }

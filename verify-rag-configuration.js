@@ -42,8 +42,11 @@ async function verifyConfiguration() {
 }
 
 verifyConfiguration().catch(console.error);
+<<<<<<< Updated upstream
 
 
 
 
 
+=======
+>>>>>>> Stashed changes

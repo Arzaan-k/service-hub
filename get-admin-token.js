@@ -37,6 +37,7 @@ async function getAdminToken() {
   }
 }
 
+<<<<<<< Updated upstream
 getAdminToken();
 
 
@@ -46,3 +47,6 @@ getAdminToken();
 
 
 
+=======
+getAdminToken();
+>>>>>>> Stashed changes
