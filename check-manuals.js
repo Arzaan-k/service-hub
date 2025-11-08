@@ -41,11 +41,3 @@ async function checkManuals() {
 }
 
 checkManuals().catch(console.error);
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

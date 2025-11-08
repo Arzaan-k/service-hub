@@ -112,10 +112,3 @@ async function rebuildKnowledgeBase() {
 
 rebuildKnowledgeBase().catch(console.error);
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

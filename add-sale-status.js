@@ -60,8 +60,3 @@ addSaleStatus();
 
 
 
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

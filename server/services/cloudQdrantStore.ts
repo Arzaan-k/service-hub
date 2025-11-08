@@ -53,11 +53,7 @@ class FreeEmbeddings {
     for (const text of texts) {
       try {
         const output = await extractor(text, { pooling: 'mean', normalize: true });
-<<<<<<< HEAD
-        const embedding = Array.from(output.data);
-=======
         const embedding = Array.from(output.data as number[]);
->>>>>>> all-ui-working
         embeddings.push(embedding);
       } catch (error) {
         console.error('Error generating embedding for text:', error);
@@ -73,11 +69,7 @@ class FreeEmbeddings {
 
     try {
       const output = await extractor(text, { pooling: 'mean', normalize: true });
-<<<<<<< HEAD
-      return Array.from(output.data);
-=======
       return Array.from(output.data as number[]);
->>>>>>> all-ui-working
     } catch (error) {
       console.error('Error generating embedding for query:', error);
       return new Array(384).fill(0);
@@ -108,11 +100,7 @@ export class CloudQdrantStore {
       console.log('🔗 Connecting to Cloud Qdrant...');
 
       // Test connection
-<<<<<<< HEAD
-      await this.qdrant.api('get', '/health');
-=======
       await this.qdrant.getCollections();
->>>>>>> all-ui-working
       console.log('✅ Cloud Qdrant connection successful');
 
       // Create collection if it doesn't exist
@@ -254,14 +242,6 @@ export class CloudQdrantStore {
       // Generate embedding for the query
       const queryEmbedding = await this.embeddings.embedQuery(query);
 
-<<<<<<< HEAD
-      // Build filter for Qdrant
-      let filterConditions: any = {};
-      if (filter?.manualId) {
-        filterConditions.must = [
-          { key: 'manualId', match: { value: filter.manualId } }
-        ];
-=======
       // Build filter for Qdrant with improved model/brand filtering
       let filterConditions: any = {};
       const mustConditions: any[] = [];
@@ -289,7 +269,6 @@ export class CloudQdrantStore {
 
       if (mustConditions.length > 0) {
         filterConditions.must = mustConditions;
->>>>>>> all-ui-working
       }
 
       // Search in Qdrant
@@ -303,16 +282,6 @@ export class CloudQdrantStore {
 
       // Convert results
       return searchResult.map(hit => ({
-<<<<<<< HEAD
-        id: hit.payload?.originalId || hit.id, // Use original ID from payload
-        text: hit.payload?.text || '',
-        metadata: {
-          manualId: hit.payload?.manualId || '',
-          pageNum: hit.payload?.pageNum,
-          startOffset: hit.payload?.startOffset,
-          endOffset: hit.payload?.endOffset,
-          ...hit.payload?.metadata
-=======
         id: String(hit.payload?.originalId || hit.id || ''), // Use original ID from payload
         text: String(hit.payload?.text || ''),
         metadata: {
@@ -321,7 +290,6 @@ export class CloudQdrantStore {
           startOffset: hit.payload?.startOffset,
           endOffset: hit.payload?.endOffset,
           ...(hit.payload?.metadata || {})
->>>>>>> all-ui-working
         } as ChunkMetadata,
         score: hit.score || 0
       }));
@@ -353,7 +321,7 @@ export class CloudQdrantStore {
         manuals: manuals.rows.map(row => ({
           id: row.id,
           name: row.name,
-          chunksCount: parseInt(row.chunks_count)
+          chunksCount: parseInt(String(row.chunks_count))
         }))
       };
     } catch (error) {
@@ -368,7 +336,7 @@ export class CloudQdrantStore {
   async getExistingOriginalIds(): Promise<Set<string>> {
     try {
       const existingIds = new Set<string>();
-      let offset = undefined;
+      let offset: string | null = null;
 
       // Scroll through all points in batches to get originalIds
       console.log('🔍 Scanning Qdrant for existing chunk IDs...');
@@ -388,11 +356,8 @@ export class CloudQdrantStore {
         // Extract originalIds from payloads
         for (const point of response.points) {
           if (point.payload?.originalId) {
-<<<<<<< HEAD
             existingIds.add(point.payload.originalId);
-=======
             existingIds.add(String(point.payload.originalId));
->>>>>>> all-ui-working
           }
         }
 
@@ -402,11 +367,8 @@ export class CloudQdrantStore {
         }
 
         // Set offset for next batch
-<<<<<<< HEAD
         offset = response.points[response.points.length - 1].id;
-=======
         offset = String(response.points[response.points.length - 1].id);
->>>>>>> all-ui-working
 
         if (existingIds.size % 10000 === 0) {
           console.log(`   📋 Found ${existingIds.size.toLocaleString()} existing IDs so far...`);

@@ -44,9 +44,3 @@ testFileUpload();
 
 
 
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

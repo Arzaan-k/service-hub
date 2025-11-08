@@ -38,14 +38,3 @@ async function getAdminToken() {
 }
 
 getAdminToken();
-
-
-
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

@@ -46,7 +46,3 @@ checkAndFixDatabase();
 
 
 
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

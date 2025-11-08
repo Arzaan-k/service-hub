@@ -38,7 +38,4 @@ checkRAGStatus();
 
 
 
-<<<<<<< HEAD
-=======
 
->>>>>>> all-ui-working

@@ -42,11 +42,3 @@ async function checkMigrationStatus() {
 }
 
 checkMigrationStatus();
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

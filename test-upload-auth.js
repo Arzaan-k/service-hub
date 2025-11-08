@@ -72,12 +72,3 @@ async function testAuthAndUpload() {
 testAuthAndUpload();
 
 
-
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

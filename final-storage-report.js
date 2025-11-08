@@ -100,9 +100,3 @@ async function finalStorageReport() {
 finalStorageReport().catch(console.error);
 
 
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

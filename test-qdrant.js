@@ -16,9 +16,3 @@ async function testQdrant() {
 testQdrant();
 
 
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

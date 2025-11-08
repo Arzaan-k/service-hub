@@ -74,12 +74,3 @@ async function debugUpload() {
 debugUpload();
 
 
-
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

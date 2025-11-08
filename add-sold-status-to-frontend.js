@@ -53,37 +53,3 @@ async function addSoldStatusToFrontend() {
 
 addSoldStatusToFrontend();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

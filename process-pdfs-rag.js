@@ -259,10 +259,3 @@ async function main() {
 main().catch(console.error);
 
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

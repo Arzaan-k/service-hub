@@ -127,10 +127,3 @@ async function analyzeDatabaseStorage() {
 
 analyzeDatabaseStorage().catch(console.error);
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

@@ -24,10 +24,7 @@ import Analytics from "@/pages/analytics";
 import ClientProfile from "@/pages/client-profile";
 import AdminWhatsApp from "@/pages/admin-whatsapp";
 import OrbcommData from "@/pages/orbcomm-data";
-<<<<<<< HEAD
-=======
 import OrbcommLiveData from "@/pages/orbcomm-live-data";
->>>>>>> all-ui-working
 import RagChat from "@/pages/rag-chat";
 import AdminManualUpload from "@/pages/admin-manual-upload";
 
@@ -107,12 +104,6 @@ function Router() {
       <Route path="/orbcomm-data">
         {() => <ProtectedRoute component={OrbcommData} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
-<<<<<<< HEAD
-=======
-      <Route path="/orbcomm/live-data">
-        {() => <ProtectedRoute component={OrbcommLiveData} roles={["admin", "coordinator", "super_admin"]} />}
-      </Route>
->>>>>>> all-ui-working
       <Route path="/rag-chat">
         {() => <ProtectedRoute component={RagChat} />}
       </Route>
