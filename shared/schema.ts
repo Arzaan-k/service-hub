@@ -116,6 +116,42 @@ export const containers = pgTable("containers", {
   lastTelemetry: jsonb("last_telemetry"), // Full raw JSON from Orbcomm message
   lastSyncedAt: timestamp("last_synced_at"), // Timestamp when this container was last synced
 
+  // Master Sheet fields from Container Master Sheet
+  productType: text("product_type"), // Reefer, Dry, Special, etc.
+  sizeType: text("size_type"), // 40FT STD RF, 20FT, etc.
+  groupName: text("group_name"), // Reefer Container, Dry Container
+  gkuProductName: text("gku_product_name"), // GKU product code
+  category: text("category"), // Refurbished, New, etc.
+  size: integer("size"), // Container size
+  depot: text("depot"), // Current depot/customer location
+  yom: integer("yom"), // Year of Manufacture
+  grade: text("grade"), // A, B, C quality grade
+  reeferUnit: text("reefer_unit"), // Daikin, Carrier, etc.
+  reeferModel: text("reefer_model"), // Reefer unit model name
+  imageLinks: text("image_links"), // Links to container images/docs
+  masterSheetData: jsonb("master_sheet_data"), // Complete master sheet row data
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Container Ownership History - Track all owners over time
+export const containerOwnershipHistory = pgTable("container_ownership_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  containerId: varchar("container_id").references(() => containers.id).notNull(),
+  customerId: varchar("customer_id").references(() => customers.id).notNull(),
+  orderType: text("order_type").notNull(), // Sale, Lease, Rental
+  quotationNo: text("quotation_no"),
+  orderReceivedNumber: text("order_received_number"),
+  internalSalesOrderNo: text("internal_sales_order_no"),
+  purchaseOrderNumber: text("purchase_order_number"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"), // null if current owner
+  tenure: jsonb("tenure"), // { years, months, days }
+  basicAmount: decimal("basic_amount", { precision: 10, scale: 2 }),
+  securityDeposit: decimal("security_deposit", { precision: 10, scale: 2 }),
+  isCurrent: boolean("is_current").default(true).notNull(),
+  purchaseDetails: jsonb("purchase_details"), // Store full purchase details from Excel
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -165,6 +201,7 @@ export const alerts = pgTable("alerts", {
 export const serviceRequests = pgTable("service_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   requestNumber: text("request_number").notNull().unique(),
+  jobOrder: text("job_order").unique(), // Job Order Number from Excel (e.g., "AUG045", "JUL001")
   containerId: varchar("container_id").references(() => containers.id).notNull(),
   customerId: varchar("client_id").references(() => customers.id).notNull(), // Using client_id from existing DB
   alertId: varchar("alert_id").references(() => alerts.id),
@@ -194,6 +231,16 @@ export const serviceRequests = pgTable("service_requests", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+
+  // Additional fields from Service History Excel
+  workType: text("work_type"), // SERVICE-AT SITE, INSTALLATION, etc.
+  clientType: text("client_type"), // LEASE, OWNED
+  jobType: text("job_type"), // FOC, CHARGEABLE
+  billingType: text("billing_type"), // FOC, CHARGEABLE
+  callStatus: text("call_status"), // Close - PM, Completed, etc.
+  month: text("month"), // AUG, JUL, etc.
+  year: integer("year"), // 2023, 2024, etc.
+  excelData: jsonb("excel_data"), // Store all Excel data as JSON
 });
 
 // Invoices table (enhanced according to PRD)

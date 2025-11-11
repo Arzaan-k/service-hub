@@ -17,13 +17,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  ArrowLeft, 
-  MapPin, 
-  Calendar, 
-  Package, 
-  Zap, 
-  Settings, 
+import {
+  ArrowLeft,
+  MapPin,
+  Calendar,
+  Package,
+  Zap,
+  Settings,
   Image as ImageIcon,
   ExternalLink,
   Download,
@@ -37,7 +37,10 @@ import {
   Wifi,
   Truck,
   Copy,
-  FileText
+  FileText,
+  Users,
+  Wrench,
+  Building
 } from "lucide-react";
 
 interface Container {
@@ -119,6 +122,28 @@ export default function ContainerDetail() {
     retry: 1,
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
+  });
+
+  // Fetch ownership history
+  const { data: ownershipHistory, isLoading: ownershipLoading } = useQuery({
+    queryKey: [`/api/containers/${id}/ownership-history`],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/containers/${id}/ownership-history`);
+      return response.json();
+    },
+    enabled: !!id,
+    staleTime: 30000,
+  });
+
+  // Fetch service history
+  const { data: serviceHistory, isLoading: serviceLoading } = useQuery({
+    queryKey: [`/api/containers/${id}/service-history`],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/containers/${id}/service-history`);
+      return response.json();
+    },
+    enabled: !!id,
+    staleTime: 30000,
   });
 
   const getStatusBadge = (status: string) => {
@@ -405,11 +430,13 @@ export default function ContainerDetail() {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="telemetry">Telemetry</TabsTrigger>
               <TabsTrigger value="specifications">Specifications</TabsTrigger>
-              <TabsTrigger value="location">Location & History</TabsTrigger>
+              <TabsTrigger value="ownership">Ownership History</TabsTrigger>
+              <TabsTrigger value="services">Service History</TabsTrigger>
+              <TabsTrigger value="location">Location</TabsTrigger>
               <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
             </TabsList>
 
@@ -773,6 +800,219 @@ export default function ContainerDetail() {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            {/* Ownership History Tab */}
+            <TabsContent value="ownership" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Ownership History
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {ownershipLoading ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                      <p className="text-muted-foreground">Loading ownership history...</p>
+                    </div>
+                  ) : ownershipHistory && ownershipHistory.length > 0 ? (
+                    <div className="space-y-4">
+                      {ownershipHistory.map((ownership: any, index: number) => (
+                        <div key={ownership.id} className="border rounded-lg p-4 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${ownership.is_current ? 'bg-green-500/20' : 'bg-gray-500/20'}`}>
+                                <Building className={`h-5 w-5 ${ownership.is_current ? 'text-green-400' : 'text-gray-400'}`} />
+                              </div>
+                              <div>
+                                <p className="font-semibold">{ownership.customer_name}</p>
+                                <p className="text-sm text-muted-foreground">{ownership.contact_person}</p>
+                              </div>
+                            </div>
+                            {ownership.is_current && (
+                              <Badge className="bg-green-500/20 text-green-200 border-green-400/30 border">
+                                Current Owner
+                              </Badge>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <label className="text-muted-foreground">Order Type</label>
+                              <p className="font-medium">{ownership.order_type || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <label className="text-muted-foreground">Start Date</label>
+                              <p className="font-medium">
+                                {ownership.start_date ? new Date(ownership.start_date).toLocaleDateString() : 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="text-muted-foreground">End Date</label>
+                              <p className="font-medium">
+                                {ownership.end_date ? new Date(ownership.end_date).toLocaleDateString() : 'Ongoing'}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="text-muted-foreground">Basic Amount</label>
+                              <p className="font-medium">
+                                {ownership.basic_amount ? `₹${parseFloat(ownership.basic_amount).toLocaleString()}` : 'N/A'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {(ownership.quotation_no || ownership.purchase_order_number) && (
+                            <div className="flex flex-wrap gap-4 text-sm pt-2 border-t">
+                              {ownership.quotation_no && (
+                                <div>
+                                  <label className="text-muted-foreground">Quotation No:</label>
+                                  <span className="ml-2 font-mono">{ownership.quotation_no}</span>
+                                </div>
+                              )}
+                              {ownership.purchase_order_number && (
+                                <div>
+                                  <label className="text-muted-foreground">PO Number:</label>
+                                  <span className="ml-2 font-mono">{ownership.purchase_order_number}</span>
+                                </div>
+                              )}
+                              {ownership.phone && (
+                                <div>
+                                  <label className="text-muted-foreground">Phone:</label>
+                                  <span className="ml-2">{ownership.phone}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No ownership history available</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Service History Tab */}
+            <TabsContent value="services" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Wrench className="h-5 w-5" />
+                    Service History
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {serviceLoading ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                      <p className="text-muted-foreground">Loading service history...</p>
+                    </div>
+                  ) : serviceHistory && serviceHistory.length > 0 ? (
+                    <div className="space-y-4">
+                      {serviceHistory.map((service: any) => (
+                        <div key={service.id} className="border rounded-lg p-4 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                {service.jobOrder && (
+                                  <Badge variant="outline" className="font-mono">
+                                    {service.jobOrder}
+                                  </Badge>
+                                )}
+                                <Badge className={
+                                  service.status === 'completed' ? 'bg-green-500/20 text-green-200 border-green-400/30 border' :
+                                  service.status === 'in_progress' ? 'bg-blue-500/20 text-blue-200 border-blue-400/30 border' :
+                                  service.status === 'pending' ? 'bg-yellow-500/20 text-yellow-200 border-yellow-400/30 border' :
+                                  'bg-gray-500/20 text-gray-200 border-gray-400/30 border'
+                                }>
+                                  {service.status || 'N/A'}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {service.requestedAt ? new Date(service.requestedAt).toLocaleDateString() : 'Date unknown'}
+                              </p>
+                            </div>
+                            {service.priority && (
+                              <Badge variant={service.priority === 'urgent' ? 'destructive' : 'secondary'}>
+                                {service.priority}
+                              </Badge>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">Description</label>
+                            <p className="text-sm">{service.issueDescription || 'No description'}</p>
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            {service.workType && (
+                              <div>
+                                <label className="text-muted-foreground">Work Type</label>
+                                <p className="font-medium">{service.workType}</p>
+                              </div>
+                            )}
+                            {service.jobType && (
+                              <div>
+                                <label className="text-muted-foreground">Job Type</label>
+                                <p className="font-medium">{service.jobType}</p>
+                              </div>
+                            )}
+                            {service.billingType && (
+                              <div>
+                                <label className="text-muted-foreground">Billing Type</label>
+                                <p className="font-medium">{service.billingType}</p>
+                              </div>
+                            )}
+                            {service.totalCost && (
+                              <div>
+                                <label className="text-muted-foreground">Total Cost</label>
+                                <p className="font-medium">₹{parseFloat(service.totalCost).toLocaleString()}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {service.resolutionNotes && (
+                            <div className="pt-2 border-t">
+                              <label className="text-sm font-medium text-muted-foreground">Resolution Notes</label>
+                              <p className="text-sm mt-1">{service.resolutionNotes}</p>
+                            </div>
+                          )}
+
+                          {service.assignedTechnician && (
+                            <div className="flex items-center gap-2 pt-2 border-t text-sm">
+                              <Truck className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-muted-foreground">Technician:</span>
+                              <span className="font-medium">{service.assignedTechnician.name || 'Not assigned'}</span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setLocation(`/service-requests/${service.id}`)}
+                            >
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              View Details
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No service history available</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* Location & History Tab */}

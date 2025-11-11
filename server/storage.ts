@@ -5,6 +5,7 @@ import {
   technicians,
   containers,
   containerMetrics,
+  containerOwnershipHistory,
   alerts,
   serviceRequests,
   invoices,
@@ -81,6 +82,7 @@ export interface IStorage {
   }): Promise<Container>;
   getContainerLocationHistory(containerId: string): Promise<any[]>;
   getContainerServiceHistory(containerId: string): Promise<any[]>;
+  getContainerOwnershipHistory(containerId: string): Promise<any[]>;
   getContainerMetrics(containerId: string): Promise<any[]>;
   assignContainerToCustomer(containerId: string, customerId: string, assignmentDate: Date, expectedReturnDate: Date): Promise<Container>;
   unassignContainer(containerId: string): Promise<Container>;
@@ -743,6 +745,39 @@ export class DatabaseStorage implements IStorage {
       .from(serviceRequests)
       .where(eq(serviceRequests.containerId, containerId))
       .orderBy(desc(serviceRequests.createdAt));
+  }
+
+  async getContainerOwnershipHistory(containerId: string): Promise<any[]> {
+    // Get ownership history with customer details
+    const history = await db
+      .select({
+        id: containerOwnershipHistory.id,
+        containerId: containerOwnershipHistory.containerId,
+        customerId: containerOwnershipHistory.customerId,
+        orderType: containerOwnershipHistory.orderType,
+        quotationNo: containerOwnershipHistory.quotationNo,
+        orderReceivedNumber: containerOwnershipHistory.orderReceivedNumber,
+        internalSalesOrderNo: containerOwnershipHistory.internalSalesOrderNo,
+        purchaseOrderNumber: containerOwnershipHistory.purchaseOrderNumber,
+        startDate: containerOwnershipHistory.startDate,
+        endDate: containerOwnershipHistory.endDate,
+        tenure: containerOwnershipHistory.tenure,
+        basicAmount: containerOwnershipHistory.basicAmount,
+        securityDeposit: containerOwnershipHistory.securityDeposit,
+        isCurrent: containerOwnershipHistory.isCurrent,
+        purchaseDetails: containerOwnershipHistory.purchaseDetails,
+        createdAt: containerOwnershipHistory.createdAt,
+        updatedAt: containerOwnershipHistory.updatedAt,
+        customerName: customers.companyName,
+        contactPerson: customers.contactPerson,
+        phone: customers.phone,
+      })
+      .from(containerOwnershipHistory)
+      .leftJoin(customers, eq(containerOwnershipHistory.customerId, customers.id))
+      .where(eq(containerOwnershipHistory.containerId, containerId))
+      .orderBy(desc(containerOwnershipHistory.startDate));
+
+    return history;
   }
 
   async getContainerMetrics(containerId: string): Promise<any[]> {

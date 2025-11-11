@@ -9,6 +9,7 @@ import ServiceRequestsPanel from "@/components/dashboard/service-requests-panel"
 import WhatsAppHubPanel from "@/components/dashboard/whatsapp-hub-panel";
 import TechnicianSchedule from "@/components/dashboard/technician-schedule";
 import ContainerLookup from "@/components/dashboard/container-lookup";
+import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
 import ErrorBoundary from "@/components/error-boundary";
 import { websocket } from "@/lib/websocket";
 import { getAuthToken } from "@/lib/auth";
@@ -144,16 +145,19 @@ export default function Dashboard() {
           {/* KPI Cards */}
           <KPICards stats={stats} />
 
-          {/* Map & Alerts */}
+          {/* Map & Alerts & Fleet Stats */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <div className="lg:col-span-2 h-full">
               <ErrorBoundary>
                 <GlobalFleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
-            <div className="h-full">
+            <div className="h-full space-y-6">
               <ErrorBoundary>
                 <AlertPanel alerts={alerts || []} containers={containers || []} />
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <ContainerFleetStats containers={containers || []} />
               </ErrorBoundary>
             </div>
           </div>
