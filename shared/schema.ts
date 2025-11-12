@@ -116,20 +116,20 @@ export const containers = pgTable("containers", {
   lastTelemetry: jsonb("last_telemetry"), // Full raw JSON from Orbcomm message
   lastSyncedAt: timestamp("last_synced_at"), // Timestamp when this container was last synced
 
-  // Master Sheet fields from Container Master Sheet
-  productType: text("product_type"), // Reefer, Dry, Special, etc.
-  sizeType: text("size_type"), // 40FT STD RF, 20FT, etc.
-  groupName: text("group_name"), // Reefer Container, Dry Container
-  gkuProductName: text("gku_product_name"), // GKU product code
-  category: text("category"), // Refurbished, New, etc.
-  size: integer("size"), // Container size
-  depot: text("depot"), // Current depot/customer location
-  yom: integer("yom"), // Year of Manufacture
-  grade: text("grade"), // A, B, C quality grade
-  reeferUnit: text("reefer_unit"), // Daikin, Carrier, etc.
-  reeferModel: text("reefer_model"), // Reefer unit model name
-  imageLinks: text("image_links"), // Links to container images/docs
-  masterSheetData: jsonb("master_sheet_data"), // Complete master sheet row data
+  // Master Sheet fields from Container Master Sheet - temporarily commented out due to schema mismatch
+  // productType: text("product_type"), // Reefer, Dry, Special, etc.
+  // sizeType: text("size_type"), // 40FT STD RF, 20FT, etc.
+  // groupName: text("group_name"), // Reefer Container, Dry Container
+  // gkuProductName: text("gku_product_name"), // GKU product code
+  // category: text("category"), // Refurbished, New, etc.
+  // size: integer("size"), // Container size
+  // depot: text("depot"), // Current depot/customer location
+  // yom: integer("yom"), // Year of Manufacture
+  // grade: text("grade"), // A, B, C quality grade
+  // reeferUnit: text("reefer_unit"), // Daikin, Carrier, etc.
+  // reeferModel: text("reefer_model"), // Reefer unit model name
+  // imageLinks: text("image_links"), // Links to container images/docs
+  // masterSheetData: jsonb("master_sheet_data"), // Complete master sheet row data
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -201,7 +201,7 @@ export const alerts = pgTable("alerts", {
 export const serviceRequests = pgTable("service_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   requestNumber: text("request_number").notNull().unique(),
-  jobOrder: text("job_order").unique(), // Job Order Number from Excel (e.g., "AUG045", "JUL001")
+  // jobOrder: text("job_order").unique(), // Job Order Number from Excel (e.g., "AUG045", "JUL001") - temporarily commented out due to schema mismatch
   containerId: varchar("container_id").references(() => containers.id).notNull(),
   customerId: varchar("client_id").references(() => customers.id).notNull(), // Using client_id from existing DB
   alertId: varchar("alert_id").references(() => alerts.id),

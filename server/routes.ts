@@ -579,7 +579,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Default: return full list (backward compatible)
       res.json(containers);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch containers" });
+      console.error("Error fetching containers:", error);
+      res.status(500).json({ error: "Failed to fetch containers", details: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -945,7 +946,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(requests);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch service requests" });
+      console.error("Error fetching service requests:", error);
+      res.status(500).json({ error: "Failed to fetch service requests", details: error instanceof Error ? error.message : String(error) });
     }
   });
 

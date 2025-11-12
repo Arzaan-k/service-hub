@@ -9,6 +9,9 @@
     "build:deploy": "npm run build",
     "db:migrate:auth": "tsx server/tools/migrate-auth.ts",
     "import:rentals": "tsx server/tools/import-rentals.ts",
+    "import:excel": "node import-excel-data.js",
+    "validate:import": "node validate-import-files.js",
+    "preview:import": "node preview-import-data.js",
     "db:push": "echo 'Database migrations should be run manually with proper DATABASE_URL'",
     "db:deploy": "echo 'Database migrations should be run manually in production'",
     "start": "NODE_ENV=production node dist/index.js",
@@ -105,6 +108,7 @@
     "vite": "^5.4.20",
     "wouter": "^3.3.5",
     "ws": "^8.18.3",
+    "xlsx": "^0.18.5",
     "zod": "^3.24.2",
     "zod-validation-error": "^3.4.0"
   },

@@ -1,14 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
-import { MapPin, Phone, Star, Wrench, ArrowLeft } from "lucide-react";
+import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import WageBreakdown from "@/components/wage-breakdown";
+import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
 
 function formatDate(d: string | Date) {
   const dt = typeof d === "string" ? new Date(d) : d;
@@ -48,6 +52,44 @@ export default function TechnicianProfile() {
     queryFn: async () => (await apiRequest("GET", `/api/technicians/${technicianId}/performance`)).json(),
     enabled: !!technicianId,
   });
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ baseLocation: "" });
+
+  const updateTechnician = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("PUT", `/api/technicians/${technicianId}`, data);
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId] });
+      setIsEditing(false);
+      toast({
+        title: "Success",
+        description: "Technician profile updated successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update technician profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (technician && isEditing) {
+      const locationValue = typeof technician.baseLocation === "string"
+        ? technician.baseLocation
+        : technician.baseLocation?.city || "";
+      setEditForm({
+        baseLocation: locationValue,
+      });
+    }
+  }, [technician, isEditing]);
 
   const completed = Array.isArray(requests)
     ? requests.filter((r: any) => r.status === "completed")
@@ -102,11 +144,69 @@ export default function TechnicianProfile() {
                 <Badge>{technician.status || "available"}</Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center gap-2 text-sm"><Phone className="h-4 w-4 text-muted-foreground"/><span>{technician.phone || technician.whatsappNumber}</span></div>
-              <div className="flex items-center gap-2 text-sm"><MapPin className="h-4 w-4 text-muted-foreground"/><span>{typeof technician.baseLocation === "object" ? technician.baseLocation?.city : technician.baseLocation || "Not set"}</span></div>
-              <div className="flex items-center gap-2 text-sm"><Wrench className="h-4 w-4 text-muted-foreground"/><span>{Array.isArray(technician.skills) ? technician.skills.join(", ") : technician.specialization || "general"}</span></div>
-              <div className="flex items-center gap-1 text-sm pt-1"><Star className="h-4 w-4 text-yellow-500 fill-yellow-500"/><span>{technician.averageRating ?? 0}/5</span></div>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2 text-sm">
+                <Phone className="h-4 w-4 text-muted-foreground"/>
+                <span>{technician.phone || technician.whatsappNumber}</span>
+              </div>
+
+              {/* Location Section */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <MapPin className="h-4 w-4 text-muted-foreground"/>
+                  <span>Location:</span>
+                </div>
+                {isEditing ? (
+                  <div className="ml-6 relative">
+                    <Label htmlFor="location">Base Location</Label>
+                    <div className="mt-2">
+                      <MapMyIndiaAutocomplete
+                        value={editForm.baseLocation}
+                        onChange={(value) => setEditForm({ ...editForm, baseLocation: value })}
+                        placeholder="Search for Indian locations (e.g., Mumbai, Delhi, Bangalore)..."
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ml-6 text-sm">
+                    {typeof technician.baseLocation === "object"
+                      ? technician.baseLocation?.city
+                      : technician.baseLocation || "Not set"}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 text-sm">
+                <Wrench className="h-4 w-4 text-muted-foreground"/>
+                <span>{Array.isArray(technician.skills) ? technician.skills.join(", ") : technician.specialization || "general"}</span>
+              </div>
+              <div className="flex items-center gap-1 text-sm pt-1">
+                <Star className="h-4 w-4 text-yellow-500 fill-yellow-500"/>
+                <span>{technician.averageRating ?? 0}/5</span>
+              </div>
+
+              {/* Edit/Save Buttons */}
+              <div className="flex gap-2 pt-4">
+                {isEditing ? (
+                  <>
+                    <Button onClick={() => updateTechnician.mutate({ baseLocation: editForm.baseLocation })} disabled={updateTechnician.isPending}>
+                      <Save className="h-4 w-4 mr-2" />
+                      {updateTechnician.isPending ? "Saving..." : "Save"}
+                    </Button>
+                    <Button variant="outline" onClick={() => {
+                      setIsEditing(false);
+                    }}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <Button onClick={() => setIsEditing(true)}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Location
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -128,7 +228,7 @@ export default function TechnicianProfile() {
 
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>Today’s Schedule</CardTitle>
+                <CardTitle>Today's Schedule</CardTitle>
               </CardHeader>
               <CardContent>
                 {isScheduleLoading ? (
@@ -197,29 +297,55 @@ export default function TechnicianProfile() {
             </CardContent>
           </Card>
 
-          {/* Completed Services */}
+          {/* Completed Services / Service History */}
           <Card>
             <CardHeader>
-              <CardTitle>Completed Services</CardTitle>
+              <CardTitle>Service History</CardTitle>
             </CardHeader>
             <CardContent>
               {isRequestsLoading ? (
-                <div className="text-sm text-muted-foreground">Loading services…</div>
+                <div className="text-sm text-muted-foreground">Loading service history…</div>
               ) : completed.length > 0 ? (
                 <div className="space-y-3">
                   {completed.map((r: any) => (
                     <div key={r.id} className="rounded-md border p-3">
                       <div className="flex items-center justify-between text-sm">
-                        <div className="font-medium">SR #{r.requestNumber}</div>
-                        <div className="text-muted-foreground">{r.scheduledTimeWindow || ""}</div>
+                        <div className="font-medium">
+                          {r.jobOrder ? `Job Order: ${r.jobOrder}` : `SR #${r.requestNumber}`}
+                        </div>
+                        <Badge className="bg-green-100 text-green-800">
+                          {r.callStatus || r.status}
+                        </Badge>
                       </div>
                       <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
-                      <div className="text-xs text-muted-foreground">Completed: {r.completed_at ? formatDate(r.completed_at) : (r.actualEndTime ? formatDate(r.actualEndTime) : "-")}</div>
+                      <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-muted-foreground">
+                        {r.workType && (
+                          <div><span className="font-medium">Work Type:</span> {r.workType}</div>
+                        )}
+                        {r.clientType && (
+                          <div><span className="font-medium">Client Type:</span> {r.clientType}</div>
+                        )}
+                        {r.jobType && (
+                          <div><span className="font-medium">Job Type:</span> {r.jobType}</div>
+                        )}
+                        {r.billingType && (
+                          <div><span className="font-medium">Billing:</span> {r.billingType}</div>
+                        )}
+                        {(r.month || r.year) && (
+                          <div><span className="font-medium">Period:</span> {r.month} {r.year}</div>
+                        )}
+                        <div>
+                          <span className="font-medium">Completed:</span> {r.completed_at ? formatDate(r.completed_at) : (r.actualEndTime ? formatDate(r.actualEndTime) : "-")}
+                        </div>
+                        {r.container?.containerCode && (
+                          <div><span className="font-medium">Container:</span> {r.container.containerCode}</div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-muted-foreground">No completed services yet.</div>
+                <div className="text-sm text-muted-foreground">No service history available.</div>
               )}
             </CardContent>
           </Card>
