@@ -21,7 +21,7 @@ export const invoiceStatusEnum = pgEnum("invoice_status", ["pending", "partially
 export const customerTierEnum = pgEnum("customer_tier", ["premium", "standard", "basic"]);
 export const paymentTermsEnum = pgEnum("payment_terms", ["prepaid", "net15", "net30"]);
 export const customerStatusEnum = pgEnum("customer_status", ["active", "inactive", "suspended"]);
-export const whatsappMessageTypeEnum = pgEnum("whatsapp_message_type", ["text", "template", "interactive", "media", "flow"]);
+export const whatsappMessageTypeEnum = pgEnum("whatsapp_message_type", ["text", "template", "interactive", "media", "flow", "image", "video", "document", "audio"]);
 export const whatsappMessageStatusEnum = pgEnum("whatsapp_message_status", ["sent", "delivered", "read", "failed"]);
 export const whatsappRecipientTypeEnum = pgEnum("whatsapp_recipient_type", ["customer", "technician", "admin"]);
 export const scheduledServiceStatusEnum = pgEnum("scheduled_service_status", ["scheduled", "in_progress", "completed", "rescheduled", "cancelled"]);
@@ -41,7 +41,7 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}) as any;
 
 // Customers table (renamed from clients according to PRD)
 export const customers = pgTable("customers", {
@@ -61,7 +61,7 @@ export const customers = pgTable("customers", {
   status: customerStatusEnum("status").notNull().default("active"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}) as any;
 
 // Technicians table (enhanced according to PRD)
 export const technicians = pgTable("technicians", {
@@ -154,7 +154,7 @@ export const containerOwnershipHistory = pgTable("container_ownership_history", 
   purchaseDetails: jsonb("purchase_details"), // Store full purchase details from Excel
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}) as any;
 
 // Container Metrics (IoT data) - enhanced according to PRD
 export const containerMetrics = pgTable("container_metrics", {
@@ -222,12 +222,20 @@ export const serviceRequests = pgTable("service_requests", {
   usedParts: text("used_parts").array(),
   totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
   invoiceId: varchar("invoice_id"), // Will reference invoices table after it's defined
-  customerFeedbackId: varchar("customer_feedback_id").references(() => feedback.id),
+  customerFeedbackId: varchar("customer_feedback_id"),
   beforePhotos: text("before_photos").array(),
   afterPhotos: text("after_photos").array(),
   locationProofPhotos: text("location_proof_photos").array(), // New field for location proof photos
+  videos: text("videos").array(), // Video uploads from client during service request
   clientApprovalRequired: boolean("client_approval_required"),
   clientApprovedAt: timestamp("client_approved_at"),
+  // New columns for technician WhatsApp flow
+  startTime: timestamp("start_time"), // When technician actually started (WhatsApp flow)
+  endTime: timestamp("end_time"), // When technician actually ended (WhatsApp flow)
+  durationMinutes: integer("duration_minutes"), // Calculated duration in minutes
+  signedDocumentUrl: text("signed_document_url"), // Client signature document
+  vendorInvoiceUrl: text("vendor_invoice_url"), // Third-party vendor invoice
+  technicianNotes: text("technician_notes"), // Notes from technician during service
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -247,7 +255,7 @@ export const serviceRequests = pgTable("service_requests", {
 export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   invoiceNumber: text("invoice_number").notNull().unique(),
-  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
+  serviceRequestId: varchar("service_request_id").notNull(),
   customerId: varchar("customer_id").references(() => customers.id).notNull(),
   issueDate: timestamp("issue_date").defaultNow().notNull(),
   dueDate: timestamp("due_date").notNull(),
@@ -270,7 +278,7 @@ export const invoices = pgTable("invoices", {
 // Feedback table (new according to PRD)
 export const feedback = pgTable("feedback", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
+  serviceRequestId: varchar("service_request_id").references(() => (serviceRequests as any).id).notNull(),
   customerId: varchar("customer_id").references(() => customers.id).notNull(),
   technicianId: varchar("technician_id").references(() => technicians.id).notNull(),
   rating: feedbackRatingEnum("rating").notNull(),
@@ -286,7 +294,7 @@ export const feedback = pgTable("feedback", {
 // Scheduled Services table (new according to PRD)
 export const scheduledServices = pgTable("scheduled_services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
+  serviceRequestId: varchar("service_request_id").references(() => (serviceRequests as any).id).notNull(),
   technicianId: varchar("technician_id").references(() => technicians.id).notNull(),
   scheduledDate: timestamp("scheduled_date").notNull(),
   sequenceNumber: integer("sequence_number").notNull(), // order in technician's day
@@ -403,7 +411,8 @@ export const manuals = pgTable("manuals", {
 // Define vector type for pgvector
 const vector = customType<{ data: number[]; driverData: string }>({
   dataType(config) {
-    return `vector(${config?.dimensions ?? 384})`;
+    const dims = (config as any)?.dimensions ?? 384;
+    return `vector(${dims})`;
   },
   toDriver(value: number[]): string {
     return JSON.stringify(value);
@@ -534,24 +543,24 @@ export const ragQueriesRelations = relations(ragQueries, ({ one }) => ({
 }));
 
 // Insert schemas (updated according to PRD)
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertTechnicianSchema = createInsertSchema(technicians).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertContainerSchema = createInsertSchema(containers).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true, createdAt: true });
-export const insertServiceRequestSchema = createInsertSchema(serviceRequests).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertFeedbackSchema = createInsertSchema(feedback).omit({ id: true, createdAt: true });
-export const insertScheduledServiceSchema = createInsertSchema(scheduledServices).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertWhatsappSessionSchema = createInsertSchema(whatsappSessions).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).omit({ id: true, createdAt: true });
-export const insertContainerMetricsSchema = createInsertSchema(containerMetrics).omit({ id: true });
-export const insertInventorySchema = createInsertSchema(inventory).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({ id: true, createdAt: true });
-export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({ id: true, createdAt: true });
-export const insertManualSchema = createInsertSchema(manuals).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true, embedding: true });
-export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: true, createdAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertTechnicianSchema = createInsertSchema(technicians).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertContainerSchema = createInsertSchema(containers).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true, createdAt: true } as any);
+export const insertServiceRequestSchema = createInsertSchema(serviceRequests).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertFeedbackSchema = createInsertSchema(feedback).omit({ id: true, createdAt: true } as any);
+export const insertScheduledServiceSchema = createInsertSchema(scheduledServices).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertWhatsappSessionSchema = createInsertSchema(whatsappSessions).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).omit({ id: true, createdAt: true } as any);
+export const insertContainerMetricsSchema = createInsertSchema(containerMetrics).omit({ id: true } as any);
+export const insertInventorySchema = createInsertSchema(inventory).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({ id: true, createdAt: true } as any);
+export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({ id: true, createdAt: true } as any);
+export const insertManualSchema = createInsertSchema(manuals).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true, embedding: true } as any);
+export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: true, createdAt: true } as any);
 
 // Types (updated according to PRD)
 export type User = typeof users.$inferSelect;
