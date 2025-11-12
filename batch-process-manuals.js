@@ -164,10 +164,3 @@ async function batchProcessAllManuals() {
 
 batchProcessAllManuals().catch(console.error);
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

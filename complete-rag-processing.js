@@ -178,9 +178,3 @@ async function completeRAGProcessing() {
 completeRAGProcessing().catch(console.error);
 
 
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

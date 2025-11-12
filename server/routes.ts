@@ -1,5 +1,3 @@
-
-
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
@@ -1610,11 +1608,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: defaultPassword,
         role: "client",
         isActive: true,
-<<<<<<< HEAD
         whatsappVerified: true, // Enable WhatsApp by default for new clients
-=======
-        whatsappVerified: false,
->>>>>>> all-ui-working
         emailVerified: false,
       });
       
@@ -1673,7 +1667,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-<<<<<<< HEAD
   // Enable/Disable WhatsApp for a client
   app.patch("/api/clients/:id/whatsapp", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
@@ -1700,8 +1693,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-=======
->>>>>>> all-ui-working
+
   // Inventory routes
   app.get("/api/inventory", authenticateUser, async (req, res, next) => {
     try {
@@ -2976,7 +2968,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ORBCOMM Real Data Status - Only shows real ORBCOMM data, no simulation
-  app.get('/api/orbcomm/real-status', async (req, res) => {
+  app.get('/api/orbcomm/real-status', authenticateUser, async (req, res) => {
     try {
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const client = getOrbcommClient();
@@ -3048,34 +3040,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { deviceId } = req.params;
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
-<<<<<<< HEAD
-      
       console.log('📱 Fetching real device data for:', deviceId);
       const deviceData = await orbcommClient.getDeviceData(deviceId);
       
       if (!deviceData) {
         return res.status(404).json({ error: 'Device not found' });
       }
-      
-=======
 
-      console.log('📱 Fetching real device data for:', deviceId);
-      const deviceData = await orbcommClient.getDeviceData(deviceId);
-
-      if (!deviceData) {
-        return res.status(404).json({ error: 'Device not found' });
-      }
-
->>>>>>> all-ui-working
       res.json(deviceData);
     } catch (error) {
       console.error('ORBCOMM device data error:', error);
       res.status(500).json({ error: 'Failed to fetch device data' });
     }
   });
-
-<<<<<<< HEAD
-=======
   // Live ORBCOMM data with container matching - Reefer Units and Device Status tables
   app.get('/api/orbcomm/live-data', authenticateUser, async (req, res) => {
     try {
@@ -3215,8 +3192,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
-
->>>>>>> all-ui-working
   // Admin: Verify client for WhatsApp access
   app.post('/api/admin/whatsapp/verify-client', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
     try {
@@ -3587,4 +3562,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   return httpServer;
+}
+
+// Remove or merge any duplicate DeviceData interfaces
+interface DeviceData {
+  deviceId: string;
+  temperature?: number;
+  powerStatus?: 'on' | 'off';
+  batteryLevel?: number;
+  errorCodes?: string[];
+  timestamp?: Date;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  lastAssetId?: string;
+  oem?: string;
+  eventType?: string;
+  reportingInterval?: string;
+  cellularType?: string;
+  signalStrength?: number;
 }

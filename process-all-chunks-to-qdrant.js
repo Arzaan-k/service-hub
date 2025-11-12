@@ -106,11 +106,3 @@ async function processAllChunksToQdrant() {
 }
 
 processAllChunksToQdrant().catch(console.error);
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

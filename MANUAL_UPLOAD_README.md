@@ -121,14 +121,3 @@ The following manuals are ready for upload:
 - MP3000, MP4000, MP5000 Manuals
 
 All files are located in: `C:/Users/Arzaan Ali Khan/Downloads/Reefer Manuals/`
-
-
-
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

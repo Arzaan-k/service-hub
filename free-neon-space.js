@@ -59,10 +59,3 @@ async function freeNeonSpace() {
 
 freeNeonSpace().catch(console.error);
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

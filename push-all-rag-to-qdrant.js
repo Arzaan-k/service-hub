@@ -95,10 +95,3 @@ async function pushAllRAGToQdrant() {
 
 pushAllRAGToQdrant().catch(console.error);
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

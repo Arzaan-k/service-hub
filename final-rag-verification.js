@@ -62,11 +62,3 @@ async function finalVerification() {
 }
 
 finalVerification().catch(console.error);
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

@@ -40,7 +40,3 @@ createAdminUser();
 
 
 
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

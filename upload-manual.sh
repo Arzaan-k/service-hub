@@ -26,10 +26,3 @@ echo -e "\nDone."
 
 
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

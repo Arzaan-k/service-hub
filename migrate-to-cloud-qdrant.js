@@ -102,10 +102,3 @@ async function migrateToCloudQdrant() {
 
 migrateToCloudQdrant().catch(console.error);
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

@@ -108,11 +108,3 @@ Expected output:
 ---
 
 **System is fully configured and operational! 🎉**
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

@@ -68,8 +68,3 @@ async function testChatAssistant() {
 testChatAssistant().catch(console.error);
 
 
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

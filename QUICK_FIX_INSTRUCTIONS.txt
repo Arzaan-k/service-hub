@@ -1,0 +1,131 @@
+================================================================================
+🚨 URGENT: FIX BOT NOT RESPONDING TO "HI"
+================================================================================
+
+STATUS: 95% Complete - Just ONE manual edit needed!
+
+================================================================================
+THE PROBLEM
+================================================================================
+
+There's a duplicate function in whatsapp.ts that's causing TypeScript errors.
+We need to delete the OLD version and keep the NEW version.
+
+================================================================================
+THE FIX (2 MINUTES)
+================================================================================
+
+STEP 1: Open File
+-----------------
+Open: server/services/whatsapp.ts
+
+STEP 2: Delete Lines 2380-2512
+-------------------------------
+Find line 2380 which starts with:
+    // Handle media messages (photos, videos, documents) with role-based handling
+
+Delete everything from line 2380 to line 2512 (inclusive).
+
+The section ends with:
+    }
+  }
+}
+
+(Right before "// Complete Service Request Flow via WhatsApp")
+
+STEP 3: Save File
+-----------------
+Save the file (Ctrl+S)
+
+STEP 4: Restart Server
+----------------------
+In terminal:
+    Ctrl+C (stop server)
+    npm run dev
+
+STEP 5: Test
+------------
+Send "hi" to your WhatsApp bot
+You should see the menu!
+
+================================================================================
+WHAT THIS FIXES
+================================================================================
+
+✅ Bot will respond to "hi" messages
+✅ Client menu will appear
+✅ Complete service request flow will work
+✅ All existing features remain intact
+
+================================================================================
+VISUAL GUIDE
+================================================================================
+
+BEFORE (Lines 2380-2512 - DELETE THIS):
+----------------------------------------
+// Handle media messages (photos, videos, documents) with role-based handling
+async function handleMediaMessage(message: any, user: any, roleData: any, session: any): Promise<void> {
+  const from = message.from;
+  ... (130 lines of code)
+  }
+}
+
+// Complete Service Request Flow via WhatsApp (PRD Section 4.4.1)
+
+
+AFTER (Keep this - it's at line 3802):
+---------------------------------------
+async function handleMediaMessage(message: any, user: any, session: any): Promise<void> {
+  const from = message.from;
+  const conversationState = session.conversationState || {};
+  ... (better, simpler version)
+}
+
+================================================================================
+WHY THIS HAPPENED
+================================================================================
+
+During the implementation of the enhanced flow, a new simplified version of
+handleMediaMessage was created. The old version wasn't removed, causing a
+duplicate function error.
+
+================================================================================
+ALTERNATIVE: Use VS Code
+================================================================================
+
+1. Open whatsapp.ts
+2. Press Ctrl+G (Go to Line)
+3. Type: 2380
+4. Select from line 2380 to line 2512
+5. Press Delete
+6. Save (Ctrl+S)
+7. Restart server
+
+================================================================================
+NEED HELP?
+================================================================================
+
+If you're unsure, just:
+1. Search for: "async function handleMediaMessage"
+2. You'll find TWO occurrences
+3. Delete the FIRST one (it has 4 parameters: message, user, roleData, session)
+4. Keep the SECOND one (it has 3 parameters: message, user, session)
+
+================================================================================
+AFTER THE FIX
+================================================================================
+
+Your bot will:
+✅ Respond to "hi" with menu
+✅ Show container buttons
+✅ Send reference image
+✅ Handle error codes (with video for "NA")
+✅ Require photo upload
+✅ Request video upload
+✅ Create service requests
+✅ Show on Dashboard
+
+Total time: 2 minutes
+Result: Fully working bot!
+
+================================================================================

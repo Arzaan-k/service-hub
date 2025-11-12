@@ -243,10 +243,3 @@ export class QdrantVectorStore {
 // Export singleton instance
 export const qdrantVectorStore = new QdrantVectorStore();
 
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

@@ -64,13 +64,3 @@ AUTH_TOKEN="your-token" node bulk-upload-manuals.js
 - **"Invalid credentials"**: Make sure you're using the correct email/password
 - **Server not running**: Start with `npm run dev` first
 
-
-
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working

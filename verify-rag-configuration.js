@@ -42,11 +42,3 @@ async function verifyConfiguration() {
 }
 
 verifyConfiguration().catch(console.error);
-
-
-
-
-<<<<<<< HEAD
-=======
-
->>>>>>> all-ui-working
