@@ -14,6 +14,8 @@ export default function Sidebar() {
     { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench", color: "service", roles: ["admin","coordinator","technician","client","super_admin"] },
     // Client self profile quick link
     { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", color: "clients", roles: ["client"] },
+    // Technician self profile quick link
+    { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", color: "technicians", roles: ["technician"] },
     // Admin/Coordinator only
     { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat", color: "technicians", roles: ["admin","coordinator","super_admin"] },
     { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", color: "scheduling", roles: ["admin","coordinator","super_admin"] },

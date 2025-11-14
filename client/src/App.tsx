@@ -26,7 +26,8 @@ import AdminWhatsApp from "@/pages/admin-whatsapp";
 import OrbcommData from "@/pages/orbcomm-data";
 import OrbcommLiveData from "@/pages/orbcomm-live-data";
 import RagChat from "@/pages/rag-chat";
-import AdminManualUpload from "@/pages/admin-manual-upload";
+import TechnicianMyProfile from "@/pages/technician-my-profile";
+import ServiceHistory from "@/pages/service-history";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -90,7 +91,15 @@ function Router() {
         {() => <ProtectedRoute component={ClientProfile} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
       <Route path="/my-profile">
-        {() => <ProtectedRoute component={ClientProfile} roles={["client", "admin", "coordinator", "super_admin"]} />}
+        {() => {
+          const user = getCurrentUser();
+          const role = (user?.role || "client").toLowerCase();
+          if (role === "technician") {
+            return <ProtectedRoute component={TechnicianMyProfile} roles={["technician"]} />;
+          } else {
+            return <ProtectedRoute component={ClientProfile} roles={["client", "admin", "coordinator", "super_admin"]} />;
+          }
+        }}
       </Route>
       <Route path="/inventory">
         {() => <ProtectedRoute component={Inventory} roles={["admin", "coordinator", "technician", "super_admin"]} />}
@@ -109,6 +118,9 @@ function Router() {
       </Route>
       <Route path="/admin/manuals">
         {() => <ProtectedRoute component={AdminManualUpload} roles={["admin", "super_admin"]} />}
+      </Route>
+      <Route path="/service-history">
+        {() => <ProtectedRoute component={ServiceHistory} />}
       </Route>
     </Switch>
   );

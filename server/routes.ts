@@ -579,7 +579,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Default: return full list (backward compatible)
       res.json(containers);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch containers" });
+      console.error("Error fetching containers:", error);
+      res.status(500).json({ error: "Failed to fetch containers", details: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -646,6 +647,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(history);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch service history" });
+    }
+  });
+
+  app.get("/api/containers/:id/ownership-history", authenticateUser, async (req, res) => {
+    try {
+      const history = await storage.getContainerOwnershipHistory(req.params.id);
+      res.json(history);
+    } catch (error) {
+      console.error("Failed to fetch ownership history:", error);
+      res.status(500).json({ error: "Failed to fetch ownership history" });
     }
   });
 
@@ -1199,7 +1210,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(requests);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch service requests" });
+      console.error("Error fetching service requests:", error);
+      res.status(500).json({ error: "Failed to fetch service requests", details: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -1555,6 +1567,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/technicians/:id/service-history", authenticateUser, async (req, res) => {
+    try {
+      const serviceHistory = await storage.getServiceRequestsByTechnician(req.params.id);
+      res.json(serviceHistory);
+    } catch (error) {
+      console.error("Failed to fetch technician service history:", error);
+      res.status(500).json({ error: "Failed to fetch technician service history" });
+    }
+  });
+
   // Test route to check if routes are being registered
   app.get("/api/test-schedules", (req, res) => {
     res.json({ message: "Test route works", query: req.query });
@@ -1566,6 +1588,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(technicians);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch technicians by skill" });
+    }
+  });
+
+  // Get technician by user ID (for My Profile)
+  app.get("/api/technicians/user/:userId", authenticateUser, async (req, res) => {
+    try {
+      const technician = await storage.getTechnicianByUserId(req.params.userId);
+      if (!technician) {
+        return res.status(404).json({ error: "Technician not found" });
+      }
+      res.json(technician);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch technician" });
     }
   });
 
@@ -4061,6 +4096,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Container RAG history error:', error);
       res.status(500).json({ error: 'Failed to retrieve container query history' });
+    }
+  });
+
+  // Map My India autosuggest proxy endpoint (to avoid CORS issues)
+  app.get("/api/mapmyindia/autosuggest", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { query } = req.query;
+
+      if (!query || typeof query !== 'string' || query.length < 2) {
+        return res.status(400).json({ error: "Query parameter required (minimum 2 characters)" });
+      }
+
+      const apiKey = process.env.REACT_APP_MAPMYINDIA_API_KEY || '';
+
+      if (!apiKey) {
+        return res.status(500).json({ error: "Map My India API key not configured" });
+      }
+
+      console.log('Making API call to Map My India with query:', query);
+      console.log('API endpoint:', `https://atlas.mapmyindia.com/api/places/search/json?query=${encodeURIComponent(query)}&region=IND&token=${apiKey.substring(0, 10)}...`);
+
+      // Try Map My India first
+      let response;
+      let data;
+      let apiSuccess = false;
+
+      try {
+        response = await fetch(
+          `https://atlas.mapmyindia.com/api/places/search/json?query=${encodeURIComponent(query)}&region=IND&token=${apiKey}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        console.log('Map My India API response status:', response.status, response.statusText);
+
+        if (response.ok) {
+          data = await response.json();
+          console.log('Map My India API response data:', JSON.stringify(data, null, 2));
+
+          // Check if we have valid Map My India response
+          if (data && data.suggestedLocations && Array.isArray(data.suggestedLocations)) {
+            apiSuccess = true;
+            console.log('Map My India API success - found', data.suggestedLocations.length, 'suggestions');
+          } else {
+            console.log('Map My India API returned unexpected format');
+          }
+        }
+      } catch (error) {
+        console.error('Map My India API call failed:', error);
+      }
+
+      // If Map My India fails, fallback to OpenStreetMap Nominatim
+      if (!apiSuccess) {
+        console.log('Falling back to OpenStreetMap Nominatim for query:', query);
+
+        try {
+          const nominatimResponse = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=IN&limit=10`,
+            {
+              method: 'GET',
+              headers: {
+                'User-Agent': 'ServiceHub/1.0',
+              },
+            }
+          );
+
+          if (nominatimResponse.ok) {
+            const nominatimData = await nominatimResponse.json();
+
+            // Transform Nominatim response to match expected format
+            data = {
+              suggestedLocations: nominatimData.map((item: any, index: number) => ({
+                placeName: item.display_name.split(',')[0] || item.display_name,
+                placeAddress: item.display_name.split(',').slice(1).join(',').trim() || item.display_name,
+                eLoc: `nominatim_${index}`,
+                latitude: item.lat,
+                longitude: item.lon
+              }))
+            };
+
+            console.log('OpenStreetMap Nominatim response transformed:', JSON.stringify(data, null, 2));
+          } else {
+            throw new Error('Nominatim API failed');
+          }
+        } catch (error) {
+          console.error('OpenStreetMap Nominatim fallback failed:', error);
+          // Return empty results instead of mock data
+          data = { suggestedLocations: [] };
+        }
+      }
+
+      res.json(data);
+    } catch (error) {
+      console.error('Map My India proxy error:', error);
+      res.status(500).json({ error: 'Failed to fetch location suggestions' });
     }
   });
 

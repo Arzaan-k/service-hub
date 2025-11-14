@@ -1,4 +1,19 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
+import * as path from 'path';
+import * as fs from 'fs';
+
+// Load environment variables from .env.development file or .env file
+const envDevPath = path.join(process.cwd(), '.env.development');
+const envPath = path.join(process.cwd(), '.env');
+
+if (fs.existsSync(envDevPath)) {
+  config({ path: envDevPath });
+} else if (fs.existsSync(envPath)) {
+  config({ path: envPath });
+} else {
+  console.log('Warning: No .env or .env.development file found');
+}
+
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { registerRoutes } from "./routes";
@@ -136,8 +151,9 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    console.error('[SERVER] Error handler caught:', err);
     res.status(status).json({ message });
-    throw err;
+    // Don't throw here - error is already handled
   });
 
   // Initialize Orbcomm Production connection
