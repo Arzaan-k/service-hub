@@ -875,17 +875,281 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const request = await storage.getServiceRequest(id);
       if (!request) return res.status(404).json({ error: "Not found" });
 
+      console.log(`[API] Service Request ${id} media check:`, {
+        clientUploadedPhotos: request.clientUploadedPhotos,
+        clientUploadedVideos: request.clientUploadedVideos,
+        beforePhotos: request.beforePhotos,
+        afterPhotos: request.afterPhotos
+      });
+
       const [container, customer, technician] = await Promise.all([
         storage.getContainer(request.containerId),
         storage.getCustomer(request.customerId),
         request.assignedTechnicianId ? storage.getTechnician(request.assignedTechnicianId) : Promise.resolve(undefined)
       ]);
 
+      // Get technician user data if technician is assigned
+      const technicianUser = technician ? await storage.getUser(technician.userId) : undefined;
+
+      // Parse multiple containers from issue description if present
+      let allContainers = [];
+      const containerCodes: string[] = [];
+      
+      // Parse containers from issue description
+      if (request.issueDescription) {
+        const description = request.issueDescription;
+        console.log(`[API] Parsing issue description for containers (full length: ${description.length}):`, description.substring(0, 1000));
+        
+        // Method 1: Extract from "Multiple Containers:" line (handles both with and without emoji)
+        // This line contains ALL containers, so use it as primary source
+        let multipleMatch = description.match(/📦\s*Multiple Containers:\s*([^\n]+)/i);
+        if (!multipleMatch) {
+          multipleMatch = description.match(/Multiple Containers:\s*([^\n]+)/i);
+        }
+        if (multipleMatch && multipleMatch[1]) {
+          const codes = multipleMatch[1].split(',').map((code: string) => code.trim()).filter(Boolean);
+          console.log(`[API] Found codes from "Multiple Containers:" line:`, codes);
+          // Clear and use these codes as the source of truth
+          containerCodes.length = 0;
+          codes.forEach(code => {
+            if (code && code.length > 0) {
+              containerCodes.push(code);
+              console.log(`[API] Added container code: ${code}`);
+            }
+          });
+        }
+        
+        // Method 2: If "Multiple Containers:" not found, try combining Primary + Additional
+        if (containerCodes.length === 0) {
+          const primaryMatch = description.match(/Primary Container:\s*([^\n]+)/i);
+          const additionalMatch = description.match(/Additional Containers:\s*([^\n]+)/i);
+          
+          if (primaryMatch && primaryMatch[1]) {
+            const code = primaryMatch[1].trim();
+            if (code && code.length > 0) {
+              containerCodes.push(code);
+              console.log(`[API] Found code from "Primary Container:" line:`, code);
+            }
+          }
+          
+          if (additionalMatch && additionalMatch[1]) {
+            const codes = additionalMatch[1].split(',').map((code: string) => code.trim()).filter(Boolean);
+            console.log(`[API] Found codes from "Additional Containers:" line:`, codes);
+            codes.forEach(code => {
+              if (code && code.length > 0 && !containerCodes.includes(code)) {
+                containerCodes.push(code);
+                console.log(`[API] Added container code from Additional: ${code}`);
+              }
+            });
+          }
+        }
+        
+        // Method 3: Fallback - if still no containers, use primary container from containerId
+        if (containerCodes.length === 0 && container && container.containerCode) {
+          containerCodes.push(container.containerCode);
+          console.log(`[API] Using primary container from containerId: ${container.containerCode}`);
+        }
+        
+        // Method 4: Fallback - try to extract all container codes mentioned (more flexible pattern)
+        // Try multiple patterns: [A-Z]{4}\d{7}, [A-Z]{3}\d{7}, [A-Z]{2}\d{7}, etc.
+        if (containerCodes.length <= 1) {
+          // More flexible pattern: 4-5 uppercase letters followed by 6-8 digits
+          const containerCodePatterns = [
+            /[A-Z]{4,5}\d{6,8}/g,  // Most common: TRIU6617292, TDRU7152244
+            /[A-Z]{3}\d{7,8}/g,     // Alternative: ABC1234567
+            /[A-Z]{2}\d{8,9}/g      // Alternative: AB12345678
+          ];
+          
+          for (const pattern of containerCodePatterns) {
+            const allMatches = description.match(pattern);
+            if (allMatches && allMatches.length > 0) {
+              console.log(`[API] Fallback: Found container codes via pattern ${pattern}:`, allMatches);
+              allMatches.forEach(code => {
+                if (!containerCodes.includes(code)) {
+                  containerCodes.push(code);
+                }
+              });
+              break; // Use first pattern that finds matches
+            }
+          }
+        }
+        
+        // Method 6: Look for container codes anywhere in the description (last resort)
+        // This searches for any alphanumeric codes that might be container codes
+        if (containerCodes.length <= 1) {
+          // Look for patterns like "CODE1, CODE2" or "CODE1 CODE2" after keywords
+          const keywordPatterns = [
+            /containers?[:\s]+([A-Z0-9,\s]+)/i,
+            /container\s+codes?[:\s]+([A-Z0-9,\s]+)/i,
+            /selected[:\s]+([A-Z0-9,\s]+)/i
+          ];
+          
+          for (const pattern of keywordPatterns) {
+            const match = description.match(pattern);
+            if (match && match[1]) {
+              const potentialCodes = match[1].split(/[,\s]+/).map((code: string) => code.trim()).filter((code: string) => code.length >= 6);
+              potentialCodes.forEach(code => {
+                if (code && code.length > 0 && !containerCodes.includes(code)) {
+                  containerCodes.push(code);
+                }
+              });
+              if (potentialCodes.length > 0) {
+                console.log(`[API] Found potential codes via keyword pattern:`, potentialCodes);
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Remove duplicates and fetch containers
+      const uniqueCodes = [...new Set(containerCodes)];
+      console.log(`[API] All unique container codes for SR ${request.id}:`, uniqueCodes);
+      
+      if (uniqueCodes.length > 0) {
+        // Fetch all containers by their codes
+        const containers = await storage.getAllContainers();
+        console.log(`[API] Total containers in database: ${containers.length}`);
+        
+        // Try to find each container, but include it even if not found (with limited data)
+        allContainers = uniqueCodes.map((code: string) => {
+          const found = containers.find((c: any) => 
+            c.containerCode === code || 
+            c.containerCode?.toUpperCase() === code.toUpperCase() ||
+            c.id === code
+          );
+          if (found) {
+            console.log(`[API] Found container for code "${code}": ${found.containerCode} (id: ${found.id})`);
+            return {
+              id: found.id,
+              containerCode: found.containerCode,
+              type: found.type,
+              status: found.status,
+              currentLocation: found.currentLocation,
+              iotEnabled: found.iotEnabled || false
+            };
+          } else {
+            console.warn(`[API] Container with code "${code}" not found in database, including with limited data`);
+            // Include container even if not found, so user can see it was mentioned
+            return {
+              id: null,
+              containerCode: code,
+              type: null,
+              status: null,
+              currentLocation: null,
+              iotEnabled: false
+            };
+          }
+        });
+        
+        console.log(`[API] Returning ${allContainers.length} containers for service request ${request.id}:`, 
+          allContainers.map(c => c.containerCode));
+      }
+
+      // Fallback 1: Try to get containers from WhatsApp messages if parsing failed
+      if (allContainers.length <= 1) {
+        try {
+          const whatsappMessages = await storage.getWhatsAppMessagesByServiceRequest(request.id);
+          console.log(`[API] Checking ${whatsappMessages.length} WhatsApp messages for container info`);
+          
+          const foundCodesInMessages: string[] = [...containerCodes];
+          
+          // Look for container codes in WhatsApp message content
+          for (const msg of whatsappMessages) {
+            if (msg.content) {
+              // Try to extract container codes from message content
+              const containerCodePatterns = [
+                /[A-Z]{4,5}\d{6,8}/g,
+                /[A-Z]{3}\d{7,8}/g,
+                /[A-Z]{2}\d{8,9}/g
+              ];
+              
+              for (const pattern of containerCodePatterns) {
+                const matches = msg.content.match(pattern);
+                if (matches) {
+                  matches.forEach(code => {
+                    if (!foundCodesInMessages.includes(code)) {
+                      foundCodesInMessages.push(code);
+                      console.log(`[API] Found container code "${code}" in WhatsApp message`);
+                    }
+                  });
+                }
+              }
+            }
+          }
+          
+          // Re-fetch containers if we found new codes
+          if (foundCodesInMessages.length > containerCodes.length) {
+            const updatedUniqueCodes = [...new Set(foundCodesInMessages)];
+            console.log(`[API] Re-fetching containers with updated codes:`, updatedUniqueCodes);
+            const containers = await storage.getAllContainers();
+            
+            allContainers = updatedUniqueCodes.map((code: string) => {
+              const found = containers.find((c: any) => 
+                c.containerCode === code || 
+                c.containerCode?.toUpperCase() === code.toUpperCase() ||
+                c.id === code
+              );
+              if (found) {
+                return {
+                  id: found.id,
+                  containerCode: found.containerCode,
+                  type: found.type,
+                  status: found.status,
+                  currentLocation: found.currentLocation,
+                  iotEnabled: found.iotEnabled || false
+                };
+              } else {
+                return {
+                  id: null,
+                  containerCode: code,
+                  type: null,
+                  status: null,
+                  currentLocation: null,
+                  iotEnabled: false
+                };
+              }
+            });
+            
+            console.log(`[API] Updated containers from WhatsApp messages: ${allContainers.length} containers`);
+          }
+        } catch (error) {
+          console.error(`[API] Error checking WhatsApp messages for containers:`, error);
+          // Continue with existing containers
+        }
+      }
+
+      // Fallback 2: If no containers found, use the primary container
+      if (allContainers.length === 0 && container) {
+        console.log(`[API] No containers parsed, using primary container only`);
+        allContainers = [{
+          id: container.id,
+          containerCode: container.containerCode,
+          type: container.type,
+          status: container.status,
+          currentLocation: container.currentLocation,
+          iotEnabled: container.iotEnabled || false
+        }];
+      }
+
       const response = {
         ...request,
         container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
+        allContainers, // Array of all containers involved in this service request
         customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
-        technician: technician ? { id: technician.id, name: (await storage.getUser(technician.userId))?.name || technician.employeeCode } : undefined,
+        technician: technician ? {
+          id: technician.id,
+          employeeCode: technician.employeeCode,
+          experienceLevel: technician.experienceLevel,
+          skills: technician.skills,
+          status: technician.status,
+          user: technicianUser ? {
+            id: technicianUser.id,
+            name: technicianUser.name,
+            phoneNumber: technicianUser.phoneNumber,
+            email: technicianUser.email
+          } : undefined
+        } : undefined,
       };
 
       res.json(response);
@@ -1011,8 +1275,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/service-requests/:id", authenticateUser, async (req, res) => {
     try {
+      // Get previous data to detect status changes
+      const previousRequest = await storage.getServiceRequest(req.params.id);
       const request = await storage.updateServiceRequest(req.params.id, req.body);
       broadcast({ type: "service_request_updated", data: request });
+      
+      // Notify client via WhatsApp if status changed or significant update
+      try {
+        const { customerCommunicationService } = await import('./services/whatsapp');
+        const statusChanged = previousRequest && previousRequest.status !== request.status;
+        const updateType = statusChanged ? 'status_changed' : 'updated';
+        await customerCommunicationService.notifyServiceRequestUpdate(request.id, updateType, previousRequest);
+      } catch (notifError) {
+        console.error('Failed to send WhatsApp notification:', notifError);
+        // Don't fail the request if notification fails
+      }
+      
       res.json(request);
     } catch (error) {
       res.status(500).json({ error: "Failed to update service request" });
@@ -1073,6 +1351,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Service request not found" });
       }
       broadcast({ type: "service_request_assigned", data: request });
+      
+      // Notify client via WhatsApp
+      try {
+        const { customerCommunicationService } = await import('./services/whatsapp');
+        await customerCommunicationService.notifyServiceRequestUpdate(request.id, 'assigned');
+      } catch (notifError) {
+        console.error('Failed to send WhatsApp notification:', notifError);
+        // Don't fail the request if notification fails
+      }
+      
       res.json(request);
     } catch (error) {
       res.status(500).json({ error: "Failed to assign service request" });
@@ -1086,6 +1374,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Service request not found" });
       }
       broadcast({ type: "service_request_started", data: request });
+      
+      // Notify client via WhatsApp
+      try {
+        const { customerCommunicationService } = await import('./services/whatsapp');
+        await customerCommunicationService.notifyServiceRequestUpdate(request.id, 'started');
+      } catch (notifError) {
+        console.error('Failed to send WhatsApp notification:', notifError);
+        // Don't fail the request if notification fails
+      }
+      
       res.json(request);
     } catch (error) {
       res.status(500).json({ error: "Failed to start service request" });
@@ -1106,6 +1404,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Service request not found" });
       }
       broadcast({ type: "service_request_completed", data: request });
+      
+      // Notify client via WhatsApp
+      try {
+        const { customerCommunicationService } = await import('./services/whatsapp');
+        await customerCommunicationService.notifyServiceRequestUpdate(request.id, 'completed');
+      } catch (notifError) {
+        console.error('Failed to send WhatsApp notification:', notifError);
+        // Don't fail the request if notification fails
+      }
+      
       res.json(request);
     } catch (error) {
       res.status(500).json({ error: "Failed to complete service request" });
@@ -1132,6 +1440,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(timeline);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch service request timeline" });
+    }
+  });
+
+  // Get all WhatsApp messages for a service request
+  app.get("/api/service-requests/:id/whatsapp-messages", authenticateUser, async (req, res) => {
+    try {
+      const messages = await storage.getWhatsAppMessagesByServiceRequest(req.params.id);
+      res.json(messages);
+    } catch (error) {
+      console.error("Error fetching WhatsApp messages for service request:", error);
+      res.status(500).json({ error: "Failed to fetch WhatsApp messages" });
     }
   });
 
@@ -1463,31 +1782,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("Received technician creation request:", req.body);
       const technicianData = req.body;
       
-      // Create a user first (required for technician)
-      const { hashPassword } = await import('./services/auth');
-      const defaultPassword = await hashPassword('ChangeMe@123');
+      const phoneNumber = technicianData.phone || technicianData.whatsappNumber;
+      const email = technicianData.email;
       
-      console.log("Creating user for technician...");
-      const user = await storage.createUser({
-        phoneNumber: technicianData.phone || technicianData.whatsappNumber,
-        name: technicianData.name,
-        email: technicianData.email,
-        password: defaultPassword,
-        role: "technician",
-        isActive: true,
-        whatsappVerified: false,
-        emailVerified: false,
-      });
-      console.log("User created:", user);
+      let user;
+      let isExistingUser = false;
+      
+      // Check if user with this phone number already exists
+      if (phoneNumber) {
+        const existingUserByPhone = await storage.getUserByPhoneNumber(phoneNumber);
+        if (existingUserByPhone) {
+          // Check if this user already has a technician record
+          const existingTechnician = await storage.getTechnicianByUserId(existingUserByPhone.id);
+          if (existingTechnician) {
+            // Update existing technician record instead of creating a new one
+            console.log(`[CREATE TECHNICIAN] User ${existingUserByPhone.id} already has technician record, updating it`);
+            const employeeCode = existingTechnician.employeeCode || `TECH-${Date.now().toString().slice(-6)}`;
+            const techData = {
+              experienceLevel: technicianData.experienceLevel || existingTechnician.experienceLevel,
+              skills: technicianData.specialization ? [technicianData.specialization] : (existingTechnician.skills || ['general']),
+              baseLocation: technicianData.baseLocation ? { city: technicianData.baseLocation } : existingTechnician.baseLocation,
+              serviceAreas: technicianData.baseLocation ? [technicianData.baseLocation] : (existingTechnician.serviceAreas || []),
+              status: existingTechnician.status || 'available',
+            };
+            const updatedTechnician = await storage.updateTechnician(existingTechnician.id, techData);
+            
+            // Update user info if provided
+            const userUpdates: any = { isActive: true };
+            if (technicianData.name) userUpdates.name = technicianData.name;
+            if (email) userUpdates.email = email;
+            await storage.updateUser(existingUserByPhone.id, userUpdates);
+            
+            broadcast({ type: "technician_updated", data: updatedTechnician });
+            return res.json(updatedTechnician);
+          }
+          
+          // User exists but is not a technician - allow them to be both client and technician
+          // Update user info but keep their existing role (they can be both)
+          console.log(`[CREATE TECHNICIAN] Found existing user ${existingUserByPhone.id}, adding technician role (can be both client and technician)`);
+          const userUpdates: any = { isActive: true };
+          if (technicianData.name) userUpdates.name = technicianData.name;
+          if (email) userUpdates.email = email;
+          // Don't change role - user can be both client and technician
+          user = await storage.updateUser(existingUserByPhone.id, userUpdates);
+          isExistingUser = true;
+          console.log("User updated:", user);
+        }
+      }
+      
+      // If no user found by phone, check by email
+      if (!user && email) {
+        const existingUserByEmail = await storage.getUserByEmail(email);
+        if (existingUserByEmail) {
+          // Check if this user already has a technician record
+          const existingTechnician = await storage.getTechnicianByUserId(existingUserByEmail.id);
+          if (existingTechnician) {
+            // Update existing technician record instead of creating a new one
+            console.log(`[CREATE TECHNICIAN] User ${existingUserByEmail.id} already has technician record, updating it`);
+            const employeeCode = existingTechnician.employeeCode || `TECH-${Date.now().toString().slice(-6)}`;
+            const techData = {
+              experienceLevel: technicianData.experienceLevel || existingTechnician.experienceLevel,
+              skills: technicianData.specialization ? [technicianData.specialization] : (existingTechnician.skills || ['general']),
+              baseLocation: technicianData.baseLocation ? { city: technicianData.baseLocation } : existingTechnician.baseLocation,
+              serviceAreas: technicianData.baseLocation ? [technicianData.baseLocation] : (existingTechnician.serviceAreas || []),
+              status: existingTechnician.status || 'available',
+            };
+            const updatedTechnician = await storage.updateTechnician(existingTechnician.id, techData);
+            
+            // Update user info if provided
+            const userUpdates: any = { isActive: true };
+            if (technicianData.name) userUpdates.name = technicianData.name;
+            if (phoneNumber) userUpdates.phoneNumber = phoneNumber;
+            await storage.updateUser(existingUserByEmail.id, userUpdates);
+            
+            broadcast({ type: "technician_updated", data: updatedTechnician });
+            return res.json(updatedTechnician);
+          }
+          
+          // User exists but is not a technician - allow them to be both client and technician
+          console.log(`[CREATE TECHNICIAN] Found existing user ${existingUserByEmail.id} by email, adding technician role (can be both client and technician)`);
+          const userUpdates: any = { isActive: true };
+          if (technicianData.name) userUpdates.name = technicianData.name;
+          if (phoneNumber) userUpdates.phoneNumber = phoneNumber;
+          // Don't change role - user can be both client and technician
+          user = await storage.updateUser(existingUserByEmail.id, userUpdates);
+          isExistingUser = true;
+          console.log("User updated:", user);
+        }
+      }
+      
+      // If no existing user found, create a new one
+      if (!user) {
+        const { hashPassword } = await import('./services/auth');
+        const defaultPassword = await hashPassword('ChangeMe@123');
+        
+        console.log("Creating new user for technician...");
+        // Set role to technician, but user can also be a client if needed
+        user = await storage.createUser({
+          phoneNumber: phoneNumber,
+          name: technicianData.name,
+          email: email,
+          password: defaultPassword,
+          role: "technician", // Default to technician, but can be changed later
+          isActive: true,
+          whatsappVerified: false,
+          emailVerified: false,
+        });
+        console.log("User created:", user);
+      }
       
       // Generate employee code
       const employeeCode = `TECH-${Date.now().toString().slice(-6)}`;
       
       // Create the technician with the user ID
+      // Note: User can have both customer and technician records
       const techData = {
         userId: user.id,
         employeeCode: employeeCode, // Use camelCase as defined in schema
-        experienceLevel: technicianData.experienceLevel,
+        experienceLevel: technicianData.experienceLevel || 'intermediate',
         skills: technicianData.specialization ? [technicianData.specialization] : ['general'],
         baseLocation: technicianData.baseLocation ? { city: technicianData.baseLocation } : null,
         serviceAreas: technicianData.baseLocation ? [technicianData.baseLocation] : [],
@@ -1499,6 +1911,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const technician = await storage.createTechnician(techData);
       console.log("Technician created:", technician);
+      console.log(`[CREATE TECHNICIAN] ✅ Technician created for user ${user.id}. User can be both client and technician.`);
       
       broadcast({ type: "technician_created", data: technician });
       res.json(technician);
@@ -1568,18 +1981,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/technicians/:id", authenticateUser, requireRole("admin"), async (req, res) => {
     try {
-      const existing = await storage.getTechnician(req.params.id);
-      if (!existing) return res.status(404).json({ error: "Technician not found" });
+      const technicianId = req.params.id;
+      console.log(`[DELETE TECHNICIAN] Attempting to delete technician: ${technicianId}`);
+      
+      const existing = await storage.getTechnician(technicianId);
+      if (!existing) {
+        console.log(`[DELETE TECHNICIAN] Technician not found: ${technicianId}`);
+        return res.status(404).json({ error: "Technician not found" });
+      }
+      
+      if (!existing.userId) {
+        console.log(`[DELETE TECHNICIAN] Technician has no userId: ${technicianId}`);
+        return res.status(400).json({ 
+          error: "Cannot delete technician", 
+          details: "Technician record is missing user association. Please contact support." 
+        });
+      }
+      
+      console.log(`[DELETE TECHNICIAN] Found technician: ${technicianId}, userId: ${existing.userId}`);
+      
+      // Check for active service requests assigned to this technician
+      try {
+        const { db } = await import('./db');
+        const { serviceRequests } = await import('@shared/schema');
+        const { eq, and, ne, or, isNull } = await import('drizzle-orm');
+        
+        // Get all service requests for this technician
+        const allServiceRequests = await db
+          .select()
+          .from(serviceRequests)
+          .where(eq(serviceRequests.assignedTechnicianId, technicianId));
+        
+        // Filter out completed and cancelled statuses
+        const trulyActive = allServiceRequests.filter(
+          sr => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
+        );
+        
+        if (trulyActive.length > 0) {
+          console.log(`[DELETE TECHNICIAN] Cannot delete: ${trulyActive.length} active service requests found`);
+          const requestNumbers = trulyActive.map(sr => sr.requestNumber).slice(0, 5).join(', ');
+          const moreText = trulyActive.length > 5 ? ` and ${trulyActive.length - 5} more` : '';
+          return res.status(400).json({ 
+            error: "Cannot delete technician", 
+            details: `This technician has ${trulyActive.length} active service request(s) (${requestNumbers}${moreText}). Please reassign or complete them first.` 
+          });
+        }
+      } catch (queryError: any) {
+        console.error(`[DELETE TECHNICIAN] Error checking service requests:`, queryError);
+        // Don't block deletion if query fails - log and continue
+        console.warn(`[DELETE TECHNICIAN] Continuing with deletion despite query error`);
+      }
+      
       // Soft delete: mark user inactive and remove technician row
-      await storage.updateUser(existing.userId, { isActive: false } as any);
+      try {
+        console.log(`[DELETE TECHNICIAN] Marking user inactive: ${existing.userId}`);
+        await storage.updateUser(existing.userId, { isActive: false } as any);
+      } catch (userError: any) {
+        console.error(`[DELETE TECHNICIAN] Error updating user:`, userError);
+        // Continue with technician deletion even if user update fails
+        console.warn(`[DELETE TECHNICIAN] Continuing with technician deletion despite user update error`);
+      }
+      
+      console.log(`[DELETE TECHNICIAN] Deleting technician record: ${technicianId}`);
       const { db } = await import('./db');
       const { technicians } = await import('@shared/schema');
       const { eq } = await import('drizzle-orm');
-      await db.delete(technicians).where(eq(technicians.id, req.params.id));
-      broadcast({ type: "technician_deleted", data: { id: req.params.id } });
+      await db.delete(technicians).where(eq(technicians.id, technicianId));
+      
+      broadcast({ type: "technician_deleted", data: { id: technicianId } });
+      console.log(`[DELETE TECHNICIAN] Successfully deleted technician: ${technicianId}`);
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete technician" });
+    } catch (error: any) {
+      console.error(`[DELETE TECHNICIAN] Error deleting technician ${req.params.id}:`, error);
+      console.error(`[DELETE TECHNICIAN] Error details:`, {
+        message: error?.message,
+        code: error?.code,
+        detail: error?.detail,
+        constraint: error?.constraint,
+        stack: error?.stack
+      });
+      
+      // Provide more specific error messages
+      let errorMessage = error?.message || String(error);
+      if (error?.code === '23503') {
+        errorMessage = "Cannot delete technician: There are related records that depend on this technician. Please remove or reassign them first.";
+      } else if (error?.constraint) {
+        errorMessage = `Database constraint violation: ${error.constraint}`;
+      }
+      
+      res.status(500).json({ 
+        error: "Failed to delete technician", 
+        details: errorMessage 
+      });
     }
   });
 
@@ -1659,11 +2152,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/clients/:id", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
+      console.log(`[DELETE CLIENT] Attempting to delete client: ${req.params.id}`);
       // @ts-ignore add method exists in storage
       const deleted = await storage.deleteCustomer(req.params.id);
+      console.log(`[DELETE CLIENT] Successfully deleted client: ${req.params.id}`);
       res.json(deleted);
     } catch (error) {
-      res.status(500).json({ error: "Failed to delete client" });
+      console.error(`[DELETE CLIENT] Error deleting client ${req.params.id}:`, error);
+      res.status(500).json({ error: "Failed to delete client", details: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -1930,9 +2426,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/whatsapp/media/:ref", async (req, res) => {
     try {
       const ref = decodeURIComponent(req.params.ref || "");
-      if (!ref.startsWith("wa:")) return res.status(400).send("Invalid reference");
-
-      const mediaId = ref.slice(3);
+      
+      // Handle both "wa:mediaId" format and plain "mediaId" format for backward compatibility
+      let mediaId: string;
+      if (ref.startsWith("wa:")) {
+        mediaId = ref.slice(3);
+      } else {
+        // Assume it's a plain media ID (for backward compatibility with existing records)
+        mediaId = ref;
+      }
+      
+      if (!mediaId) return res.status(400).send("Invalid reference");
       const { default: axios } = await import("axios");
       const { WHATSAPP_TOKEN, GRAPH_VERSION } = await (async () => {
         const mod = await import("./services/whatsapp");
