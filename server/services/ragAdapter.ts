@@ -190,8 +190,7 @@ Please provide a detailed troubleshooting response based on the manual content.`
         if (manual) {
           sources.push({
             manual_id: manualId,
-            manual_name: manual.title,
-            manual_name: manual.name,
+            manual_name: manual.name || manual.title,
             page: result.metadata.pageNum || 1
           });
         }
@@ -310,105 +309,6 @@ Would you like me to help you schedule a service appointment?`,
     }
 
     return parts.slice(0, 5); // Limit to 5 parts
-  }
-/**
-   * Get source information for search results
-   */
-  private async getSourceInfo(searchResults: any[]): Promise<Array<{ manual_id: string; manual_name: string; page: number }>> {
-    const sources: Array<{ manual_id: string; manual_name: string; page: number }> = [];
-
-    for (const result of searchResults.slice(0, 3)) { // Limit to top 3 sources
-      try {
-        // Get manual name from database
-        const manual = await db
-          .select({ name: manuals.name })
-          .from(manuals)
-          .where(eq(manuals.id, result.metadata.manualId))
-          .limit(1);
-
-        const manualName = manual[0]?.name || 'Unknown Manual';
-
-        sources.push({
-          manual_id: result.metadata.manualId,
-          manual_name: manualName,
-          page: result.metadata.pageNum || 1
-        });
-      } catch (error) {
-        console.error('Error getting source info:', error);
-        sources.push({
-          manual_id: result.metadata.manualId,
-          manual_name: 'Service Manual',
-          page: result.metadata.pageNum || 1
-        });
-      }
-    }
-
-    return sources;
-  }
-
-  /**
-   * Determine confidence level based on search results and response quality
-   */
-  private determineConfidence(searchResults: any[], response: string): 'high' | 'medium' | 'low' {
-    // High confidence: Multiple good matches with high scores
-    if (searchResults.length >= 3 && searchResults[0].score > 0.8) {
-      return 'high';
-    }
-
-    // Medium confidence: Some matches or response contains specific technical details
-    if (searchResults.length >= 2 || response.includes('page') || /\b\d{2}-\d{4}-\d{3}\b/.test(response)) {
-      return 'medium';
-    }
-
-    // Low confidence: Few or no matches, generic response
-    return 'low';
-  }
-  private getMockResponse(request: RagQueryRequest): RagQueryResponse {
-    const responses = {
-      default: {
-        answer: "I've analyzed the available manuals for your unit. Here's what I found:",
-        steps: [
-          "Check the alarm code against the unit's diagnostic manual",
-          "Verify sensor connections and wiring",
-          "Test the component mentioned in the alarm",
-          "Replace faulty parts if identified",
-          "Clear the alarm and test the system"
-        ],
-        sources: [{
-          manual_id: "123",
-          manual_name: `${request.unit_model || 'Thermo King'} Service Manual`,
-          page: 45
-        }],
-        confidence: 'medium' as const,
-        suggested_spare_parts: ["Sensor assembly", "Control board", "Wiring harness"],
-        request_id: `mock-${Date.now()}`
-      },
-
-      alarm17: {
-        answer: "Alarm 17 typically indicates a return air sensor fault on Thermo King units.",
-        steps: [
-          "Locate the return air sensor (usually in the evaporator section)",
-          "Check sensor wiring for continuity and secure connections",
-          "Test sensor resistance (should be approximately 10kΩ at 25°C)",
-          "Replace sensor if resistance is out of specification",
-          "Clear alarm and verify temperature control operation"
-        ],
-        sources: [{
-          manual_id: "456",
-          manual_name: "Thermo King SL-500 Troubleshooting Guide",
-          page: 42
-        }],
-        confidence: 'high' as const,
-        suggested_spare_parts: ["Return air temperature sensor", "Sensor wiring harness"],
-        request_id: `mock-${Date.now()}`
-      }
-    };
-
-    if (request.alarm_code === 'Alarm 17' || request.query.toLowerCase().includes('alarm 17')) {
-      return responses.alarm17;
-    }
-
-    return responses.default;
   }
 
   // Get query history for a user
