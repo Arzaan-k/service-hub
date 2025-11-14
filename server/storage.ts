@@ -588,13 +588,6 @@ export class DatabaseStorage implements IStorage {
     return results;
   }
 
-  async getServiceRequestsByStatus(status: string): Promise<ServiceRequest[]> {
-    return await db
-      .select()
-      .from(serviceRequests)
-      .where(eq(serviceRequests.status, status))
-      .orderBy(desc(serviceRequests.createdAt));
-  }
 
   async getPendingServiceRequests(): Promise<ServiceRequest[]> {
     return await db
@@ -612,14 +605,6 @@ export class DatabaseStorage implements IStorage {
     return newRequest;
   }
 
-  async updateServiceRequest(id: string, request: any): Promise<ServiceRequest> {
-    const [updated] = await db
-      .update(serviceRequests)
-      .set({ ...request, updatedAt: new Date() })
-      .where(eq(serviceRequests.id, id))
-      .returning();
-    return updated;
-  }
 
   async getAllTechnicians(): Promise<Technician[]> {
     // Return technicians enriched with linked user fields for UI display
@@ -784,42 +769,16 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(customers).orderBy(customers.companyName);
   }
 
-  async getAllInvoices(): Promise<Invoice[]> {
-    return await db.select().from(invoices).orderBy(desc(invoices.createdAt));
-  }
 
-  async getInvoice(id: string): Promise<Invoice | undefined> {
-    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
-    return invoice;
-  }
 
-  async createInvoice(invoice: any): Promise<Invoice> {
-    const [newInvoice] = await db.insert(invoices).values(invoice).returning();
-    return newInvoice;
-  }
 
-  async updateInvoice(id: string, invoice: any): Promise<Invoice> {
-    const [updated] = await db
-      .update(invoices)
-      .set({ ...invoice, updatedAt: new Date() })
-      .where(eq(invoices.id, id))
-      .returning();
-    return updated;
-  }
 
-  async getAllFeedback(): Promise<any[]> {
-    return await db.select().from(feedback).orderBy(desc(feedback.submittedAt));
-  }
 
   async getFeedback(id: string): Promise<any | undefined> {
     const [feedbackItem] = await db.select().from(feedback).where(eq(feedback.id, id));
     return feedbackItem;
   }
 
-  async createFeedback(feedbackData: any): Promise<any> {
-    const [newFeedback] = await db.insert(feedback).values(feedbackData).returning();
-    return newFeedback;
-  }
 
   async updateFeedback(id: string, feedbackData: any): Promise<any> {
     const [updated] = await db
@@ -830,13 +789,6 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getFeedbackByServiceRequest(serviceRequestId: string): Promise<any | undefined> {
-    const [feedbackRecord] = await db
-      .select()
-      .from(feedback)
-      .where(eq(feedback.serviceRequestId, serviceRequestId));
-    return feedbackRecord;
-  }
 
   async getDashboardStats(): Promise<any> {
     const totalContainers = await db
