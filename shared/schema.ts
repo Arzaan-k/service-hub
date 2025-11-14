@@ -22,7 +22,7 @@ export const customerTierEnum = pgEnum("customer_tier", ["premium", "standard", 
 export const paymentTermsEnum = pgEnum("payment_terms", ["prepaid", "net15", "net30"]);
 export const customerStatusEnum = pgEnum("customer_status", ["active", "inactive", "suspended"]);
 export const whatsappMessageTypeEnum = pgEnum("whatsapp_message_type", ["text", "template", "interactive", "media", "flow", "image", "video", "document", "audio"]);
-export const whatsappMessageStatusEnum = pgEnum("whatsapp_message_status", ["sent", "delivered", "read", "failed"]);
+export const whatsappMessageStatusEnum = pgEnum("whatsapp_message_status", ["sent", "delivered", "read", "failed", "received"]);
 export const whatsappRecipientTypeEnum = pgEnum("whatsapp_recipient_type", ["customer", "technician", "admin"]);
 export const scheduledServiceStatusEnum = pgEnum("scheduled_service_status", ["scheduled", "in_progress", "completed", "rescheduled", "cancelled"]);
 export const feedbackRatingEnum = pgEnum("feedback_rating", ["1", "2", "3", "4", "5"]);
@@ -201,7 +201,7 @@ export const alerts = pgTable("alerts", {
 export const serviceRequests = pgTable("service_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   requestNumber: text("request_number").notNull().unique(),
-  // jobOrder: text("job_order").unique(), // Job Order Number from Excel (e.g., "AUG045", "JUL001") - temporarily commented out due to schema mismatch
+  jobOrder: text("job_order").unique(), // Job Order Number from Excel (e.g., "AUG045", "JUL001")
   containerId: varchar("container_id").references(() => containers.id).notNull(),
   customerId: varchar("client_id").references(() => customers.id).notNull(), // Using client_id from existing DB
   alertId: varchar("alert_id").references(() => alerts.id),
@@ -223,14 +223,16 @@ export const serviceRequests = pgTable("service_requests", {
   totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
   invoiceId: varchar("invoice_id"), // Will reference invoices table after it's defined
   customerFeedbackId: varchar("customer_feedback_id"),
-  beforePhotos: text("before_photos").array(),
-  afterPhotos: text("after_photos").array(),
-  locationProofPhotos: text("location_proof_photos").array(), // New field for location proof photos
-  videos: text("videos").array(), // Video uploads from client during service request
+  beforePhotos: text("before_photos").array(), // Technician's before service photos
+  afterPhotos: text("after_photos").array(), // Technician's after service photos
+  locationProofPhotos: text("location_proof_photos").array(), // Location proof photos
+  videos: text("videos").array(), // Legacy: Video uploads (kept for backward compatibility)
+  clientUploadedPhotos: text("client_uploaded_photos").array(), // Photos uploaded by client during service request creation
+  clientUploadedVideos: text("client_uploaded_videos").array(), // Videos uploaded by client during service request creation
   clientApprovalRequired: boolean("client_approval_required"),
   clientApprovedAt: timestamp("client_approved_at"),
   // New columns for technician WhatsApp flow
-  startTime: timestamp("start_time"), // When technician actually started (WhatsApp flow)
+  // startTime: timestamp("start_time"), // When technician actually started (WhatsApp flow)
   endTime: timestamp("end_time"), // When technician actually ended (WhatsApp flow)
   durationMinutes: integer("duration_minutes"), // Calculated duration in minutes
   signedDocumentUrl: text("signed_document_url"), // Client signature document

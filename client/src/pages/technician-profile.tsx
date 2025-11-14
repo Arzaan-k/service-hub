@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
-import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X } from "lucide-react";
+import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import WageBreakdown from "@/components/wage-breakdown";
 import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
@@ -17,6 +17,44 @@ import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
 function formatDate(d: string | Date) {
   const dt = typeof d === "string" ? new Date(d) : d;
   return dt.toLocaleString();
+}
+
+function ElapsedTime({ startTime }: { startTime: string | Date | null | undefined }) {
+  const [elapsed, setElapsed] = useState("");
+
+  useEffect(() => {
+    if (!startTime) return;
+
+    const updateElapsed = () => {
+      const start = new Date(startTime).getTime();
+      const now = Date.now();
+      const diffMs = now - start;
+      const diffMins = Math.floor(diffMs / 60000);
+
+      const hours = Math.floor(diffMins / 60);
+      const minutes = diffMins % 60;
+
+      if (hours > 0) {
+        setElapsed(`${hours}h ${minutes}m`);
+      } else {
+        setElapsed(`${minutes}m`);
+      }
+    };
+
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  if (!startTime) return null;
+
+  return (
+    <div className="flex items-center gap-1 text-xs text-orange-600 font-medium">
+      <Clock className="w-3 h-3" />
+      <span>Elapsed: {elapsed}</span>
+    </div>
+  );
 }
 
 export default function TechnicianProfile() {
@@ -45,6 +83,8 @@ export default function TechnicianProfile() {
     queryKey: ["/api/service-requests/technician", technicianId],
     queryFn: async () => (await apiRequest("GET", `/api/service-requests/technician/${technicianId}`)).json(),
     enabled: !!technicianId,
+    refetchInterval: 30000, // Refetch every 30 seconds for real-time updates
+    refetchIntervalInBackground: true, // Continue refetching even when tab is not active
   });
 
   const { data: performance } = useQuery({
@@ -265,29 +305,36 @@ export default function TechnicianProfile() {
                   ? requests.filter((r: any) => ['scheduled', 'in_progress', 'pending'].includes(r.status))
                   : [];
                 
-                return assigned.length > 0 ? (
+return assigned.length > 0 ? (
                   <div className="space-y-3">
                     {assigned.map((r: any) => (
-                      <div key={r.id} className="rounded-md border p-3">
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="font-medium">SR #{r.requestNumber}</div>
-                          <Badge className={
-                            r.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                            r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }>
-                            {r.status}
-                          </Badge>
+                      <Link key={r.id} href={`/service-requests/${r.id}`}>
+                        <div className="rounded-md border p-3 hover:bg-accent hover:border-primary transition-colors cursor-pointer">
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="font-medium text-primary hover:underline">SR #{r.requestNumber}</div>
+                            <Badge className={
+                              r.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                              r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }>
+                              {r.status}
+                            </Badge>
+                          </div>
+                          <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
+                          {r.status === 'in_progress' && r.actualStartTime && (
+                            <div className="mt-2">
+                              <ElapsedTime startTime={r.actualStartTime} />
+                            </div>
+                          )}
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {r.scheduledDate && `Scheduled: ${formatDate(r.scheduledDate)}`}
+                            {r.scheduledTimeWindow && ` (${r.scheduledTimeWindow})`}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Priority: {r.priority} | Container: {r.container?.containerCode || r.containerId}
+                          </div>
                         </div>
-                        <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {r.scheduledDate && `Scheduled: ${formatDate(r.scheduledDate)}`}
-                          {r.scheduledTimeWindow && ` (${r.scheduledTimeWindow})`}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Priority: {r.priority} | Container: {r.container?.containerCode || r.containerId}
-                        </div>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 ) : (
@@ -308,40 +355,47 @@ export default function TechnicianProfile() {
               ) : completed.length > 0 ? (
                 <div className="space-y-3">
                   {completed.map((r: any) => (
-                    <div key={r.id} className="rounded-md border p-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="font-medium">
-                          {r.jobOrder ? `Job Order: ${r.jobOrder}` : `SR #${r.requestNumber}`}
+                    <Link key={r.id} href={`/service-requests/${r.id}`}>
+                      <div className="rounded-md border p-3 hover:bg-accent hover:border-primary transition-colors cursor-pointer">
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="font-medium text-primary hover:underline">
+                            {r.jobOrder ? `Job Order: ${r.jobOrder}` : `SR #${r.requestNumber}`}
+                          </div>
+                          <Badge className="bg-green-100 text-green-800">
+                            {r.callStatus || r.status}
+                          </Badge>
                         </div>
-                        <Badge className="bg-green-100 text-green-800">
-                          {r.callStatus || r.status}
-                        </Badge>
-                      </div>
-                      <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
-                      <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-muted-foreground">
-                        {r.workType && (
-                          <div><span className="font-medium">Work Type:</span> {r.workType}</div>
-                        )}
-                        {r.clientType && (
-                          <div><span className="font-medium">Client Type:</span> {r.clientType}</div>
-                        )}
-                        {r.jobType && (
-                          <div><span className="font-medium">Job Type:</span> {r.jobType}</div>
-                        )}
-                        {r.billingType && (
-                          <div><span className="font-medium">Billing:</span> {r.billingType}</div>
-                        )}
-                        {(r.month || r.year) && (
-                          <div><span className="font-medium">Period:</span> {r.month} {r.year}</div>
-                        )}
-                        <div>
-                          <span className="font-medium">Completed:</span> {r.completed_at ? formatDate(r.completed_at) : (r.actualEndTime ? formatDate(r.actualEndTime) : "-")}
+                        <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
+                        <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-muted-foreground">
+                          {r.workType && (
+                            <div><span className="font-medium">Work Type:</span> {r.workType}</div>
+                          )}
+                          {r.clientType && (
+                            <div><span className="font-medium">Client Type:</span> {r.clientType}</div>
+                          )}
+                          {r.jobType && (
+                            <div><span className="font-medium">Job Type:</span> {r.jobType}</div>
+                          )}
+                          {r.billingType && (
+                            <div><span className="font-medium">Billing:</span> {r.billingType}</div>
+                          )}
+                          {(r.month || r.year) && (
+                            <div><span className="font-medium">Period:</span> {r.month} {r.year}</div>
+                          )}
+                          {r.durationMinutes && (
+                            <div className="text-green-700">
+                              <span className="font-medium">Duration:</span> {Math.floor(r.durationMinutes / 60)}h {r.durationMinutes % 60}m
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-medium">Completed:</span> {r.completed_at ? formatDate(r.completed_at) : (r.actualEndTime ? formatDate(r.actualEndTime) : "-")}
+                          </div>
+                          {r.container?.containerCode && (
+                            <div><span className="font-medium">Container:</span> {r.container.containerCode}</div>
+                          )}
                         </div>
-                        {r.container?.containerCode && (
-                          <div><span className="font-medium">Container:</span> {r.container.containerCode}</div>
-                        )}
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               ) : (

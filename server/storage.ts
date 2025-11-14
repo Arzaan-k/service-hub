@@ -138,6 +138,7 @@ export interface IStorage {
   createWhatsappMessage(message: any): Promise<any>;
   getWhatsAppMessageById(messageId: string): Promise<any | undefined>;
   getRecentWhatsAppMessages(userId: string, limit?: number): Promise<any[]>;
+  getWhatsAppMessagesByServiceRequest(serviceRequestId: string): Promise<any[]>;
 
   // Audit logs
   createAuditLog(entry: { userId?: string; action: string; entityType: string; entityId?: string; changes?: any; source: string; ipAddress?: string; timestamp?: Date }): Promise<any>;
@@ -254,6 +255,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCustomer(id: string): Promise<Customer> {
+    // First, unassign any containers from this customer
+    await db
+      .update(containers)
+      .set({ currentCustomerId: null })
+      .where(eq(containers.currentCustomerId, id));
+
+    // Then delete the customer
     const [deleted] = await db
       .delete(customers)
       .where(eq(customers.id, id))
@@ -431,11 +439,92 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllServiceRequests(): Promise<ServiceRequest[]> {
-    return await db.select().from(serviceRequests).orderBy(desc(serviceRequests.createdAt));
+    // Select only fields that exist in the database to avoid schema mismatch errors
+    return await db
+      .select({
+        id: serviceRequests.id,
+        requestNumber: serviceRequests.requestNumber,
+        jobOrder: serviceRequests.jobOrder,
+        containerId: serviceRequests.containerId,
+        customerId: serviceRequests.customerId,
+        alertId: serviceRequests.alertId,
+        assignedTechnicianId: serviceRequests.assignedTechnicianId,
+        priority: serviceRequests.priority,
+        status: serviceRequests.status,
+        issueDescription: serviceRequests.issueDescription,
+        requiredParts: serviceRequests.requiredParts,
+        estimatedDuration: serviceRequests.estimatedDuration,
+        requestedAt: serviceRequests.requestedAt,
+        approvedAt: serviceRequests.approvedAt,
+        scheduledDate: serviceRequests.scheduledDate,
+        scheduledTimeWindow: serviceRequests.scheduledTimeWindow,
+        actualStartTime: serviceRequests.actualStartTime,
+        actualEndTime: serviceRequests.actualEndTime,
+        serviceDuration: serviceRequests.serviceDuration,
+        resolutionNotes: serviceRequests.resolutionNotes,
+        usedParts: serviceRequests.usedParts,
+        totalCost: serviceRequests.totalCost,
+        invoiceId: serviceRequests.invoiceId,
+        customerFeedbackId: serviceRequests.customerFeedbackId,
+        beforePhotos: serviceRequests.beforePhotos,
+        afterPhotos: serviceRequests.afterPhotos,
+        clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
+        clientUploadedVideos: serviceRequests.clientUploadedVideos,
+        videos: serviceRequests.videos,
+        locationProofPhotos: serviceRequests.locationProofPhotos,
+        clientApprovalRequired: serviceRequests.clientApprovalRequired,
+        clientApprovedAt: serviceRequests.clientApprovedAt,
+        createdBy: serviceRequests.createdBy,
+        createdAt: serviceRequests.createdAt,
+        updatedAt: serviceRequests.updatedAt,
+        // Skip fields that don't exist in DB yet
+        // workType, clientType, jobType, billingType, callStatus, month, year, excelData will be added later
+      })
+      .from(serviceRequests)
+      .orderBy(desc(serviceRequests.createdAt));
   }
 
   async getServiceRequest(id: string): Promise<ServiceRequest | undefined> {
-    const [request] = await db.select().from(serviceRequests).where(eq(serviceRequests.id, id));
+    const [request] = await db
+      .select({
+        id: serviceRequests.id,
+        requestNumber: serviceRequests.requestNumber,
+        jobOrder: serviceRequests.jobOrder,
+        containerId: serviceRequests.containerId,
+        customerId: serviceRequests.customerId,
+        alertId: serviceRequests.alertId,
+        assignedTechnicianId: serviceRequests.assignedTechnicianId,
+        priority: serviceRequests.priority,
+        status: serviceRequests.status,
+        issueDescription: serviceRequests.issueDescription,
+        requiredParts: serviceRequests.requiredParts,
+        estimatedDuration: serviceRequests.estimatedDuration,
+        requestedAt: serviceRequests.requestedAt,
+        approvedAt: serviceRequests.approvedAt,
+        scheduledDate: serviceRequests.scheduledDate,
+        scheduledTimeWindow: serviceRequests.scheduledTimeWindow,
+        actualStartTime: serviceRequests.actualStartTime,
+        actualEndTime: serviceRequests.actualEndTime,
+        serviceDuration: serviceRequests.serviceDuration,
+        resolutionNotes: serviceRequests.resolutionNotes,
+        usedParts: serviceRequests.usedParts,
+        totalCost: serviceRequests.totalCost,
+        invoiceId: serviceRequests.invoiceId,
+        customerFeedbackId: serviceRequests.customerFeedbackId,
+        beforePhotos: serviceRequests.beforePhotos,
+        afterPhotos: serviceRequests.afterPhotos,
+        clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
+        clientUploadedVideos: serviceRequests.clientUploadedVideos,
+        videos: serviceRequests.videos,
+        locationProofPhotos: serviceRequests.locationProofPhotos,
+        clientApprovalRequired: serviceRequests.clientApprovalRequired,
+        clientApprovedAt: serviceRequests.clientApprovedAt,
+        createdBy: serviceRequests.createdBy,
+        createdAt: serviceRequests.createdAt,
+        updatedAt: serviceRequests.updatedAt,
+      })
+      .from(serviceRequests)
+      .where(eq(serviceRequests.id, id));
     return request;
   }
 
@@ -447,12 +536,56 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(serviceRequests.createdAt));
   }
 
-  async getServiceRequestsByTechnician(technicianId: string): Promise<ServiceRequest[]> {
-    return await db
-      .select()
+  async getServiceRequestsByTechnician(technicianId: string): Promise<any[]> {
+    const results = await db
+      .select({
+        // Service request fields
+        id: serviceRequests.id,
+        requestNumber: serviceRequests.requestNumber,
+        jobOrder: serviceRequests.jobOrder,
+        status: serviceRequests.status,
+        priority: serviceRequests.priority,
+        issueDescription: serviceRequests.issueDescription,
+        scheduledDate: serviceRequests.scheduledDate,
+        scheduledTimeWindow: serviceRequests.scheduledTimeWindow,
+        actualStartTime: serviceRequests.actualStartTime,
+        actualEndTime: serviceRequests.actualEndTime,
+        durationMinutes: serviceRequests.durationMinutes,
+        resolutionNotes: serviceRequests.resolutionNotes,
+        beforePhotos: serviceRequests.beforePhotos,
+        afterPhotos: serviceRequests.afterPhotos,
+        clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
+        clientUploadedVideos: serviceRequests.clientUploadedVideos,
+        containerId: serviceRequests.containerId,
+        customerId: serviceRequests.customerId,
+        assignedTechnicianId: serviceRequests.assignedTechnicianId,
+        createdAt: serviceRequests.createdAt,
+        updatedAt: serviceRequests.updatedAt,
+        // Container fields
+        container: {
+          id: containers.id,
+          containerCode: containers.containerCode,
+          type: containers.type,
+          status: containers.status,
+          currentLocation: containers.currentLocation
+        },
+        // Customer fields
+        customer: {
+          id: customers.id,
+          companyName: customers.companyName,
+          contactPerson: customers.contactPerson,
+          phone: customers.phone,
+          email: customers.email,
+          address: customers.address
+        }
+      })
       .from(serviceRequests)
+      .leftJoin(containers, eq(serviceRequests.containerId, containers.id))
+      .leftJoin(customers, eq(serviceRequests.customerId, customers.id))
       .where(eq(serviceRequests.assignedTechnicianId, technicianId))
       .orderBy(desc(serviceRequests.createdAt));
+
+    return results;
   }
 
   async getServiceRequestsByStatus(status: string): Promise<ServiceRequest[]> {
@@ -617,6 +750,19 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
+  async getWhatsAppMessagesByServiceRequest(serviceRequestId: string): Promise<any[]> {
+    return await db
+      .select()
+      .from(whatsappMessages)
+      .where(
+        and(
+          eq(whatsappMessages.relatedEntityType, 'ServiceRequest'),
+          eq(whatsappMessages.relatedEntityId, serviceRequestId)
+        )
+      )
+      .orderBy(whatsappMessages.sentAt);
+  }
+
   async createAuditLog(entry: { userId?: string; action: string; entityType: string; entityId?: string; changes?: any; source: string; ipAddress?: string; timestamp?: Date }): Promise<any> {
     const [log] = await db
       .insert(auditLogs)
@@ -740,8 +886,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getContainerServiceHistory(containerId: string): Promise<any[]> {
+    // Select only fields that exist in the database
     return await db
-      .select()
+      .select({
+        id: serviceRequests.id,
+        requestNumber: serviceRequests.requestNumber,
+        containerId: serviceRequests.containerId,
+        customerId: serviceRequests.customerId,
+        status: serviceRequests.status,
+        issueDescription: serviceRequests.issueDescription,
+        requestedAt: serviceRequests.requestedAt,
+        createdAt: serviceRequests.createdAt,
+      })
       .from(serviceRequests)
       .where(eq(serviceRequests.containerId, containerId))
       .orderBy(desc(serviceRequests.createdAt));
@@ -1055,22 +1211,62 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getTechnicianSchedule(technicianId: string, date: string): Promise<any[]> {
-    const targetDate = date ? new Date(date) : new Date();
-    const startOfDay = new Date(targetDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(targetDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    return await db
-      .select()
+  async getTechnicianSchedule(technicianId: string, date?: string): Promise<any[]> {
+    // If no date provided, get all services for this technician
+    let query = db
+      .select({
+        // Service request fields
+        id: serviceRequests.id,
+        requestNumber: serviceRequests.requestNumber,
+        jobOrder: serviceRequests.jobOrder,
+        status: serviceRequests.status,
+        priority: serviceRequests.priority,
+        issueDescription: serviceRequests.issueDescription,
+        scheduledDate: serviceRequests.scheduledDate,
+        scheduledTimeWindow: serviceRequests.scheduledTimeWindow,
+        actualStartTime: serviceRequests.actualStartTime,
+        actualEndTime: serviceRequests.actualEndTime,
+        durationMinutes: serviceRequests.durationMinutes,
+        containerId: serviceRequests.containerId,
+        customerId: serviceRequests.customerId,
+        assignedTechnicianId: serviceRequests.assignedTechnicianId,
+        // Container fields
+        container: {
+          id: containers.id,
+          containerCode: containers.containerCode,
+          type: containers.type,
+          status: containers.status,
+          currentLocation: containers.currentLocation
+        },
+        // Customer fields
+        customer: {
+          id: customers.id,
+          companyName: customers.companyName,
+          contactPerson: customers.contactPerson,
+          phone: customers.phone
+        }
+      })
       .from(serviceRequests)
-      .where(and(
+      .leftJoin(containers, eq(serviceRequests.containerId, containers.id))
+      .leftJoin(customers, eq(serviceRequests.customerId, customers.id))
+      .where(eq(serviceRequests.assignedTechnicianId, technicianId));
+
+    // Add date filter if provided
+    if (date) {
+      const targetDate = new Date(date);
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      query = query.where(and(
         eq(serviceRequests.assignedTechnicianId, technicianId),
         sql`${serviceRequests.scheduledDate} >= ${startOfDay}`,
         sql`${serviceRequests.scheduledDate} <= ${endOfDay}`
-      ))
-      .orderBy(serviceRequests.scheduledDate);
+      )) as any;
+    }
+
+    return await query.orderBy(serviceRequests.scheduledDate);
   }
 
   async getTechniciansBySkill(skill: string): Promise<Technician[]> {

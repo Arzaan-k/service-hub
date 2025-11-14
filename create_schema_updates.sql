@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS container_ownership_history (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Create indexes for container_ownership_history table
+CREATE INDEX IF NOT EXISTS idx_container_ownership_container_id ON container_ownership_history(container_id);
+CREATE INDEX IF NOT EXISTS idx_container_ownership_customer_id ON container_ownership_history(customer_id);
+CREATE INDEX IF NOT EXISTS idx_container_ownership_is_current ON container_ownership_history(is_current);
+
 -- Add new fields to service_requests table
 ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS job_order TEXT UNIQUE;
 ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS work_type TEXT;
@@ -30,8 +35,5 @@ ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS month TEXT;
 ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS year INTEGER;
 ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS excel_data JSONB;
 
--- Create indexes for performance
-CREATE INDEX IF NOT EXISTS idx_container_ownership_container_id ON container_ownership_history(container_id);
-CREATE INDEX IF NOT EXISTS idx_container_ownership_customer_id ON container_ownership_history(customer_id);
-CREATE INDEX IF NOT EXISTS idx_container_ownership_is_current ON container_ownership_history(is_current);
+-- Create index for service_requests
 CREATE INDEX IF NOT EXISTS idx_service_requests_job_order ON service_requests(job_order);

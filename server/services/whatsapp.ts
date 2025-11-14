@@ -138,6 +138,26 @@ function isRoleTestNumber(input: string): boolean {
 // ADDITIONAL HELPER FUNCTIONS
 // ========================================
 
+/**
+ * Get progress indicator for client service request flow
+ * Shows step number, progress bar, and emoji
+ */
+function getProgressIndicator(step: string): string {
+  const steps: Record<string, { current: number; total: number; emoji: string; title: string }> = {
+    'awaiting_container_selection': { current: 1, total: 5, emoji: '📦', title: 'Container Selection' },
+    'awaiting_error_code': { current: 2, total: 5, emoji: '⚠️', title: 'Error Code' },
+    'awaiting_description': { current: 3, total: 5, emoji: '📝', title: 'Issue Description' },
+    'awaiting_photos': { current: 4, total: 5, emoji: '📸', title: 'Photo Upload' },
+    'awaiting_videos': { current: 5, total: 5, emoji: '🎥', title: 'Video Upload' }
+  };
+
+  const info = steps[step];
+  if (!info) return '';
+
+  const progressBar = '▓'.repeat(info.current) + '░'.repeat(info.total - info.current);
+  return `${info.emoji} *Step ${info.current}/${info.total}: ${info.title}*\n${progressBar}\n\n`;
+}
+
 async function sendRealClientMenu(to: string, user?: any, customer?: any): Promise<void> {
   try {
     console.log(`[WhatsApp] sendRealClientMenu called for ${to}`);
@@ -431,34 +451,45 @@ function getMockTechnicianJob(jobId: string) {
  */
 async function handleRealClientRequestService(from: string, user: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
-  
+
   try {
-    console.log(`[WhatsApp] handleRealClientRequestService - user: ${user.name} (${user.id}), phone: ${user.phoneNumber}`);
-    
+    console.log(`[WhatsApp] handleRealClientRequestService - user: ${user.name} (${user.id}), phone: ${user.phoneNumber || from}`);
+
     let customer = await storage.getCustomerByUserId(user.id);
     if (!customer) {
       console.error(`[WhatsApp] Customer profile not found for user ${user.id}`);
-      console.log(`[WhatsApp] Attempting to find customer by phone number: ${user.phoneNumber}`);
-      
-      // Try to find customer by phone number
+
+      // Use the 'from' number (which is already the WhatsApp number) instead of user.phoneNumber
+      const phoneToLookup = from || user.phoneNumber;
+      console.log(`[WhatsApp] Attempting to find customer by phone number: ${phoneToLookup}`);
+
+      // Generate all possible phone number variations using our normalization function
+      const phoneVariations = normalizePhoneNumber(phoneToLookup);
+      console.log(`[WhatsApp] Trying ${phoneVariations.length} phone variations for customer lookup:`, phoneVariations);
+
+      // Try to find customer by phone number using all variations
       const allCustomers = await storage.getAllCustomers();
-      customer = allCustomers.find((c: any) => 
-        c.phoneNumber === user.phoneNumber || 
-        c.phoneNumber === user.phoneNumber.replace(/^\+/, '') ||
-        c.phoneNumber === `+${user.phoneNumber}` ||
-        c.phoneNumber === user.phoneNumber.replace(/^91/, '') ||
-        c.phoneNumber === `91${user.phoneNumber}`
-      );
-      
-      if (customer) {
-        console.log(`[WhatsApp] Found customer by phone: ${customer.companyName} (${customer.id})`);
-        // Update user to link with customer
-        if (customer.userId) {
-          console.log(`[WhatsApp] Customer already has userId: ${customer.userId}, but user ${user.id} doesn't have customer. This is a data inconsistency.`);
+      for (const variation of phoneVariations) {
+        customer = allCustomers.find((c: any) => {
+          if (!c.phoneNumber) return false;
+          const customerPhoneVariations = normalizePhoneNumber(c.phoneNumber);
+          return customerPhoneVariations.includes(variation);
+        });
+
+        if (customer) {
+          console.log(`[WhatsApp] ✅ Found customer by phone variation "${variation}": ${customer.companyName} (${customer.id})`);
+          break;
         }
-      } else {
-        console.error(`[WhatsApp] No customer found for phone ${user.phoneNumber}`);
-        await sendTextMessage(from, '❌ Customer profile not found. Please contact support to link your WhatsApp number with your account.');
+      }
+
+      if (!customer) {
+        console.error(`[WhatsApp] No customer found for any phone variation of ${phoneToLookup}`);
+        await sendTextMessage(
+          from,
+          '❌ *Customer profile not found*\n\n' +
+          'Please contact support to link your WhatsApp number with your account.\n\n' +
+          `Your number: ${from}`
+        );
         return;
       }
     }
@@ -485,28 +516,48 @@ async function handleRealClientRequestService(from: string, user: any, session: 
     console.log(`[WhatsApp] Proceeding with ${containers.length} containers`);
 
     // Update session to track service request flow
+    // Preserve existing selectedContainers if they exist (for "add more" flow)
+    const existingState = session.conversationState || {};
+    const existingSelectedContainers = existingState.selectedContainers || [];
+
     await storage.updateWhatsappSession(session.id, {
       conversationState: {
         flow: 'real_service_request',
         step: 'awaiting_container_selection',
         customerId: customer.id,
-        selectedContainers: []
+        selectedContainers: existingSelectedContainers
       }
     });
 
-    // Always use list for multi-select capability (WhatsApp lists support multi-selection)
+    // Build message showing already selected containers if any
+    let message = '🔧 *Service Request*\n\n';
+    if (existingSelectedContainers.length > 0) {
+      const selectedCodes = [];
+      for (const cId of existingSelectedContainers) {
+        const c = await storage.getContainer(cId);
+        if (c) selectedCodes.push(c.containerCode);
+      }
+      message += `✅ *Already Selected:* ${selectedCodes.join(', ')}\n\n`;
+      message += 'Select another container to add to your service request:\n\n';
+    } else {
+      message += 'Which container needs service?\n\n*Select a container from the list below.*';
+    }
+
+    // Filter out already selected containers and mark them in the list
     const rows = containers.map((c: any) => {
+      const isSelected = existingSelectedContainers.includes(c.id);
       const location = (c.currentLocation as any)?.address || (c.currentLocation as any)?.city || 'Unknown';
+      const prefix = isSelected ? '✅ ' : '';
       return {
         id: `select_container_${c.id}`,
-        title: c.containerCode,
+        title: `${prefix}${c.containerCode}`,
         description: `${c.type} | ${c.status} | ${location}`.substring(0, 72)
       };
     });
 
     await sendInteractiveList(
       from,
-      '🔧 *Service Request*\n\nWhich container needs service?\n\n*Select a container from the list below.*',
+      message,
       'Select Container',
       [{ title: 'Your Containers', rows }]
     );
@@ -625,7 +676,9 @@ async function handleErrorCodeInput(errorCode: string, from: string, user: any, 
 
     await sendTextMessage(
       from,
-      `📝 *Please describe briefly what's happening* (2-3 sentences).`
+      `${getProgressIndicator('awaiting_description')}` +
+      `📝 *Please describe what's happening with the container.*\n\n` +
+      `Keep it brief (2-3 sentences).`
     );
   } catch (error) {
     console.error('[WhatsApp] Error in handleErrorCodeInput:', error);
@@ -651,7 +704,11 @@ async function handleIssueDescriptionInput(description: string, from: string, us
 
     await sendTextMessage(
       from,
-      `✅ Description received.\n\n📸 *Please attach photos of the issue.*\n\n⚠️ *Photo upload is mandatory.*\n\nSend one or more photos, then type *DONE* to continue.`
+      `${getProgressIndicator('awaiting_photos')}` +
+      `✅ Description received.\n\n` +
+      `📸 *Please attach photos of the issue.*\n\n` +
+      `⚠️ *Photo upload is mandatory.*\n\n` +
+      `Send one or more photos, then type *DONE* to continue.`
     );
   } catch (error) {
     console.error('[WhatsApp] Error in handleIssueDescriptionInput:', error);
@@ -666,8 +723,8 @@ async function handlePhotoUpload(mediaId: string, from: string, user: any, sessi
     const conversationState = session.conversationState || {};
     const beforePhotos = conversationState.beforePhotos || [];
     
-    // Store media ID (in production, you'd download and store the actual image)
-    beforePhotos.push(mediaId);
+    // Store media ID with wa: prefix for consistency with media endpoint
+    beforePhotos.push(`wa:${mediaId}`);
     
     await storage.updateWhatsappSession(session.id, {
       conversationState: {
@@ -693,8 +750,8 @@ async function handleVideoUpload(mediaId: string, from: string, user: any, sessi
     const conversationState = session.conversationState || {};
     const videos = conversationState.videos || [];
     
-    // Store video media ID
-    videos.push(mediaId);
+    // Store video media ID with wa: prefix for consistency with media endpoint
+    videos.push(`wa:${mediaId}`);
     
     await storage.updateWhatsappSession(session.id, {
       conversationState: {
@@ -715,64 +772,204 @@ async function handleVideoUpload(mediaId: string, from: string, user: any, sessi
 
 async function createServiceRequestFromWhatsApp(from: string, user: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
-  
+
   try {
     const conversationState = session.conversationState || {};
     const { selectedContainers, errorCode, issueDescription, beforePhotos, videos, customerId } = conversationState;
 
-    if (!selectedContainers || selectedContainers.length === 0) {
-      await sendTextMessage(from, '❌ No containers selected. Please start again.');
+    console.log('[WhatsApp] Creating service request from WhatsApp:', {
+      userId: user.id,
+      phoneNumber: from,
+      customerId,
+      selectedContainers,
+      errorCode,
+      photoCount: beforePhotos?.length || 0,
+      videoCount: videos?.length || 0
+    });
+
+    // Detailed validation with specific error messages
+    if (!customerId) {
+      console.error('[WhatsApp] CRITICAL: Missing customerId in conversation state:', JSON.stringify(conversationState, null, 2));
+      await sendTextMessage(
+        from,
+        `❌ *Customer information missing*\n\n` +
+        `This might be a technical issue. Please try again:\n\n` +
+        `1. Type *hi* to restart\n` +
+        `2. Select "Request Service"\n\n` +
+        `If the problem persists, please contact support.`
+      );
       return;
     }
 
-    // Create service request for each selected container
-    const createdRequests = [];
-    for (const containerId of selectedContainers) {
-      const container = await storage.getContainer(containerId);
-      if (!container) continue;
-
-      const fullDescription = [
-        issueDescription || 'Service requested via WhatsApp',
-        errorCode && errorCode.toUpperCase() !== 'NA' ? `Error Code: ${errorCode}` : ''
-      ].filter(Boolean).join('\n\n');
-
-      const serviceRequest = await storage.createServiceRequest({
-        requestNumber: `SR-${Date.now()}${Math.floor(Math.random() * 1000)}`,
-        containerId: container.id,
-        customerId: customerId,
-        priority: 'normal',
-        status: 'pending',
-        issueDescription: fullDescription,
-        beforePhotos: beforePhotos || [],
-        videos: videos || [],
-        createdBy: user.id,
-        createdAt: new Date(),
-        requestedAt: new Date()
-      });
-
-      createdRequests.push(serviceRequest);
+    if (!selectedContainers || selectedContainers.length === 0) {
+      console.error('[WhatsApp] No containers selected. State:', conversationState);
+      await sendTextMessage(from, '❌ No containers selected. Please type *hi* to start again.');
+      return;
     }
 
-    // Clear conversation state
-    await storage.updateWhatsappSession(session.id, {
-      conversationState: {}
+    if (!beforePhotos || beforePhotos.length === 0) {
+      console.error('[WhatsApp] No photos uploaded. State:', conversationState);
+      await sendTextMessage(
+        from,
+        `❌ *Photo upload is mandatory*\n\n` +
+        `Please type *hi* to start again and make sure to upload at least one photo.`
+      );
+      return;
+    }
+
+    // Get all container details
+    const containerNames = [];
+    const validContainers = [];
+
+    for (const containerId of selectedContainers) {
+      const container = await storage.getContainer(containerId);
+      if (!container) {
+        console.warn(`[WhatsApp] Container ${containerId} not found, skipping`);
+        continue;
+      }
+      containerNames.push(container.containerCode || containerId);
+      validContainers.push(container);
+    }
+
+    if (validContainers.length === 0) {
+      console.error('[WhatsApp] No valid containers found');
+      await sendTextMessage(
+        from,
+        `❌ *Could not create service request*\n\n` +
+        `Selected containers may not be valid. Please contact support.`
+      );
+      return;
+    }
+
+    // Create SINGLE service request with first container as primary
+    // List all other containers in the description
+    const primaryContainer = validContainers[0];
+    const otherContainers = validContainers.slice(1);
+
+    let fullDescription = issueDescription || 'Service requested via WhatsApp';
+
+    // Add error code if provided
+    if (errorCode && errorCode.toUpperCase() !== 'NA') {
+      fullDescription += `\n\nError Code: ${errorCode}`;
+    }
+
+    // Add all container codes if multiple containers
+    if (validContainers.length > 1) {
+      fullDescription += `\n\n📦 Multiple Containers: ${containerNames.join(', ')}`;
+      fullDescription += `\n\nPrimary Container: ${primaryContainer.containerCode}`;
+      fullDescription += `\nAdditional Containers: ${otherContainers.map(c => c.containerCode).join(', ')}`;
+    }
+
+    console.log(`[WhatsApp] Creating SINGLE service request for ${validContainers.length} container(s):`, {
+      primaryContainerId: primaryContainer.id,
+      allContainers: containerNames.join(', '),
+      customerId,
+      errorCode,
+      descriptionLength: fullDescription.length
     });
 
-    // Send confirmation with details
-    const requestNumbers = createdRequests.map(r => r.requestNumber).join(', ');
+    const serviceRequest = await storage.createServiceRequest({
+      requestNumber: `SR-${Date.now()}${Math.floor(Math.random() * 1000)}`,
+      containerId: primaryContainer.id,
+      customerId: customerId,
+      priority: 'normal',
+      status: 'pending',
+      issueDescription: fullDescription,
+      clientUploadedPhotos: beforePhotos || [], // Client's uploaded photos during service request creation
+      clientUploadedVideos: videos || [], // Client's uploaded videos during service request creation
+      createdBy: user.id,
+      createdAt: new Date(),
+      requestedAt: new Date()
+    });
+
+    console.log(`[WhatsApp] ✅ Service request created successfully: ${serviceRequest.requestNumber} for ${validContainers.length} container(s)`);
+
+    // Save the created service request ID for linking future messages
+    const firstServiceRequestId = serviceRequest.id;
+    const createdRequests = [serviceRequest];
+
+    // Link all recent WhatsApp messages from this user to the service request
+    // This retroactively links photos/videos that were uploaded during the request creation
+    if (firstServiceRequestId) {
+      try {
+        const recentMessages = await storage.getRecentWhatsAppMessages(user.id, 20);
+
+        // Update messages using storage methods to avoid import issues
+        const messagesToUpdate = recentMessages.filter(msg => !msg.relatedEntityId);
+
+        if (messagesToUpdate.length > 0) {
+          // Use SQL to update messages directly through storage
+          const { neon } = await import('@neondatabase/serverless');
+          const dbSql = neon(process.env.DATABASE_URL!);
+
+          for (const msg of messagesToUpdate) {
+            await dbSql`
+              UPDATE whatsapp_messages
+              SET related_entity_type = 'ServiceRequest',
+                  related_entity_id = ${firstServiceRequestId}
+              WHERE id = ${msg.id}
+            `;
+          }
+          console.log(`[WhatsApp] ✅ Linked ${messagesToUpdate.length} messages to service request ${firstServiceRequestId}`);
+        }
+      } catch (linkError) {
+        console.error('[WhatsApp] Error linking messages to service request:', linkError);
+        // Don't fail the whole flow if linking fails
+      }
+    }
+
+    // Update conversation state - keep track of last created service request
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        lastCreatedServiceRequestId: firstServiceRequestId
+      }
+    });
+
+    // Send detailed confirmation
     const photoCount = beforePhotos?.length || 0;
     const videoCount = videos?.length || 0;
-    
+
     await sendTextMessage(
       from,
-      `✅ *Your service request has been raised!*\n\n📋 Request Number(s): ${requestNumbers}\n📸 Photos: ${photoCount}\n🎥 Videos: ${videoCount}\n\n*A technician will contact you soon.*\n\nYou can check the status anytime by selecting "Status" from the menu.`
+      `✅ *Service Request Created Successfully!*\n\n` +
+      `📋 *Request Number:* ${serviceRequest.requestNumber}\n` +
+      `📦 *Container${validContainers.length > 1 ? 's' : ''}:* ${containerNames.join(', ')}\n` +
+      `⚠️ *Error Code:* ${errorCode || 'None'}\n` +
+      `📸 *Photos:* ${photoCount}\n` +
+      `🎥 *Videos:* ${videoCount}\n\n` +
+      `✅ *What happens next?*\n` +
+      `• Our team will review your request\n` +
+      `• A technician will be assigned\n` +
+      `• You'll receive updates via WhatsApp\n\n` +
+      `Type *hi* to return to menu or *status* to check progress.`
     );
 
+    console.log('[WhatsApp] ✅ Service request flow completed successfully');
+
     // Show client menu again
-    await sendRealClientMenu(from);
-  } catch (error) {
-    console.error('[WhatsApp] Error in createServiceRequestFromWhatsApp:', error);
-    await sendTextMessage(from, '❌ Error creating service request. Please contact support.');
+    await sendRealClientMenu(from, user);
+
+  } catch (error: any) {
+    console.error('[WhatsApp] CRITICAL ERROR in createServiceRequestFromWhatsApp:', {
+      function: 'createServiceRequestFromWhatsApp',
+      userId: user.id,
+      phoneNumber: from,
+      customerId: session.conversationState?.customerId,
+      selectedContainers: session.conversationState?.selectedContainers,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+    });
+
+    const errorRef = `ERR-${Date.now()}`;
+    await sendTextMessage(
+      from,
+      `❌ *Error creating service request*\n\n` +
+      `Reference: ${errorRef}\n\n` +
+      `📞 Please contact support with this reference number.\n` +
+      `We'll help you complete your request.\n\n` +
+      `Type *hi* to return to menu.`
+    );
   }
 }
 
@@ -1638,10 +1835,19 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
     const { storage } = await import('../storage');
     const conversationState = session.conversationState || {};
     const selectedContainers = conversationState.selectedContainers || [];
-    
+
+    console.log('[WhatsApp] Proceeding with container selection:', {
+      userId: user.id,
+      phoneNumber: from,
+      selectedContainers,
+      customerId: conversationState.customerId,
+      flow: conversationState.flow
+    });
+
     if (selectedContainers.length === 0) {
+      console.warn('[WhatsApp] No containers selected when proceeding');
       await sendTextMessage(from, '❌ No containers selected. Please start again.');
-      await sendRealClientMenu(from);
+      await sendRealClientMenu(from, user);
       return;
     }
 
@@ -1652,18 +1858,36 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
       if (c) containerCodes.push(c.containerCode);
     }
 
-    // Update to error code step
+    // IMPORTANT: Update to error code step while PRESERVING all existing state
     await storage.updateWhatsappSession(session.id, {
       conversationState: {
-        ...conversationState,
+        ...conversationState, // Preserve customerId, flow, and all other state
         step: 'awaiting_error_code'
       }
     });
 
+    console.log('[WhatsApp] Updated session to awaiting_error_code step');
+
     await sendTextMessage(
       from,
-      `📦 *Selected Container(s):*\n${containerCodes.join(', ')}\n\n❓ *What error code are you getting?*\n\nType the error code, or reply *NA* if no error code.`
+      `${getProgressIndicator('awaiting_error_code')}` +
+      `📦 *Selected Container(s):*\n${containerCodes.join(', ')}\n\n` +
+      `❓ *What error code are you seeing?*\n\n` +
+      `Type the error code (e.g., E407), or reply *NA* if no error code.`
     );
+
+    // Send reference video to help client identify error codes
+    await sendTextMessage(
+      from,
+      `🎥 *Reference Video:*\nHere's a helpful video showing where to find error codes on your container:`
+    );
+
+    await sendVideoMessage(
+      from,
+      'https://media.istockphoto.com/id/1332047605/video/error-system-failure-emergency-error-glitchloop-animation.mp4?s=mp4-640x640-is&k=20&c=YTsQNFseW-7-T1DNpSb9f2gtdDEc1cx7zGn3OpT5E9A=',
+      '🎥 Error Code Reference Video'
+    );
+
     return;
   }
 
@@ -3674,34 +3898,228 @@ export class CustomerCommunicationService {
       sentAt: new Date(),
     });
   }
+
+  /**
+   * Send WhatsApp notification to client when service request is updated
+   */
+  async notifyServiceRequestUpdate(serviceRequestId: string, updateType: 'assigned' | 'started' | 'completed' | 'status_changed' | 'updated', previousData?: any): Promise<void> {
+    try {
+      const serviceRequest = await this.storage.getServiceRequest(serviceRequestId);
+      if (!serviceRequest) {
+        console.log(`[WhatsApp] Service request ${serviceRequestId} not found, skipping notification`);
+        return;
+      }
+
+      const customer = await this.storage.getCustomer(serviceRequest.customerId);
+      if (!customer) {
+        console.log(`[WhatsApp] Customer not found for service request ${serviceRequestId}, skipping notification`);
+        return;
+      }
+
+      // Get customer's WhatsApp number
+      const whatsappNumber = customer.whatsappNumber || customer.phone;
+      if (!whatsappNumber) {
+        console.log(`[WhatsApp] Customer ${customer.id} has no WhatsApp number, skipping notification`);
+        return;
+      }
+
+      // Get related data
+      const container = await this.storage.getContainer(serviceRequest.containerId);
+      const technician = serviceRequest.assignedTechnicianId 
+        ? await this.storage.getTechnician(serviceRequest.assignedTechnicianId)
+        : null;
+      const technicianUser = technician 
+        ? await this.storage.getUser(technician.userId)
+        : null;
+      const technicianName = technicianUser?.name || technician?.employeeCode || 'Unassigned';
+
+      let message = '';
+      let messageType = 'text';
+
+      switch (updateType) {
+        case 'assigned':
+          message = `🔔 *Service Request Update*\n\n` +
+            `✅ *Technician Assigned*\n\n` +
+            `📋 Request Number: ${serviceRequest.requestNumber}\n` +
+            `📦 Container: ${container?.containerCode || 'Unknown'}\n` +
+            `👷 Technician: ${technicianName}\n` +
+            (serviceRequest.scheduledDate 
+              ? `📅 Scheduled: ${new Date(serviceRequest.scheduledDate).toLocaleDateString()}\n` +
+                (serviceRequest.scheduledTimeWindow ? `⏰ Time: ${serviceRequest.scheduledTimeWindow}\n` : '')
+              : '') +
+            `\nYour service request has been assigned to a technician. You'll receive updates as the service progresses.`;
+          break;
+
+        case 'started':
+          message = `🔔 *Service Request Update*\n\n` +
+            `🚀 *Service Started*\n\n` +
+            `📋 Request Number: ${serviceRequest.requestNumber}\n` +
+            `📦 Container: ${container?.containerCode || 'Unknown'}\n` +
+            `👷 Technician: ${technicianName}\n` +
+            `⏰ Started: ${serviceRequest.actualStartTime ? new Date(serviceRequest.actualStartTime).toLocaleString() : 'Just now'}\n` +
+            `\nThe technician has started working on your service request.`;
+          break;
+
+        case 'completed':
+          const duration = serviceRequest.serviceDuration 
+            ? `${serviceRequest.serviceDuration} minutes`
+            : serviceRequest.actualStartTime && serviceRequest.actualEndTime
+            ? `${Math.round((new Date(serviceRequest.actualEndTime).getTime() - new Date(serviceRequest.actualStartTime).getTime()) / 60000)} minutes`
+            : 'N/A';
+          
+          message = `✅ *Service Completed!*\n\n` +
+            `📋 Request Number: ${serviceRequest.requestNumber}\n` +
+            `📦 Container: ${container?.containerCode || 'Unknown'}\n` +
+            `👷 Technician: ${technicianName}\n` +
+            `⏰ Completed: ${serviceRequest.actualEndTime ? new Date(serviceRequest.actualEndTime).toLocaleString() : 'Just now'}\n` +
+            `⏱️ Duration: ${duration}\n` +
+            (serviceRequest.resolutionNotes 
+              ? `\n📝 Notes: ${serviceRequest.resolutionNotes.substring(0, 200)}${serviceRequest.resolutionNotes.length > 200 ? '...' : ''}\n`
+              : '') +
+            `\nThank you for using our service!`;
+          break;
+
+        case 'status_changed':
+          const statusEmoji: Record<string, string> = {
+            'pending': '⏳',
+            'scheduled': '📅',
+            'in_progress': '🚀',
+            'completed': '✅',
+            'cancelled': '❌'
+          };
+          const statusText: Record<string, string> = {
+            'pending': 'Pending',
+            'scheduled': 'Scheduled',
+            'in_progress': 'In Progress',
+            'completed': 'Completed',
+            'cancelled': 'Cancelled'
+          };
+          
+          message = `🔔 *Service Request Update*\n\n` +
+            `${statusEmoji[serviceRequest.status] || '📋'} *Status Changed*\n\n` +
+            `📋 Request Number: ${serviceRequest.requestNumber}\n` +
+            `📦 Container: ${container?.containerCode || 'Unknown'}\n` +
+            `📊 New Status: ${statusText[serviceRequest.status] || serviceRequest.status}\n` +
+            (technicianName !== 'Unassigned' ? `👷 Technician: ${technicianName}\n` : '') +
+            `\nYour service request status has been updated.`;
+          break;
+
+        case 'updated':
+          message = `🔔 *Service Request Update*\n\n` +
+            `📋 Request Number: ${serviceRequest.requestNumber}\n` +
+            `📦 Container: ${container?.containerCode || 'Unknown'}\n` +
+            `📊 Status: ${serviceRequest.status}\n` +
+            (technicianName !== 'Unassigned' ? `👷 Technician: ${technicianName}\n` : '') +
+            `\nYour service request has been updated. Check your dashboard for details.`;
+          break;
+      }
+
+      if (message) {
+        await sendTextMessage(whatsappNumber, message);
+
+        // Log the communication
+        const customerUser = await this.storage.getUser(customer.userId);
+        if (customerUser) {
+          await this.storage.createWhatsappMessage({
+            recipientType: 'customer',
+            recipientId: customerUser.id,
+            phoneNumber: whatsappNumber,
+            messageType: messageType as any,
+            messageContent: { 
+              body: message,
+              serviceRequest: {
+                id: serviceRequest.id,
+                requestNumber: serviceRequest.requestNumber,
+                status: serviceRequest.status
+              },
+              updateType
+            },
+            whatsappMessageId: `sr_update_${serviceRequestId}_${Date.now()}`,
+            status: 'sent',
+            relatedEntityType: 'ServiceRequest',
+            relatedEntityId: serviceRequestId,
+            sentAt: new Date(),
+          });
+        }
+
+        console.log(`✅ WhatsApp notification sent for service request ${serviceRequestId} (${updateType})`);
+      }
+    } catch (error) {
+      console.error(`[WhatsApp] Error sending service request update notification:`, error);
+      // Don't throw - notification failures shouldn't break the main flow
+    }
+  }
 }
 
 // ========================================
 // MAIN MESSAGE PROCESSOR
 // ========================================
 
+/**
+ * Enhanced phone number normalization for accurate user matching
+ * Handles multiple phone number formats from WhatsApp and database
+ */
+function normalizePhoneNumber(phone: string): string[] {
+  if (!phone) return [];
+
+  // Remove all non-digit characters except +
+  const cleaned = phone.replace(/[^\d+]/g, '');
+
+  const variations = new Set<string>();
+  variations.add(cleaned); // Original cleaned version
+
+  // Extract just the digits
+  const digitsOnly = cleaned.replace(/\+/g, '');
+
+  // Add variations
+  if (digitsOnly.length >= 10) {
+    // Last 10 digits (standard mobile number)
+    const last10 = digitsOnly.slice(-10);
+    variations.add(last10);
+
+    // With +91 (India country code)
+    variations.add(`+91${last10}`);
+
+    // With 91 prefix
+    variations.add(`91${last10}`);
+
+    // With + prefix only
+    variations.add(`+${last10}`);
+
+    // If it's a 12-digit number starting with 91, also try without it
+    if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+      const without91 = digitsOnly.substring(2);
+      variations.add(without91);
+      variations.add(`+${without91}`);
+    }
+  }
+
+  // Add the original phone as-is
+  variations.add(phone);
+
+  return Array.from(variations);
+}
+
 export async function processIncomingMessage(message: any, from: string): Promise<void> {
   const { storage } = await import('../storage');
-  
+
   try {
     console.log(`[WhatsApp] Processing message from ${from}`);
-    
+
     // Get or create user and session
-    // Try to find user by phone number (with and without country code)
-    let user = await storage.getUserByPhoneNumber(from);
-    
-    // If not found, try without country code prefix
-    if (!user && from.startsWith('91')) {
-      const phoneWithoutCode = from.substring(2);
-      console.log(`[WhatsApp] Trying to find user with phone: ${phoneWithoutCode}`);
-      user = await storage.getUserByPhoneNumber(phoneWithoutCode);
-    }
-    
-    // If still not found, try with +91 prefix
-    if (!user && !from.startsWith('+')) {
-      const phoneWithPlus = `+${from}`;
-      console.log(`[WhatsApp] Trying to find user with phone: ${phoneWithPlus}`);
-      user = await storage.getUserByPhoneNumber(phoneWithPlus);
+    // Enhanced phone number matching with multiple variations
+    let user = null;
+    const phoneVariations = normalizePhoneNumber(from);
+
+    console.log(`[WhatsApp] Trying ${phoneVariations.length} phone number variations:`, phoneVariations);
+
+    // Try each variation until we find a match
+    for (const variation of phoneVariations) {
+      user = await storage.getUserByPhoneNumber(variation);
+      if (user) {
+        console.log(`[WhatsApp] ✅ Found user with phone variation: ${variation} -> ${user.name} (${user.id})`);
+        break;
+      }
     }
     
     if (!user) {
@@ -3781,7 +4199,24 @@ export async function processIncomingMessage(message: any, from: string): Promis
     } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
       await handleMediaMessage(message, user, session);
     }
-    
+
+    // Determine if this message is related to a service request
+    const conversationState = session.conversationState || {};
+    let relatedEntityType = null;
+    let relatedEntityId = null;
+
+    // Check if user is in service request flow or working on a service
+    if (conversationState.lastCreatedServiceRequestId) {
+      relatedEntityType = 'ServiceRequest';
+      relatedEntityId = conversationState.lastCreatedServiceRequestId;
+    } else if (conversationState.currentServiceId) {
+      relatedEntityType = 'ServiceRequest';
+      relatedEntityId = conversationState.currentServiceId;
+    } else if (conversationState.completingServiceId) {
+      relatedEntityType = 'ServiceRequest';
+      relatedEntityId = conversationState.completingServiceId;
+    }
+
     // Store message in database (use 'admin' instead of 'system' to match enum)
     await storage.createWhatsappMessage({
       recipientType: user.role === 'client' ? 'customer' : (user.role === 'technician' ? 'technician' : 'admin'),
@@ -3791,7 +4226,9 @@ export async function processIncomingMessage(message: any, from: string): Promis
       messageContent: message,
       whatsappMessageId: message.id,
       status: 'received',
-      sentAt: new Date(parseInt(message.timestamp) * 1000)
+      sentAt: new Date(parseInt(message.timestamp) * 1000),
+      relatedEntityType,
+      relatedEntityId
     });
     
   } catch (error) {
@@ -3936,7 +4373,11 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
       
       await sendTextMessage(
         from,
-        `✅ Photos received (${beforePhotos.length}).\n\n🎥 *Please attach a short video showing the issue.*\n\nSend the video, then type *DONE* to submit.`
+        `${getProgressIndicator('awaiting_videos')}` +
+        `✅ Photos received (${beforePhotos.length}).\n\n` +
+        `🎥 *Please attach a short video showing the issue.*\n\n` +
+        `💡 Video is optional but helpful.\n\n` +
+        `Send the video, then type *DONE* to submit.`
       );
     } else {
       await sendTextMessage(from, '📸 Please send photos or type *DONE* when finished.');
