@@ -129,6 +129,77 @@ export default function ServiceRequestDetail() {
     },
   });
 
+  const raiseIndent = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/service-requests/${id}/raise-indent`, {
+        parts: selectedParts.map(p => ({
+          itemId: p.itemId,
+          partName: p.partName,
+          quantity: p.quantity
+        }))
+      });
+    },
+    onSuccess: (response: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests", id] });
+      setIsInventoryDialogOpen(false);
+      setSelectedParts([]);
+      toast({
+        title: "Indent Raised Successfully",
+        description: `Indent ${response.indentNumber} created with ${selectedParts.length} items`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to raise indent",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const raiseIndentFromParts = useMutation({
+    mutationFn: async () => {
+      if (!data?.requiredParts || data.requiredParts.length === 0) {
+        throw new Error("No parts available to create indent");
+      }
+
+      // Parse required parts strings to extract part names and quantities
+      const partsData = data.requiredParts.map((partStr: string) => {
+        // Extract part name and quantity from format "Part Name (quantity)"
+        const match = partStr.match(/^(.+?)\s*\((\d+)\)$/);
+        if (match) {
+          return {
+            partName: match[1].trim(),
+            quantity: parseInt(match[2])
+          };
+        }
+        // If no quantity specified, default to 1
+        return {
+          partName: partStr.trim(),
+          quantity: 1
+        };
+      });
+
+      return await apiRequest("POST", `/api/service-requests/${id}/raise-indent-from-parts`, {
+        parts: partsData
+      });
+    },
+    onSuccess: (response: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests", id] });
+      toast({
+        title: "Indent Raised Successfully",
+        description: `Indent ${response.indentNumber} created with ${response.itemCount} items`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to raise indent",
+        variant: "destructive",
+      });
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen">
@@ -440,10 +511,32 @@ export default function ServiceRequestDetail() {
                         <Wrench className="w-5 h-5" />
                         Required Parts / Spares
                       </CardTitle>
-                      <Button size="sm" variant="outline" onClick={() => setIsInventoryDialogOpen(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Manage Parts
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => {
+                            if (req.requiredParts && req.requiredParts.length > 0) {
+                              // Request indent from existing required parts
+                              raiseIndentFromParts.mutate();
+                            } else {
+                              // No parts available, prompt to add parts first
+                              toast({
+                                title: "No Parts Available",
+                                description: "Please add parts using 'Manage Parts' before requesting an indent",
+                                variant: "destructive",
+                              });
+                            }
+                          }}
+                          disabled={raiseIndentFromParts.isPending || !req?.requiredParts || req.requiredParts?.length === 0}
+                        >
+                          {raiseIndentFromParts.isPending ? "Requesting..." : "Request Indent"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setIsInventoryDialogOpen(true)}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Manage Parts
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -927,9 +1020,16 @@ export default function ServiceRequestDetail() {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsInventoryDialogOpen(false)}>
               Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => raiseIndent.mutate()}
+              disabled={raiseIndent.isPending || selectedParts.length === 0}
+            >
+              {raiseIndent.isPending ? "Creating Indent..." : "Raise Indent"}
             </Button>
             <Button onClick={() => saveParts.mutate()} disabled={saveParts.isPending}>
               {saveParts.isPending ? "Saving..." : "Save Parts"}

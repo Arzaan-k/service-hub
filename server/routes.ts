@@ -1446,6 +1446,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/service-requests/:id/raise-indent", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { parts } = req.body;
+      if (!parts || !Array.isArray(parts) || parts.length === 0) {
+        return res.status(400).json({ error: "No parts specified for indent" });
+      }
+
+      const serviceRequest = await storage.getServiceRequest(req.params.id);
+      if (!serviceRequest) {
+        return res.status(404).json({ error: "Service request not found" });
+      }
+
+      // Create the indent
+      const indent = await storage.createInventoryIndent({
+        serviceRequestId: req.params.id,
+        requestedBy: req.user.id,
+        parts
+      });
+
+      broadcast({ type: "indent_created", data: indent });
+      res.json(indent);
+    } catch (error) {
+      console.error("Error raising indent:", error);
+      res.status(500).json({ error: "Failed to raise indent" });
+    }
+  });
+
+  app.post("/api/service-requests/:id/raise-indent-from-parts", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { parts } = req.body;
+      if (!parts || !Array.isArray(parts) || parts.length === 0) {
+        return res.status(400).json({ error: "No parts specified for indent" });
+      }
+
+      const serviceRequest = await storage.getServiceRequest(req.params.id);
+      if (!serviceRequest) {
+        return res.status(404).json({ error: "Service request not found" });
+      }
+
+      // Look up inventory items by part name
+      const matchedParts = [];
+      const unmatchedParts = [];
+
+      for (const part of parts) {
+        const items = await storage.searchInventoryByName(part.partName);
+        if (items && items.length > 0) {
+          // Use the first matching item
+          matchedParts.push({
+            itemId: items[0].id,
+            partName: items[0].partName,
+            quantity: part.quantity
+          });
+        } else {
+          unmatchedParts.push(part.partName);
+        }
+      }
+
+      if (matchedParts.length === 0) {
+        return res.status(400).json({
+          error: "No matching inventory items found",
+          unmatchedParts
+        });
+      }
+
+      // Create the indent with matched parts
+      const indent = await storage.createInventoryIndent({
+        serviceRequestId: req.params.id,
+        requestedBy: req.user.id,
+        parts: matchedParts
+      });
+
+      broadcast({ type: "indent_created", data: indent });
+
+      const response: any = {
+        ...indent,
+        itemCount: matchedParts.length
+      };
+
+      // Add warning if some parts weren't matched
+      if (unmatchedParts.length > 0) {
+        response.warning = `${unmatchedParts.length} part(s) not found in inventory`;
+        response.unmatchedParts = unmatchedParts;
+      }
+
+      res.json(response);
+    } catch (error) {
+      console.error("Error raising indent from parts:", error);
+      res.status(500).json({ error: "Failed to raise indent" });
+    }
+  });
+
   app.get("/api/service-requests/:id/timeline", authenticateUser, async (req, res) => {
     try {
       const timeline = await storage.getServiceRequestTimeline(req.params.id);

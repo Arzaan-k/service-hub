@@ -17,6 +17,8 @@ import {
   feedback,
   emailVerifications,
   inventoryTransactions,
+  inventoryIndents,
+  inventoryIndentItems,
   manuals,
   ragQueries,
   type User,
@@ -38,7 +40,7 @@ import {
   type InventoryTransaction,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, gte, sql, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, gte, sql, isNull, ilike } from "drizzle-orm";
 import { Pool } from '@neondatabase/serverless';
 
 export interface IStorage {
@@ -1509,6 +1511,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(inventory.id, itemId));
   }
 
+  async searchInventoryByName(partName: string): Promise<any[]> {
+    return await db
+      .select()
+      .from(inventory)
+      .where(ilike(inventory.partName, `%${partName}%`))
+      .limit(10);
+  }
+
   async getInventoryTransactions(itemId?: string, limit: number = 100): Promise<any[]> {
     let query = db
       .select()
@@ -1533,6 +1543,65 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return transaction;
+  }
+
+  // Inventory Indents operations
+  async createInventoryIndent(data: { serviceRequestId: string; requestedBy: string; parts: any[] }): Promise<any> {
+    const { serviceRequestId, requestedBy, parts } = data;
+
+    // Generate indent number
+    const indentNumber = `IND-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    // Calculate total amount
+    let totalAmount = 0;
+    const enrichedParts = [];
+
+    for (const part of parts) {
+      const item = await db.select().from(inventory).where(eq(inventory.id, part.itemId)).limit(1);
+      if (item && item[0]) {
+        const unitPrice = parseFloat(item[0].unitPrice || '0');
+        const totalPrice = unitPrice * part.quantity;
+        totalAmount += totalPrice;
+
+        enrichedParts.push({
+          itemId: part.itemId,
+          partName: item[0].partName,
+          partNumber: item[0].partNumber,
+          quantity: part.quantity,
+          unitPrice: unitPrice.toString(),
+          totalPrice: totalPrice.toString()
+        });
+      }
+    }
+
+    // Create indent
+    const [indent] = await db
+      .insert(inventoryIndents)
+      .values({
+        indentNumber,
+        serviceRequestId,
+        status: 'pending',
+        priority: 'normal',
+        totalAmount: totalAmount.toString(),
+        requestedBy,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+      .returning();
+
+    // Create indent items
+    for (const part of enrichedParts) {
+      await db.insert(inventoryIndentItems).values({
+        indentId: indent.id,
+        ...part,
+        createdAt: new Date()
+      });
+    }
+
+    return {
+      ...indent,
+      items: enrichedParts
+    };
   }
 
   // Scheduled Services operations

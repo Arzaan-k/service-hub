@@ -397,6 +397,36 @@ export const inventoryTransactions = pgTable("inventory_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Inventory Indents (Purchase Requisitions/Orders)
+export const inventoryIndents = pgTable("inventory_indents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  indentNumber: text("indent_number").notNull().unique(),
+  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id),
+  status: text("status").notNull().default("pending"), // pending, approved, ordered, received, cancelled
+  priority: text("priority").notNull().default("normal"), // low, normal, high, urgent
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
+  remarks: text("remarks"),
+  requestedBy: varchar("requested_by").references(() => users.id).notNull(),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Inventory Indent Items (line items for each indent)
+export const inventoryIndentItems = pgTable("inventory_indent_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  indentId: varchar("indent_id").references(() => inventoryIndents.id).notNull(),
+  itemId: varchar("item_id").references(() => inventory.id).notNull(),
+  partName: text("part_name").notNull(),
+  partNumber: text("part_number").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }),
+  totalPrice: decimal("total_price", { precision: 10, scale: 2 }),
+  remarks: text("remarks"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // RAG (Retrieval-Augmented Generation) Tables for Reefer Diagnostic Chatbot
 export const manuals = pgTable("manuals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
