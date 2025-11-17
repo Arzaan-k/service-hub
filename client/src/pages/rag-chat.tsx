@@ -32,7 +32,7 @@ export default function RagChat() {
     : 0;
 
   return (
-    <div className="flex min-h-screen bg-[#0b1220] text-white">
+    <div className="flex min-h-screen">
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-hidden">
         <Header title="AI Diagnostic Hub" />
@@ -103,9 +103,9 @@ export default function RagChat() {
               {/* Enhanced Sidebar */}
               <div className="space-y-6">
                 {/* Performance Analytics */}
-                <Card className="border-[#223351] bg-[#0c1a2e] shadow-xl">
+                <Card className="card-surface">
                   <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-3 text-white">
+                    <CardTitle className="flex items-center gap-3 text-foreground">
                       <div className="relative p-2 bg-[#0e2038] rounded-lg border border-[#223351]">
                         <Activity className="h-5 w-5 text-white" />
                       </div>
@@ -150,9 +150,9 @@ export default function RagChat() {
                 </Card>
 
                 {/* Recent Queries */}
-                <Card className="border-[#223351] bg-[#0c1a2e] shadow-xl">
+                <Card className="card-surface">
                   <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-3 text-white">
+                    <CardTitle className="flex items-center gap-3 text-foreground">
                       <div className="relative p-2 bg-[#0e2038] rounded-lg border border-[#223351]">
                         <History className="h-5 w-5 text-white" />
                       </div>
@@ -209,9 +209,9 @@ export default function RagChat() {
                 </Card>
 
                 {/* Quick Tips */}
-                <Card className="border-[#223351] bg-[#0c1a2e] shadow-xl">
+                <Card className="card-surface">
                   <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-3 text-white">
+                    <CardTitle className="flex items-center gap-3 text-foreground">
                       <div className="relative p-2 bg-[#0e2038] rounded-lg border border-[#223351]">
                         <BookOpen className="h-5 w-5 text-white" />
                       </div>

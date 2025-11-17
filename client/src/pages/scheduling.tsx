@@ -213,7 +213,7 @@ export default function Scheduling() {
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="px-3 py-2 border border-border rounded-lg text-sm"
+                className="px-3 py-2 input-soft rounded-lg text-sm"
               />
               {canSchedule && (
                 <>
@@ -240,8 +240,8 @@ export default function Scheduling() {
           </div>
 
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+            <Card className="card-surface hover:shadow-soft transition-all">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
@@ -257,7 +257,7 @@ export default function Scheduling() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="card-surface hover:shadow-soft transition-all">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
@@ -274,7 +274,7 @@ export default function Scheduling() {
             </Card>
 
             {canSchedule && (
-              <Card>
+              <Card className="card-surface hover:shadow-soft transition-all">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
@@ -292,7 +292,7 @@ export default function Scheduling() {
             )}
 
             {canSchedule && (
-              <Card>
+              <Card className="card-surface hover:shadow-soft transition-all">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
@@ -334,7 +334,7 @@ export default function Scheduling() {
           ) : (
             <div className="space-y-6">
               {technicianSchedules.map((techSchedule: any) => (
-                <Card key={techSchedule.technician.id}>
+                <Card key={techSchedule.technician.id} className="card-surface hover:shadow-soft transition-all">
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -365,7 +365,8 @@ export default function Scheduling() {
                         .map((service: any, index: number) => (
                           <div
                             key={service.id}
-                            className="flex items-start gap-4 p-4 border border-border rounded-lg hover:bg-muted/20 transition-colors"
+                            className="flex items-start gap-4 p-4 border rounded-lg transition-colors"
+                            style={{ borderColor: '#FFE0D6', background: 'white' }}
                           >
                             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm">
                               {index + 1}

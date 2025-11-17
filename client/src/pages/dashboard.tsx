@@ -143,37 +143,49 @@ export default function Dashboard() {
         <Header title="Fleet Dashboard" />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* KPI Cards */}
-          <KPICards stats={stats} />
+          <div className="min-w-0">
+            <KPICards stats={stats} />
+          </div>
 
           {/* Map & Alerts & Fleet Stats */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <div className="lg:col-span-2 h-full">
               <ErrorBoundary>
-                <GlobalFleetMap containers={containers || []} />
+                <div className="h-full min-w-0">
+                  <GlobalFleetMap containers={containers || []} />
+                </div>
               </ErrorBoundary>
             </div>
             <div className="h-full space-y-6">
               <ErrorBoundary>
-                <AlertPanel alerts={alerts || []} containers={containers || []} />
+                <div className="h-full min-w-0">
+                  <AlertPanel alerts={alerts || []} containers={containers || []} />
+                </div>
               </ErrorBoundary>
               <ErrorBoundary>
-                <ContainerFleetStats containers={containers || []} />
+                <div className="h-full min-w-0">
+                  <ContainerFleetStats containers={containers || []} />
+                </div>
               </ErrorBoundary>
             </div>
           </div>
 
           {/* Service Requests & WhatsApp */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
             <ErrorBoundary>
-              <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} />
+              <div className="h-full min-w-0">
+                <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} />
+              </div>
             </ErrorBoundary>
             <ErrorBoundary>
-              <WhatsAppHubPanel />
+              <div className="h-full min-w-0">
+                <WhatsAppHubPanel />
+              </div>
             </ErrorBoundary>
           </div>
 
           {/* Technician Schedule & Container Lookup */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <div className="lg:col-span-2">
               <ErrorBoundary>
                 <TechnicianSchedule technicians={technicians || []} />

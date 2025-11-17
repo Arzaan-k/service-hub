@@ -22,19 +22,23 @@ export default function AlertItem({ alert, containerName, containerModel, onActi
   const [showChat, setShowChat] = useState(false);
 
   const severityColors = {
-    critical: { bg: "bg-destructive/5", border: "border-destructive/20", text: "text-destructive", badge: "bg-destructive" },
-    high: { bg: "bg-warning/5", border: "border-warning/20", text: "text-warning", badge: "bg-warning" },
-    medium: { bg: "bg-accent/5", border: "border-accent/20", text: "text-accent", badge: "bg-accent" },
-    low: { bg: "bg-muted/5", border: "border-muted/20", text: "text-muted-foreground", badge: "bg-muted" },
+    critical: { stripe: "#FF6F61", text: "text-destructive", badge: "bg-destructive" },
+    high: { stripe: "#FFCBA4", text: "text-warning", badge: "bg-warning" },
+    medium: { stripe: "#FFD4E3", text: "text-accent", badge: "bg-accent" },
+    low: { stripe: "#FFE0D6", text: "text-muted-foreground", badge: "bg-muted" },
   };
 
   const colors = severityColors[alert.severity as keyof typeof severityColors] || severityColors.medium;
 
   return (
-    <div className={`p-3 ${colors.bg} border ${colors.border} rounded-lg`} data-testid={`alert-item-${alert.id}`}>
+    <div
+      className="alert-card p-3 border rounded-xl shadow-soft relative"
+      style={{ borderColor: "#FFE0D6", borderLeftColor: colors.stripe, borderLeftWidth: 4 }}
+      data-testid={`alert-item-${alert.id}`}
+    >
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 ${colors.badge} text-${colors.badge === "bg-muted" ? "muted-foreground" : "white"} text-xs font-medium rounded uppercase`}>
+          <span className={`px-2 py-0.5 ${colors.badge} text-white text-xs font-medium rounded uppercase`}>
             {alert.severity}
           </span>
           <span className="text-xs text-muted-foreground">{new Date(alert.detectedAt).toLocaleString()}</span>
@@ -47,20 +51,20 @@ export default function AlertItem({ alert, containerName, containerModel, onActi
 
       {/* AI Insight */}
       {(alert.aiClassification?.summary || (alert.resolutionSteps && alert.resolutionSteps.length)) && (
-        <div className="mb-3 p-3 bg-[#0e2038] border border-[#223351] rounded-lg">
-          <div className="text-xs font-semibold text-white mb-1">AI Insight</div>
+        <div className="mb-3 p-3 bg-white border rounded-lg shadow-soft" style={{ borderColor: "#FFE0D6" }}>
+          <div className="text-xs font-semibold text-foreground mb-1">AI Insight</div>
           {alert.aiClassification?.summary && (
-            <p className="text-xs text-white mb-2">{alert.aiClassification.summary}</p>
+            <p className="text-xs text-foreground mb-2">{alert.aiClassification.summary}</p>
           )}
           {alert.resolutionSteps && alert.resolutionSteps.length > 0 && (
-            <ol className="list-decimal list-inside space-y-1 text-xs text-white">
+            <ol className="list-decimal list-inside space-y-1 text-xs text-foreground">
               {alert.resolutionSteps.slice(0,6).map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
             </ol>
           )}
           {alert.aiClassification?.sources && alert.aiClassification.sources.length > 0 && (
-            <div className="mt-2 text-[11px] text-white/70">
+            <div className="mt-2 text-[11px] text-muted-foreground">
               Sources: {alert.aiClassification.sources.slice(0,3).map((src: any, idx: number) => (
                 <span key={idx} className="mr-2">{src.manual_name} p.{src.page}</span>
               ))}
@@ -71,41 +75,41 @@ export default function AlertItem({ alert, containerName, containerModel, onActi
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => onAction?.(alert.id, "acknowledge")}
-          className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted/20 transition-smooth"
+          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded"
           data-testid={`button-ack-${alert.id}`}
         >
           Acknowledge
         </button>
         <button
           onClick={() => onAction?.(alert.id, "resolve")}
-          className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted/20 transition-smooth"
+          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded"
           data-testid={`button-resolve-${alert.id}`}
         >
           Resolve
         </button>
         <button
           onClick={() => onAction?.(alert.id, "dispatch")}
-          className={`px-3 py-1.5 text-xs font-medium ${colors.badge} text-white rounded hover:opacity-90 transition-smooth`}
+          className={`btn-primary px-3 py-1.5 text-xs font-medium rounded`}
           data-testid={`button-dispatch-${alert.id}`}
         >
           Dispatch Technician
         </button>
         <button
           onClick={() => onAction?.(alert.id, "create_sr")}
-          className="px-3 py-1.5 text-xs font-medium border border-green-500/40 text-green-400 rounded hover:bg-green-500/10 transition-smooth"
+          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded"
         >
           Create Service Request
         </button>
         <button
           onClick={() => onAction?.(alert.id, "details")}
-          className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted/20 transition-smooth"
+          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded"
           data-testid={`button-details-${alert.id}`}
         >
           Details
         </button>
         <button
           onClick={() => setShowChat(!showChat)}
-          className="px-3 py-1.5 text-xs font-medium border border-blue-400/30 text-blue-400 rounded hover:bg-blue-400/10 transition-smooth flex items-center gap-1"
+          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded flex items-center gap-1"
           data-testid={`button-troubleshoot-${alert.id}`}
         >
           <Wrench className="h-3 w-3" />

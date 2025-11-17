@@ -25,10 +25,10 @@ export default function Sidebar() {
     { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", color: "inventory", roles: ["admin","coordinator","technician","super_admin"] },
     // Admin-only analytics
     { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", color: "analytics", roles: ["admin","super_admin"] },
+    // Manuals for all users
+    { path: "/manuals", label: "Manuals", icon: "fas fa-book-open", color: "manuals", roles: ["admin","coordinator","technician","client","super_admin"] },
     // RAG Chat for everyone
     { path: "/rag-chat", label: "AI Assistant", icon: "fas fa-robot", color: "rag", roles: ["admin","coordinator","technician","client","super_admin"] },
-    // Admin manual management
-    { path: "/admin/manuals", label: "Manuals", icon: "fas fa-book", color: "manuals", roles: ["admin","super_admin"] },
   ].filter(item => item.roles.includes(role));
 
   const handleLogout = () => {
@@ -37,16 +37,16 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-[#0b1220] border-r border-[#223351] flex flex-col sticky top-0 h-screen">
+    <aside className="sidebar w-64 bg-[#FFF8F5] border-r border-[#FFE0D6] flex flex-col sticky top-0 h-screen">
       {/* Logo */}
-      <div className="p-6 border-b border-[#223351]">
+      <div className="p-6 border-b border-[#FFE0D6]">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1f3b7a] to-[#264892] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl gradient-accent flex items-center justify-center shadow-soft">
             <i className="fas fa-ship text-white"></i>
           </div>
           <div>
-            <h2 className="font-bold text-white">Container MS</h2>
-            <p className="text-xs text-white/80">v2.0.1</p>
+            <h2 className="font-bold text-foreground">Container MS</h2>
+            <p className="text-xs text-muted-foreground">v2.0.1</p>
           </div>
         </div>
       </div>
@@ -60,84 +60,33 @@ export default function Sidebar() {
               href={item.path}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth group ${
                 location === item.path
-                  ? "text-white"
-                  : "text-white/80 hover:bg-[#13233d] hover:text-white"
+                  ? "text-foreground"
+                  : "text-foreground hover:bg-[#FFF6F9]"
               }`}
               style={location === item.path ? {
-                backgroundColor: item.color === 'containers' ? 'rgba(115, 200, 210, 0.1)' :
-                                item.color === 'alerts' ? 'rgba(239, 68, 68, 0.1)' :
-                                item.color === 'service' ? 'rgba(255, 144, 19, 0.1)' :
-                                item.color === 'technicians' ? 'rgba(0, 70, 255, 0.1)' :
-                                item.color === 'scheduling' ? 'rgba(115, 200, 210, 0.1)' :
-                                item.color === 'clients' ? 'rgba(115, 200, 210, 0.1)' :
-                                item.color === 'whatsapp' ? 'rgba(115, 200, 210, 0.1)' :
-                                item.color === 'inventory' ? 'rgba(255, 144, 19, 0.1)' :
-                                item.color === 'analytics' ? 'rgba(0, 70, 255, 0.1)' :
-                                item.color === 'rag' ? 'rgba(168, 85, 247, 0.1)' :
-                                item.color === 'manuals' ? 'rgba(59, 130, 246, 0.1)' :
-                                'rgba(0, 70, 255, 0.1)',
-                borderLeftColor: item.color === 'containers' ? '#73C8D2' :
-                                item.color === 'alerts' ? '#ef4444' :
-                                item.color === 'service' ? '#FF9013' :
-                                item.color === 'technicians' ? '#0046FF' :
-                                item.color === 'scheduling' ? '#73C8D2' :
-                                item.color === 'clients' ? '#73C8D2' :
-                                item.color === 'whatsapp' ? '#73C8D2' :
-                                item.color === 'inventory' ? '#FF9013' :
-                                item.color === 'analytics' ? '#0046FF' :
-                                item.color === 'rag' ? '#a855f7' :
-                                item.color === 'manuals' ? '#3b82f6' :
-                                '#0046FF',
+                backgroundColor: '#FFD4E3',
+                borderLeftColor: '#FFA07A',
                 borderLeftWidth: '4px',
-                color: item.color === 'containers' ? '#73C8D2' :
-                       item.color === 'alerts' ? '#ef4444' :
-                       item.color === 'service' ? '#FF9013' :
-                       item.color === 'technicians' ? '#0046FF' :
-                       item.color === 'scheduling' ? '#73C8D2' :
-                       item.color === 'clients' ? '#73C8D2' :
-                       item.color === 'whatsapp' ? '#73C8D2' :
-                       item.color === 'inventory' ? '#FF9013' :
-                       item.color === 'analytics' ? '#0046FF' :
-                       item.color === 'rag' ? '#a855f7' :
-                       item.color === 'manuals' ? '#3b82f6' :
-                       '#0046FF'
+                color: '#333333'
               } : {}}
               data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
             >
               <i 
                 className={`${item.icon} w-5`}
                 style={location === item.path ? {
-                  color: item.color === 'containers' ? '#73C8D2' :
-                         item.color === 'alerts' ? '#ef4444' :
-                         item.color === 'service' ? '#FF9013' :
-                         item.color === 'technicians' ? '#0046FF' :
-                         item.color === 'scheduling' ? '#73C8D2' :
-                         item.color === 'clients' ? '#73C8D2' :
-                         item.color === 'whatsapp' ? '#73C8D2' :
-                         item.color === 'inventory' ? '#FF9013' :
-                         item.color === 'analytics' ? '#0046FF' :
-                         item.color === 'rag' ? '#a855f7' :
-                         item.color === 'manuals' ? '#3b82f6' :
-                         '#0046FF'
+                  color: item.color === 'alerts' ? '#FF6F61' :
+                         item.color === 'service' ? '#FFA07A' :
+                         '#E19E64'
                 } : {}}
               ></i>
-              <span className="font-medium text-white">{item.label}</span>
+              <span className="font-medium text-foreground">{item.label}</span>
               {item.badge && (
                 <span
-                  className="ml-auto text-white text-xs px-2 py-0.5 rounded-full"
+                  className="ml-auto text-foreground text-xs px-2 py-0.5 rounded-full"
                   style={{
-                    backgroundColor: item.color === 'containers' ? '#73C8D2' :
-                                    item.color === 'alerts' ? '#ef4444' :
-                                    item.color === 'service' ? '#FF9013' :
-                                    item.color === 'technicians' ? '#0046FF' :
-                                    item.color === 'scheduling' ? '#73C8D2' :
-                                    item.color === 'clients' ? '#73C8D2' :
-                                    item.color === 'whatsapp' ? '#73C8D2' :
-                                    item.color === 'inventory' ? '#FF9013' :
-                                    item.color === 'analytics' ? '#0046FF' :
-                                    item.color === 'rag' ? '#a855f7' :
-                                    item.color === 'manuals' ? '#3b82f6' :
-                                    '#0046FF'
+                    backgroundColor: item.color === 'alerts' ? '#FFD4E3' :
+                                     item.color === 'service' ? '#FFCBA4' :
+                                     '#FFE5B4'
                   }}
                 >
                   {item.badge}
@@ -147,7 +96,7 @@ export default function Sidebar() {
                 <span 
                   className="ml-auto w-2 h-2 rounded-full pulse-dot"
                   style={{
-                    backgroundColor: item.color === 'whatsapp' ? '#73C8D2' : '#0046FF'
+                    backgroundColor: item.color === 'whatsapp' ? '#CFEFDB' : '#FFCBA4'
                   }}
                 ></span>
               )}
@@ -155,30 +104,30 @@ export default function Sidebar() {
           ))}
         </div>
 
-        <div className="mt-6 pt-6 border-t border-[#223351] space-y-1">
+        <div className="mt-6 pt-6 border-t border-[#FFE0D6] space-y-1">
           <Link 
             href="/settings"
-            className="flex items-center gap-3 px-4 py-3 rounded-lg text-white/80 hover:bg-[#13233d] hover:text-white transition-smooth"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-foreground hover:bg-[#FFF6F9] transition-smooth"
           >
-            <i className="fas fa-cog w-5 text-white/80"></i>
-            <span className="font-medium text-white">Settings</span>
+            <i className="fas fa-cog w-5 text-muted-foreground"></i>
+            <span className="font-medium text-foreground">Settings</span>
           </Link>
         </div>
       </nav>
 
       {/* User Profile */}
-      <div className="p-4 border-t border-[#223351]">
-        <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#13233d] cursor-pointer transition-smooth">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1f3b7a] to-[#264892] flex items-center justify-center text-white font-bold">
+      <div className="p-4 border-t border-[#FFE0D6]">
+        <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-[#FFF6F9] cursor-pointer transition-smooth">
+          <div className="w-10 h-10 rounded-full gradient-accent flex items-center justify-center text-white font-bold">
             {user?.name?.charAt(0) || "U"}
           </div>
           <div className="flex-1">
-            <p className="text-sm font-semibold text-white">{user?.name || "User"}</p>
-            <p className="text-xs text-white/80">{user?.phoneNumber}</p>
+            <p className="text-sm font-semibold text-foreground">{user?.name || "User"}</p>
+            <p className="text-xs text-muted-foreground">{user?.phoneNumber}</p>
           </div>
           <button
             onClick={handleLogout}
-            className="text-white/80 hover:text-white"
+            className="text-muted-foreground hover:text-foreground"
             data-testid="button-logout"
           >
             <i className="fas fa-sign-out-alt"></i>

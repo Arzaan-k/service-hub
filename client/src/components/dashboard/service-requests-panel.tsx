@@ -36,7 +36,7 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
   };
 
   return (
-    <div className="bg-card border border-service/20 rounded-lg p-6">
+    <div className="bg-card border border-service/20 rounded-lg p-6 h-full">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-service/10 rounded-lg">
@@ -44,12 +44,12 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
           </div>
           <h3 className="text-lg font-semibold text-foreground">Recent Service Requests</h3>
         </div>
-        <button className="px-3 py-1.5 text-xs font-medium bg-service text-service-foreground rounded-md hover:bg-service/90 transition-smooth">
+        <button className="btn-primary px-4 py-2 rounded-md text-xs font-medium">
           + New Request
         </button>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto min-w-0">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
@@ -65,10 +65,10 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
             {requests.slice(0, 5).map((request) => {
               const container = containers.find((c) => c.id === request.containerId);
               return (
-                <tr key={request.id} className="border-b border-border hover:bg-muted/10 transition-smooth">
+                <tr key={request.id} className="border-b" style={{ borderColor: '#FFE0D6' }}>
                   <td className="py-3 px-2 font-mono text-xs">{request.requestNumber}</td>
                   <td className="py-3 px-2 font-mono text-xs">{container?.containerCode || container?.containerId || "Unknown"}</td>
-                  <td className="py-3 px-2">{(request.issueDescription || "").substring(0, 20)}{(request.issueDescription || "").length > 20 ? "..." : ""}</td>
+                  <td className="py-3 px-2">{(request.issueDescription || "").substring(0, 28)}{(request.issueDescription || "").length > 28 ? "..." : ""}</td>
                   <td className="py-3 px-2">
                     <span className={`px-2 py-0.5 ${getPriorityColor(request.priority)} text-xs rounded-full`}>
                       {request.priority}
@@ -80,7 +80,7 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
                     </span>
                   </td>
                   <td className="py-3 px-2">
-                    <button className="text-primary hover:underline text-xs">View</button>
+                    <button className="btn-secondary px-3 py-1.5 rounded-md text-xs">View</button>
                   </td>
                 </tr>
               );

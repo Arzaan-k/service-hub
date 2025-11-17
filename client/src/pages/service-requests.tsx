@@ -20,7 +20,9 @@ import {
   CheckCircle,
   XCircle,
   Play,
+  PlayCircle,
   UserCheck,
+  UserCog,
   FileText,
   Send,
   AlertCircle,
@@ -295,7 +297,7 @@ export default function ServiceRequests() {
         <Header title="Service Requests" />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={async () => {
+            <Button className="btn-secondary" onClick={async () => {
               try {
                 const response = await apiRequest("POST", "/api/scheduling/notify-all", {});
                 const result = await response.json();
@@ -306,13 +308,13 @@ export default function ServiceRequests() {
             }}>
               Send Daily Schedules
             </Button>
-            <Button onClick={() => setNewDialogOpen(true)}>
+            <Button className="btn-primary" onClick={() => setNewDialogOpen(true)}>
               New Service Request
             </Button>
           </div>
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("pending")}>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+            <Card className="cursor-pointer card-surface hover:shadow-soft transition-all" onClick={() => setActiveTab("pending")}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-gray-500/20 flex items-center justify-center">
@@ -326,7 +328,7 @@ export default function ServiceRequests() {
               </CardContent>
             </Card>
 
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("scheduled")}>
+            <Card className="cursor-pointer card-surface hover:shadow-soft transition-all" onClick={() => setActiveTab("scheduled")}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
@@ -340,7 +342,7 @@ export default function ServiceRequests() {
               </CardContent>
             </Card>
 
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("in_progress")}>
+            <Card className="cursor-pointer card-surface hover:shadow-soft transition-all" onClick={() => setActiveTab("in_progress")}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
@@ -354,7 +356,7 @@ export default function ServiceRequests() {
               </CardContent>
             </Card>
 
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveTab("completed")}>
+            <Card className="cursor-pointer card-surface hover:shadow-soft transition-all" onClick={() => setActiveTab("completed")}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
@@ -382,7 +384,7 @@ export default function ServiceRequests() {
 
             <TabsContent value={activeTab} className="space-y-4">
               {filteredRequests?.map((request: ServiceRequest) => (
-                <Card key={request.id} className="hover:shadow-md transition-shadow">
+                <Card key={request.id} className="card-surface hover:shadow-soft transition-all" style={request.status === 'completed' ? { background: '#F0FFF6' } : {}}>
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
@@ -391,7 +393,7 @@ export default function ServiceRequests() {
                             <Link to={`/service-requests/${request.id}`}>{request.requestNumber}</Link>
                           </h3>
                           {getStatusBadge(request.status)}
-                          <Badge className={`${getPriorityBadge(request.priority)} border`}>
+                          <Badge className={`${getPriorityBadge(request.priority)} border rounded-full`}>
                             {request.priority}
                           </Badge>
                         </div>
@@ -494,44 +496,61 @@ export default function ServiceRequests() {
                       </div>
                     )}
 
-                    <div className="flex flex-wrap gap-2 pt-4 border-t border-border">
+                    <div className="flex flex-wrap gap-3 pt-4 border-t border-border">
                       {request.status === "pending" && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
+                        <div className="flex flex-wrap gap-3 w-full">
+                          <button
                             onClick={() => {
                               setSelectedRequest(request);
                               setAssignDialogOpen(true);
                             }}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FFD4E3] hover:bg-[#FFC6B3] text-[#3A3A3A] font-medium dark:bg-[#2A2A2A] dark:hover:bg-[#3A3A3A] dark:text-[#FFD4E3] transition-all duration-300 shadow-sm"
                           >
-                            <UserCheck className="h-3 w-3 mr-1" />
-                            Assign Technician
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
+                            <UserCog className="w-4 h-4" /> Assign Technician
+                          </button>
+
+                          <button
                             onClick={() => startService.mutate(request.id)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#FFA07A] text-[#FFA07A] hover:bg-[#FFF2ED] dark:hover:bg-[#1F1F1F] transition-all duration-300"
                           >
-                            <Play className="h-3 w-3 mr-1" />
-                            Start Service
-                          </Button>
-                        </>
+                            <PlayCircle className="w-4 h-4" /> Start Service
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setSelectedRequest(request);
+                              setCancelDialogOpen(true);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#E0E0E0] text-[#888] hover:bg-[#FFF9F7] dark:border-[#555] dark:text-[#AAA] dark:hover:bg-[#2A2A2A] transition-all duration-300"
+                          >
+                            <XCircle className="w-4 h-4" /> Cancel
+                          </button>
+                        </div>
                       )}
                       {request.status === "scheduled" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => startService.mutate(request.id)}
-                        >
-                          <Play className="h-3 w-3 mr-1" />
-                          Start Service
-                        </Button>
+                        <div className="flex flex-wrap gap-3 w-full">
+                          <button
+                            onClick={() => startService.mutate(request.id)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#FFA07A] text-[#FFA07A] hover:bg-[#FFF2ED] dark:hover:bg-[#1F1F1F] transition-all duration-300"
+                          >
+                            <PlayCircle className="w-4 h-4" /> Start Service
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setSelectedRequest(request);
+                              setCancelDialogOpen(true);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#E0E0E0] text-[#888] hover:bg-[#FFF9F7] dark:border-[#555] dark:text-[#AAA] dark:hover:bg-[#2A2A2A] transition-all duration-300"
+                          >
+                            <XCircle className="w-4 h-4" /> Cancel
+                          </button>
+                        </div>
                       )}
                       {request.status === "in_progress" && (
                         <Button
                           size="sm"
-                          variant="default"
+                          className="btn-primary"
                           onClick={() => {
                             setSelectedRequest(request);
                             setCompleteDialogOpen(true);
@@ -545,23 +564,23 @@ export default function ServiceRequests() {
                         <>
                           <Button
                             size="sm"
-                            variant="outline"
+                            className="btn-secondary"
                             onClick={() => generateInvoice.mutate(request.id)}
                             disabled={generateInvoice.isPending}
                           >
                             <FileText className="h-3 w-3 mr-1" />
                             {generateInvoice.isPending ? "Generating..." : "Generate Invoice"}
                           </Button>
-                          <Button size="sm" variant="outline">
+                          <Button size="sm" className="btn-secondary">
                             <Send className="h-3 w-3 mr-1" />
                             Send to Customer
                           </Button>
                         </>
                       )}
-                      {["pending", "scheduled", "in_progress"].includes(request.status) && (
+                      {request.status === "in_progress" && (
                         <Button
                           size="sm"
-                          variant="destructive"
+                          className="btn-secondary"
                           onClick={() => {
                             setSelectedRequest(request);
                             setCancelDialogOpen(true);
@@ -592,7 +611,7 @@ export default function ServiceRequests() {
 
       {/* Assign Technician Dialog */}
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-        <DialogContent>
+        <DialogContent className="card-surface">
           <DialogHeader>
             <DialogTitle>Assign Technician</DialogTitle>
           </DialogHeader>
@@ -629,10 +648,10 @@ export default function ServiceRequests() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
+            <Button className="btn-secondary" onClick={() => setAssignDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAssign} disabled={assignTechnician.isPending}>
+            <Button className="btn-primary" onClick={handleAssign} disabled={assignTechnician.isPending}>
               {assignTechnician.isPending ? "Assigning..." : "Assign"}
             </Button>
           </DialogFooter>
@@ -641,7 +660,7 @@ export default function ServiceRequests() {
 
       {/* Complete Service Dialog */}
       <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="card-surface">
           <DialogHeader>
             <DialogTitle>Complete Service</DialogTitle>
           </DialogHeader>
@@ -662,10 +681,10 @@ export default function ServiceRequests() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCompleteDialogOpen(false)}>
+            <Button className="btn-secondary" onClick={() => setCompleteDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleComplete} disabled={completeService.isPending}>
+            <Button className="btn-primary" onClick={handleComplete} disabled={completeService.isPending}>
               {completeService.isPending ? "Completing..." : "Complete Service"}
             </Button>
           </DialogFooter>
@@ -674,7 +693,7 @@ export default function ServiceRequests() {
 
       {/* Cancel Service Dialog */}
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
-        <DialogContent>
+        <DialogContent className="card-surface">
           <DialogHeader>
             <DialogTitle>Cancel Service Request</DialogTitle>
           </DialogHeader>
@@ -702,10 +721,10 @@ export default function ServiceRequests() {
           </div>
         </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>
+            <Button className="btn-secondary" onClick={() => setCancelDialogOpen(false)}>
               Keep Request
             </Button>
-            <Button variant="destructive" onClick={handleCancel} disabled={cancelService.isPending}>
+            <Button className="btn-primary" onClick={handleCancel} disabled={cancelService.isPending}>
               {cancelService.isPending ? "Cancelling..." : "Cancel Service"}
             </Button>
           </DialogFooter>

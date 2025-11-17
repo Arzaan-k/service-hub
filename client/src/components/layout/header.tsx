@@ -1,16 +1,15 @@
 import { useState } from "react";
-import ColorGuide from "@/components/color-guide";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Header({ title }: { title: string }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [showColorGuide, setShowColorGuide] = useState(false);
 
   return (
-    <header className="h-16 bg-[#0b1220] border-b border-[#223351] flex items-center justify-between px-6 sticky top-0 z-10">
+    <header className="navbar h-16 backdrop-blur bg-[#FFF9F7] border-b border-[#FFE0D6] shadow-soft flex items-center justify-between px-6 sticky top-0 z-10">
       <div className="flex items-center gap-4">
-        <h2 className="text-xl font-semibold text-white">{title}</h2>
-        <span className="text-sm text-white/80">Last updated: 2 min ago</span>
-        <div className="w-2 h-2 bg-green-500 rounded-full pulse-indicator"></div>
+        <h2 className="text-xl font-semibold text-foreground">{title}</h2>
+        <span className="text-sm text-muted-foreground">Last updated: 2 min ago</span>
+        <div className="w-2 h-2 rounded-full pulse-indicator" style={{ backgroundColor: '#FFCBA4' }}></div>
       </div>
 
       <div className="flex items-center gap-4">
@@ -19,37 +18,31 @@ export default function Header({ title }: { title: string }) {
           <input
             type="text"
             placeholder="Search containers, alerts..."
-            className="w-80 pl-10 pr-4 py-2 bg-[#0e2038] border border-[#223351] rounded-md text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-[#1f3b7a]"
+            className="w-80 pl-10 pr-4 py-2 input-soft rounded-md text-sm placeholder:text-[#7a7a7a]"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             data-testid="input-search"
           />
-          <i className="fas fa-search text-white/80 absolute left-3 top-1/2 -translate-y-1/2"></i>
+          <i className="fas fa-search text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"></i>
         </div>
 
         {/* Notification Bell */}
-        <button className="relative p-2 hover:bg-[#13233d] rounded-md transition-smooth" data-testid="button-notifications">
-          <i className="fas fa-bell text-white/80"></i>
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+        <button className="relative p-2 rounded-md transition-smooth hover:bg-[#FFF6F9]" data-testid="button-notifications">
+          <i className="fas fa-bell text-muted-foreground"></i>
+          <span className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ backgroundColor: '#FF6F61' }}></span>
         </button>
 
-        {/* Color Guide Button */}
-        <button
-          onClick={() => setShowColorGuide(true)}
-          className="p-2 hover:bg-[#13233d] rounded-md transition-smooth"
-          title="Color Coding Guide"
-        >
-          <i className="fas fa-palette text-white/80"></i>
-        </button>
+        {/* Theme Toggle */}
+        <ThemeToggle />
 
         {/* WhatsApp Status */}
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-500/30 rounded-md">
-          <i className="fab fa-whatsapp text-green-400"></i>
-          <span className="text-xs font-medium text-green-400">Connected</span>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md" style={{ background: 'rgba(207, 239, 219, 0.6)', border: '1px solid rgba(207, 239, 219, 0.8)' }}>
+          <i className="fab fa-whatsapp" style={{ color: '#5A9E7A' }}></i>
+          <span className="text-xs font-medium" style={{ color: '#5A9E7A' }}>Connected</span>
         </div>
       </div>
 
-      <ColorGuide isOpen={showColorGuide} onClose={() => setShowColorGuide(false)} />
+      
     </header>
   );
 }

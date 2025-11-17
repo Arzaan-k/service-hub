@@ -1,8 +1,8 @@
 /* 🔵 Fix for white highlight in Radix dropdown */
 [data-radix-popper-content-wrapper] [data-highlighted],
 [data-radix-popper-content-wrapper] [data-state='checked'] {
-  background-color: #1f3b7a !important;
-  color: white !important;
+  background-image: linear-gradient(90deg, #FFD4E3, #FFE5B4, #FFCBA4) !important;
+  color: #333333 !important;
   outline: none !important;
 }
 
@@ -10,29 +10,29 @@
   outline: none !important;
   box-shadow: none !important;
 }
-/* 🔵 Custom dark scrollbar for dropdowns & scroll areas */
+/* 🌸 Light scrollbar for dropdowns & scroll areas */
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0e2038; /* Dark navy background */
+  background: #FFF8F5;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #1f3b7a; /* Deep blue thumb */
+  background-color: #FFCBA4;
   border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #2563eb; /* Brighter blue on hover */
+  background-color: #FFA07A;
 }
 
-/* Fix for Radix dropdown highlight contrast */
+/* Ensure dropdown text is always readable with light theme */
 [data-radix-popper-content-wrapper] [data-highlighted],
 [data-radix-popper-content-wrapper] [data-state='checked'] {
-  background-color: #1f3b7a !important;
-  color: white !important;
+  background-image: linear-gradient(90deg, #FFD4E3, #FFE5B4, #FFCBA4) !important;
+  color: #333333 !important;
   outline: none !important;
 }
 
@@ -41,8 +41,8 @@
   box-shadow: none !important;
 }
 
-/* Make sure dropdown text never overlaps with scrollbar glow */
+/* Light theme scrollbar for Firefox */
 [data-radix-popper-content-wrapper] {
-  scrollbar-color: #1f3b7a #0e2038; /* Firefox support */
+  scrollbar-color: #FFCBA4 #FFF8F5;
   scrollbar-width: thin;
 }

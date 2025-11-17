@@ -5,12 +5,22 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      boxShadow: {
+        soft: "0 4px 12px rgba(255, 180, 150, 0.25)",
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
       colors: {
+        // Named palette tokens
+        babyPink: "#FFD4E3",
+        peach: "#FFE5B4",
+        warmOrange: "#FFA07A",
+        softWhite: "#FFFDFB",
+        borderPeach: "#FFE0D6",
+        coral: "#FF6F61",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

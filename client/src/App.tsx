@@ -28,6 +28,7 @@ import OrbcommLiveData from "@/pages/orbcomm-live-data";
 import RagChat from "@/pages/rag-chat";
 import TechnicianMyProfile from "@/pages/technician-my-profile";
 import ServiceHistory from "@/pages/service-history";
+import Manuals from "@/pages/manuals";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -106,6 +107,9 @@ function Router() {
       </Route>
       <Route path="/analytics">
         {() => <ProtectedRoute component={Analytics} roles={["admin", "super_admin"]} />}
+      </Route>
+      <Route path="/manuals">
+        {() => <ProtectedRoute component={Manuals} />}
       </Route>
       <Route path="/admin/whatsapp">
         {() => <ProtectedRoute component={AdminWhatsApp} roles={["admin", "coordinator", "super_admin"]} />}

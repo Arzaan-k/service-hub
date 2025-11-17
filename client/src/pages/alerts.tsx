@@ -1,5 +1,5 @@
-import Sidebar from "@/components/sidebar";
-import Header from "@/components/header";
+import Sidebar from "@/components/layout/sidebar";
+import Header from "@/components/layout/header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import AlertItem from "@/components/alert-item";
@@ -120,9 +120,9 @@ export default function Alerts() {
         <Header title="Alerts & Monitoring" />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Test Automation Section */}
-          <div className="bg-card border border-border rounded-lg p-4">
-            <h3 className="text-lg font-semibold mb-4">🤖 Test Automation Workflow</h3>
-            <div className="flex gap-4 items-end">
+          <div className="bg-card border border-border rounded-lg p-4 shadow-soft">
+            <h3 className="text-lg font-semibold mb-4 text-foreground">🤖 Test Automation Workflow</h3>
+            <div className="flex gap-4 items-end flex-wrap">
               <div className="flex-1">
                 <label className="text-sm font-medium">Container</label>
                 <Select value={selectedContainer} onValueChange={setSelectedContainer}>
@@ -155,7 +155,7 @@ export default function Alerts() {
               <Button 
                 onClick={() => simulateAlert.mutate()} 
                 disabled={simulateAlert.isPending || !selectedContainer}
-                className="bg-orange-500 hover:bg-orange-600"
+                className="btn-primary px-4 py-2 rounded-md text-sm"
               >
                 {simulateAlert.isPending ? "Simulating..." : "🚨 Simulate Alert"}
               </Button>
@@ -182,7 +182,7 @@ export default function Alerts() {
               }, {}) || {};
 
               return Object.entries(alertsByContainer).map(([containerId, { container, alerts: containerAlerts }]: [string, any]) => (
-                <div key={containerId} className="bg-card border border-border rounded-lg p-4">
+                <div key={containerId} className="bg-card border border-border rounded-lg p-4 shadow-soft">
                   {/* Container Header */}
                   <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
                     <div>

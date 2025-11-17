@@ -228,9 +228,9 @@ export default function Technicians() {
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, string> = {
-      available: "bg-green-500/20 text-green-200 border-green-400/30",
-      busy: "bg-yellow-500/20 text-yellow-200 border-yellow-400/30",
-      offline: "bg-gray-500/20 text-gray-200 border-gray-400/30",
+      available: "status-available border-0",
+      busy: "bg-yellow-500/20 text-yellow-700 border-yellow-300",
+      offline: "bg-gray-200 text-gray-700 border-gray-300",
     };
     return statusMap[status] || statusMap.available;
   };
@@ -288,32 +288,32 @@ export default function Technicians() {
               <h2 className="text-2xl font-bold text-foreground">Technicians</h2>
               <p className="text-sm text-muted-foreground">Manage field technicians and their assignments</p>
             </div>
-            <Button onClick={() => setIsAddDialogOpen(true)}>
+            <Button onClick={() => setIsAddDialogOpen(true)} className="btn-primary">
               <Plus className="h-4 w-4 mr-2" />
               Add Technician
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {technicians && technicians.length > 0 ? (
               technicians.map((tech: Technician) => (
-                <Card key={tech.id} className="hover:shadow-lg transition-shadow">
+                <Card key={tech.id} className="card-surface hover:shadow-soft transition-all">
                   <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                          <User className="h-6 w-6 text-primary" />
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: '#FFE5B4', border: '1px solid #FFE0D6' }}>
+                          <User className="h-6 w-6 text-muted-foreground" />
                         </div>
                         <div>
                           <Link href={`/technicians/${tech.id}`}>
                             <CardTitle className="text-lg cursor-pointer hover:underline">{tech.name}</CardTitle>
                           </Link>
-                          <p className={`text-sm font-medium ${getExperienceColor((tech as any).experienceLevel || "mid")}`}>
+                          <p className="text-sm font-medium text-muted-foreground">
                             {(tech as any).experienceLevel?.toUpperCase?.() || "MID"}
                           </p>
                         </div>
                       </div>
-                      <Badge className={`${getStatusBadge(tech.status)} border`}>
+                      <Badge className={`${getStatusBadge(tech.status)} rounded-full`}>
                         {tech.status}
                       </Badge>
                     </div>
@@ -325,15 +325,15 @@ export default function Technicians() {
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">
+                    <span className="text-muted-foreground">
                       {typeof (tech as any).baseLocation === "string"
-                        ? (tech as any).baseLocation
-                        : (tech as any).baseLocation?.city || "Not set"}
+                        ? ((tech as any).baseLocation || "Not set")
+                        : ( (tech as any).baseLocation?.city || "Not set")}
                     </span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Wrench className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">
+                    <span className="text-muted-foreground">
                       {(tech as any).specialization || Array.isArray((tech as any).skills) ? (tech as any).skills?.join(", ") : "general"}
                     </span>
                     </div>
@@ -349,8 +349,7 @@ export default function Technicians() {
                     <div className="flex gap-2 pt-2">
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="flex-1"
+                        className="flex-1 btn-secondary"
                         onClick={() => handleEdit(tech)}
                       >
                         <Edit className="h-3 w-3 mr-1" />
@@ -358,7 +357,7 @@ export default function Technicians() {
                       </Button>
                       <Button
                         size="sm"
-                        variant="destructive"
+                        className="btn-primary"
                         onClick={() => handleDelete(tech.id)}
                       >
                         <Trash2 className="h-3 w-3" />
@@ -386,7 +385,7 @@ export default function Technicians() {
 
       {/* Add Technician Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md modal-content modal">
           <DialogHeader>
             <DialogTitle>Add New Technician</DialogTitle>
           </DialogHeader>
@@ -477,7 +476,7 @@ export default function Technicians() {
 
       {/* Edit Technician Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md modal-content modal">
           <DialogHeader>
             <DialogTitle>Edit Technician</DialogTitle>
           </DialogHeader>
