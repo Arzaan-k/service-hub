@@ -291,18 +291,18 @@ export default function Clients() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {clients?.map((client: Customer) => {
               const owned = (containers || []).filter((c: any) => c.currentCustomerId === client.id);
               const sample = owned.slice(0, 5);
               const remaining = Math.max(0, owned.length - sample.length);
               return (
-              <Card key={client.id} className="hover:shadow-lg transition-shadow">
+              <Card key={client.id} className="card-surface hover:shadow-soft transition-all">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Building2 className="h-6 w-6 text-primary" />
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: '#FFE5B4', border: '1px solid #FFE0D6' }}>
+                        <Building2 className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <div>
                         <CardTitle className="text-lg">{client.companyName}</CardTitle>
@@ -311,13 +311,13 @@ export default function Clients() {
                     </div>
                   </div>
                   <div className="flex gap-2 mt-3">
-                    <Badge className={`${getTierBadge(client.customerTier)} border text-xs`}>
+                    <Badge className={`${getTierBadge(client.customerTier)} border text-xs rounded-full`}>
                       {client.customerTier.toUpperCase()}
                     </Badge>
-                    <Badge className={`${getStatusBadge(client.status)} border text-xs`}>
+                    <Badge className={`${getStatusBadge(client.status)} border text-xs rounded-full`}>
                       {client.status}
                     </Badge>
-                    <Badge className={`${getAccessBadge(client.status)} border text-xs`}>
+                    <Badge className={`${getAccessBadge(client.status)} border text-xs rounded-full`}>
                       Access: {client.status === 'active' ? 'Enabled' : 'Disabled'}
                     </Badge>
                   </div>
@@ -325,15 +325,15 @@ export default function Clients() {
                 <CardContent className="space-y-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground truncate">{client.email}</span>
+                    <span className="text-muted-foreground truncate">{client.email}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{client.phone}</span>
+                    <span className="text-muted-foreground">{client.phone}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <CreditCard className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{client.paymentTerms}</span>
+                    <span className="text-muted-foreground">{client.paymentTerms}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Package className="h-4 w-4 text-muted-foreground" />
@@ -353,15 +353,14 @@ export default function Clients() {
                   )}
                   <div className="flex gap-2 pt-2 border-t border-border">
                     <Link href={`/clients/${client.id}`}>
-                      <Button size="sm" variant="secondary" className="flex-1">
+                      <Button size="sm" className="flex-1 btn-secondary">
                         View Profile
                       </Button>
                     </Link>
                     {canManage && (
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="flex-1"
+                        className="flex-1 btn-secondary"
                         onClick={() => handleEdit(client)}
                       >
                         <Edit className="h-3 w-3 mr-1" />
@@ -371,8 +370,7 @@ export default function Clients() {
                     {canManage && (
                       <Button
                         size="sm"
-                        variant={client.status === 'active' ? "destructive" : "default"}
-                        className="flex-1"
+                        className="flex-1 btn-primary"
                         onClick={() => toggleAccess.mutate(client.id)}
                         disabled={toggleAccess.isPending}
                       >
