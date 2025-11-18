@@ -770,12 +770,115 @@ async function handleVideoUpload(mediaId: string, from: string, user: any, sessi
   }
 }
 
+function buildPreferredContactDateRows(days = 5): Array<{ id: string; title: string; description: string }> {
+  const rows: Array<{ id: string; title: string; description: string }> = [];
+  const today = new Date();
+
+  for (let i = 0; i < days; i += 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    const iso = date.toISOString().split('T')[0];
+    const friendly = date.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
+    });
+
+    let description = 'Choose this date';
+    if (i === 0) description = 'Today';
+    if (i === 1) description = 'Tomorrow';
+
+    rows.push({
+      id: `contact_date_${iso}`,
+      title: friendly,
+      description
+    });
+  }
+
+  rows.push({
+    id: 'contact_date_no_preference',
+    title: 'No Preference',
+    description: 'I can talk anytime'
+  });
+
+  return rows;
+}
+
+async function promptPreferredContactDate(from: string, user: any): Promise<void> {
+  const rows = buildPreferredContactDateRows();
+  await sendInteractiveList(
+    from,
+    `📅 *Preferred Contact Date*\n\n${user?.name ? `${user.name}, ` : ''}when should our technician call you to discuss the issue?`,
+    'Select Date',
+    [{ title: 'Available Dates', rows }]
+  );
+
+  await sendTextMessage(
+    from,
+    'If none of the dates above work, reply with your preferred date/time (e.g., "2025-11-20 3 PM") or type *No preference*.'
+  );
+}
+
+function formatPreferredContactDisplay(value: string | undefined | null): string {
+  if (!value) return 'Not provided';
+
+  const lower = value.toLowerCase();
+  if (lower === 'no preference') {
+    return 'No preference';
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
+    });
+  }
+
+  return value;
+}
+
+async function finalizePreferredContactSelection(rawValue: string, from: string, user: any, session: any): Promise<void> {
+  const { storage } = await import('../storage');
+  const conversationState = session.conversationState || {};
+  const normalizedValue = rawValue?.toLowerCase() === 'no preference' ? 'No preference' : rawValue;
+  const updatedState = {
+    ...conversationState,
+    preferredContactDate: normalizedValue,
+    step: 'preferred_contact_captured'
+  };
+
+  await storage.updateWhatsappSession(session.id, {
+    conversationState: updatedState
+  });
+  session.conversationState = updatedState;
+
+  const display = formatPreferredContactDisplay(normalizedValue);
+  await sendTextMessage(
+    from,
+    normalizedValue.toLowerCase() === 'no preference'
+      ? '📅 Noted! A technician will reach out as soon as possible.'
+      : `📅 Great! We'll have a technician call you on *${display}*.`
+  );
+
+  await createServiceRequestFromWhatsApp(from, user, session);
+}
+
 async function createServiceRequestFromWhatsApp(from: string, user: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
 
   try {
     const conversationState = session.conversationState || {};
-    const { selectedContainers, errorCode, issueDescription, beforePhotos, videos, customerId } = conversationState;
+    const {
+      selectedContainers,
+      errorCode,
+      issueDescription,
+      beforePhotos,
+      videos,
+      customerId,
+      preferredContactDate
+    } = conversationState;
 
     console.log('[WhatsApp] Creating service request from WhatsApp:', {
       userId: user.id,
@@ -784,8 +887,23 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       selectedContainers,
       errorCode,
       photoCount: beforePhotos?.length || 0,
-      videoCount: videos?.length || 0
+      videoCount: videos?.length || 0,
+      preferredContactDate
     });
+
+    if (!preferredContactDate) {
+      console.warn('[WhatsApp] Preferred contact date missing, prompting user before creating request');
+      const updatedState = {
+        ...conversationState,
+        step: 'awaiting_preferred_contact'
+      };
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: updatedState
+      });
+      session.conversationState = updatedState;
+      await promptPreferredContactDate(from, user);
+      return;
+    }
 
     // Detailed validation with specific error messages
     if (!customerId) {
@@ -858,6 +976,10 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       fullDescription += `\n\n📦 Multiple Containers: ${containerNames.join(', ')}`;
       fullDescription += `\n\nPrimary Container: ${primaryContainer.containerCode}`;
       fullDescription += `\nAdditional Containers: ${otherContainers.map(c => c.containerCode).join(', ')}`;
+    }
+
+    if (preferredContactDate) {
+      fullDescription += `\n\n☎️ Preferred Technician Call: ${formatPreferredContactDisplay(preferredContactDate)}`;
     }
 
     console.log(`[WhatsApp] Creating SINGLE service request for ${validContainers.length} container(s):`, {
@@ -2527,6 +2649,13 @@ async function handleListSelection(listId: string, from: string, user: any, role
     const containerId = listId.replace('status_container_', '');
     const { storage } = await import('../storage');
     await showContainerStatus(from, containerId, storage);
+    return;
+  }
+
+  if (listId.startsWith('contact_date_')) {
+    const selection = listId.replace('contact_date_', '');
+    const value = selection === 'no_preference' ? 'No preference' : selection;
+    await finalizePreferredContactSelection(value, from, user, session);
     return;
   }
 
@@ -4388,10 +4517,32 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
   // Handle DONE command after video uploads
   if (conversationState.step === 'awaiting_videos') {
     if (text.toUpperCase() === 'DONE') {
-      await createServiceRequestFromWhatsApp(from, user, session);
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: {
+          ...conversationState,
+          step: 'awaiting_preferred_contact'
+        }
+      });
+      session.conversationState = {
+        ...conversationState,
+        step: 'awaiting_preferred_contact'
+      };
+      await promptPreferredContactDate(from, user);
     } else {
       await sendTextMessage(from, '🎥 Please send a video or type *DONE* to submit the request.');
     }
+    return;
+  }
+
+  if (conversationState.step === 'awaiting_preferred_contact') {
+    if (!text) {
+      await sendTextMessage(from, '❌ Please provide a preferred date/time or type *No preference*.');
+      return;
+    }
+
+    const trimmed = text.trim();
+    const value = trimmed.toLowerCase() === 'no preference' ? 'No preference' : trimmed;
+    await finalizePreferredContactSelection(value, from, user, session);
     return;
   }
 }
