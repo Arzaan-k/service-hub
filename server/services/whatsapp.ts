@@ -839,6 +839,48 @@ function formatPreferredContactDisplay(value: string | undefined | null): string
   return value;
 }
 
+function cleanOnsiteContactDigits(input: string): string {
+  return (input || '').replace(/\D/g, '');
+}
+
+function isValidOnsiteContactPhone(digits: string): boolean {
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+function normalizeSiteAddressInput(input: string): string {
+  return (input || '').replace(/\s+/g, ' ').trim();
+}
+
+function formatOnsiteContactDisplay(raw?: string, digits?: string): string {
+  const candidate = raw?.trim();
+  if (candidate) return candidate;
+  if (digits) return digits;
+  return 'Not provided';
+}
+
+async function promptCompanyNameInput(from: string): Promise<void> {
+  await sendTextMessage(
+    from,
+    `🏢 *Company Name*\n\nPlease reply with the company you're contacting us from (minimum 2 characters).`
+  );
+}
+
+async function promptOnsiteContactPhoneInput(from: string, fallbackPhone?: string): Promise<void> {
+  const hint = fallbackPhone ? `If the onsite contact is you, you can confirm *${fallbackPhone}*.\n\n` : '';
+  await sendTextMessage(
+    from,
+    `📞 *Onsite Contact Number*\n\n${hint}Share the phone number (with country code) of the person who will meet our technician on site. Example: "+1 415 555 0101" or "9876543210".`
+  );
+}
+
+async function promptSiteAddressInput(from: string, existingAddress?: string): Promise<void> {
+  const hint = existingAddress ? `If the visit is at *${existingAddress}*, please type it again so we can confirm.\n\n` : '';
+  await sendTextMessage(
+    from,
+    `📍 *Site Address*\n\n${hint}Provide the full site address (minimum 5 characters). Include city and any helpful landmarks.`
+  );
+}
+
 async function finalizePreferredContactSelection(rawValue: string, from: string, user: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
   const conversationState = session.conversationState || {};
@@ -877,7 +919,11 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       beforePhotos,
       videos,
       customerId,
-      preferredContactDate
+      preferredContactDate,
+      companyConfirmation,
+      onsiteContactPhone,
+      onsiteContactPhoneDigits,
+      siteAddress
     } = conversationState;
 
     console.log('[WhatsApp] Creating service request from WhatsApp:', {
@@ -888,22 +934,11 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       errorCode,
       photoCount: beforePhotos?.length || 0,
       videoCount: videos?.length || 0,
-      preferredContactDate
+      preferredContactDate,
+      companyConfirmation,
+      onsiteContactPhone,
+      siteAddress
     });
-
-    if (!preferredContactDate) {
-      console.warn('[WhatsApp] Preferred contact date missing, prompting user before creating request');
-      const updatedState = {
-        ...conversationState,
-        step: 'awaiting_preferred_contact'
-      };
-      await storage.updateWhatsappSession(session.id, {
-        conversationState: updatedState
-      });
-      session.conversationState = updatedState;
-      await promptPreferredContactDate(from, user);
-      return;
-    }
 
     // Detailed validation with specific error messages
     if (!customerId) {
@@ -916,6 +951,66 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
         `2. Select "Request Service"\n\n` +
         `If the problem persists, please contact support.`
       );
+      return;
+    }
+
+    const customer = await storage.getCustomer(customerId).catch(() => null);
+
+    if (!companyConfirmation || companyConfirmation.trim().length < 2) {
+      console.warn('[WhatsApp] Company confirmation missing, prompting user');
+      const updatedState = {
+        ...conversationState,
+        step: 'awaiting_company_name'
+      };
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: updatedState
+      });
+      session.conversationState = updatedState;
+      await promptCompanyNameInput(from);
+      return;
+    }
+
+    const resolvedOnsiteDigits =
+      onsiteContactPhoneDigits || cleanOnsiteContactDigits(onsiteContactPhone || '');
+    if (!resolvedOnsiteDigits || !isValidOnsiteContactPhone(resolvedOnsiteDigits)) {
+      console.warn('[WhatsApp] Onsite contact phone missing/invalid, prompting user');
+      const updatedState = {
+        ...conversationState,
+        step: 'awaiting_onsite_contact'
+      };
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: updatedState
+      });
+      session.conversationState = updatedState;
+      await promptOnsiteContactPhoneInput(from, user.phoneNumber);
+      return;
+    }
+
+    if (!siteAddress || siteAddress.trim().length < 5) {
+      console.warn('[WhatsApp] Site address missing, prompting user');
+      const updatedState = {
+        ...conversationState,
+        step: 'awaiting_site_address'
+      };
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: updatedState
+      });
+      session.conversationState = updatedState;
+      await promptSiteAddressInput(from, customer?.billingAddress);
+      return;
+    }
+
+    if (!preferredContactDate) {
+      console.warn('[WhatsApp] Preferred contact date missing, prompting user before creating request');
+      const updatedState = {
+        ...conversationState,
+        step: 'awaiting_preferred_contact'
+      };
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: updatedState
+      });
+      session.conversationState = updatedState;
+      await promptPreferredContactDate(from, user);
       return;
     }
 
@@ -959,6 +1054,9 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       return;
     }
 
+    const preferredContactDisplay = formatPreferredContactDisplay(preferredContactDate);
+    const onsiteContactDisplay = formatOnsiteContactDisplay(onsiteContactPhone, resolvedOnsiteDigits);
+
     // Create SINGLE service request with first container as primary
     // List all other containers in the description
     const primaryContainer = validContainers[0];
@@ -978,9 +1076,10 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       fullDescription += `\nAdditional Containers: ${otherContainers.map(c => c.containerCode).join(', ')}`;
     }
 
-    if (preferredContactDate) {
-      fullDescription += `\n\n☎️ Preferred Technician Call: ${formatPreferredContactDisplay(preferredContactDate)}`;
-    }
+    fullDescription += `\n\n🏢 Company (WhatsApp): ${companyConfirmation}`;
+    fullDescription += `\n👤 Onsite Contact: ${onsiteContactDisplay}`;
+    fullDescription += `\n📍 Site Address: ${siteAddress}`;
+    fullDescription += `\n☎️ Preferred Technician Call: ${preferredContactDisplay}`;
 
     console.log(`[WhatsApp] Creating SINGLE service request for ${validContainers.length} container(s):`, {
       primaryContainerId: primaryContainer.id,
@@ -1058,7 +1157,11 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       `📦 *Container${validContainers.length > 1 ? 's' : ''}:* ${containerNames.join(', ')}\n` +
       `⚠️ *Error Code:* ${errorCode || 'None'}\n` +
       `📸 *Photos:* ${photoCount}\n` +
-      `🎥 *Videos:* ${videoCount}\n\n` +
+      `🎥 *Videos:* ${videoCount}\n` +
+      `🏢 *Company:* ${companyConfirmation}\n` +
+      `👤 *Onsite Contact:* ${onsiteContactDisplay}\n` +
+      `📍 *Site Address:* ${siteAddress}\n` +
+      `📞 *Preferred Call:* ${preferredContactDisplay}\n\n` +
       `✅ *What happens next?*\n` +
       `• Our team will review your request\n` +
       `• A technician will be assigned\n` +
@@ -4271,24 +4374,22 @@ export async function processIncomingMessage(message: any, from: string): Promis
     const customer = await storage.getCustomerByUserId(user.id);
     const technician = await storage.getTechnicianByUserId(user.id);
     
-    if (customer && technician) {
-      console.log(`[WhatsApp] ⚠️ User ${user.id} has both customer and technician records. Defaulting to user.role: ${user.role}`);
-    } else if (customer) {
-      console.log(`[WhatsApp] ✅ User ${user.id} identified as CLIENT from dashboard (customer record found)`);
-      if (user.role !== 'client') {
-        console.log(`[WhatsApp] 🔄 Updating user role from ${user.role} to client`);
-        await storage.updateUser(user.id, { role: 'client' });
-        user.role = 'client';
-      }
-    } else if (technician) {
+    const hasTechnicianRecord = Boolean(technician);
+    const hasCustomerRecord = Boolean(customer);
+    const resolvedRole = hasTechnicianRecord ? 'technician' : 'client';
+
+    if (hasTechnicianRecord) {
       console.log(`[WhatsApp] ✅ User ${user.id} identified as TECHNICIAN from dashboard (technician record found)`);
-      if (user.role !== 'technician') {
-        console.log(`[WhatsApp] 🔄 Updating user role from ${user.role} to technician`);
-        await storage.updateUser(user.id, { role: 'technician' });
-        user.role = 'technician';
-      }
+    } else if (hasCustomerRecord) {
+      console.log(`[WhatsApp] ✅ User ${user.id} identified as CLIENT from dashboard (customer/admin record found)`);
     } else {
-      console.log(`[WhatsApp] ⚠️ User ${user.id} has no customer or technician record. Using user.role: ${user.role}`);
+      console.log(`[WhatsApp] ⚠️ User ${user.id} has no customer or technician record. Defaulting to CLIENT flow.`);
+    }
+
+    if (user.role !== resolvedRole) {
+      console.log(`[WhatsApp] 🔄 Updating user role from ${user.role} to ${resolvedRole}`);
+      await storage.updateUser(user.id, { role: resolvedRole });
+      user.role = resolvedRole;
     }
     
     // Get or create WhatsApp session - use phone number to find session
@@ -4434,16 +4535,12 @@ async function handleTextMessage(message: any, user: any, session: any): Promise
   const lowerText = text.toLowerCase();
   if (lowerText === 'service' || lowerText === 'request service') {
     console.log(`[WhatsApp] Text command 'service' detected from ${from}`);
-    const { storage } = await import('../storage');
-    const session = await storage.getWhatsappSession(user.id);
     await handleRealClientRequestService(from, user, session);
     return;
   }
   
   if (lowerText === 'status' || lowerText === 'check status') {
     console.log(`[WhatsApp] Text command 'status' detected from ${from}`);
-    const { storage } = await import('../storage');
-    const session = await storage.getWhatsappSession(user.id);
     await handleRealClientStatusCheck(from, user, session);
     return;
   }
@@ -4520,17 +4617,92 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
       await storage.updateWhatsappSession(session.id, {
         conversationState: {
           ...conversationState,
-          step: 'awaiting_preferred_contact'
+          step: 'awaiting_company_name'
         }
       });
       session.conversationState = {
         ...conversationState,
-        step: 'awaiting_preferred_contact'
+        step: 'awaiting_company_name'
       };
-      await promptPreferredContactDate(from, user);
+      const customer =
+        conversationState.customerId ? await storage.getCustomer(conversationState.customerId) : null;
+      await promptCompanyNameInput(from);
     } else {
       await sendTextMessage(from, '🎥 Please send a video or type *DONE* to submit the request.');
     }
+    return;
+  }
+
+  if (conversationState.step === 'awaiting_company_name') {
+    const companyInput = (text || '').trim();
+    if (companyInput.length < 2) {
+      await sendTextMessage(from, '🏢 Company name must be at least 2 characters. Please re-enter the company name.');
+      return;
+    }
+
+    const updatedState = {
+      ...conversationState,
+      companyConfirmation: companyInput,
+      step: 'awaiting_onsite_contact'
+    };
+
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: updatedState
+    });
+    session.conversationState = updatedState;
+
+    await promptOnsiteContactPhoneInput(from, user.phoneNumber);
+    return;
+  }
+
+  if (conversationState.step === 'awaiting_onsite_contact') {
+    const digits = cleanOnsiteContactDigits(text || '');
+    if (!isValidOnsiteContactPhone(digits)) {
+      await sendTextMessage(
+        from,
+        '📞 Please provide a valid phone number with 7-15 digits (e.g., +1 415 555 0101).'
+      );
+      return;
+    }
+
+    const updatedState = {
+      ...conversationState,
+      onsiteContactPhone: (text || '').trim(),
+      onsiteContactPhoneDigits: digits,
+      step: 'awaiting_site_address'
+    };
+
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: updatedState
+    });
+    session.conversationState = updatedState;
+
+    await promptSiteAddressInput(from);
+    return;
+  }
+
+  if (conversationState.step === 'awaiting_site_address') {
+    const normalizedAddress = normalizeSiteAddressInput(text || '');
+    if (normalizedAddress.length < 5) {
+      await sendTextMessage(
+        from,
+        '📍 Address looks too short. Please include street, city, and any landmark (minimum 5 characters).'
+      );
+      return;
+    }
+
+    const updatedState = {
+      ...conversationState,
+      siteAddress: normalizedAddress,
+      step: 'awaiting_preferred_contact'
+    };
+
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: updatedState
+    });
+    session.conversationState = updatedState;
+
+    await promptPreferredContactDate(from, user);
     return;
   }
 
