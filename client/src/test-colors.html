@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Test</title>
+    <style>
+        body {
+            background: #0f172a;
+            color: #f8fafc;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .color-test {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .color-card {
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        .containers { background: rgba(74, 222, 128, 0.1); border-left-color: #4ade80; }
+        .alerts { background: rgba(239, 68, 68, 0.1); border-left-color: #ef4444; }
+        .service { background: rgba(249, 115, 22, 0.1); border-left-color: #f97316; }
+        .technicians { background: rgba(168, 85, 247, 0.1); border-left-color: #a855f7; }
+        .scheduling { background: rgba(6, 182, 212, 0.1); border-left-color: #06b6d4; }
+        .clients { background: rgba(20, 184, 166, 0.1); border-left-color: #14b8a6; }
+        .whatsapp { background: rgba(34, 197, 94, 0.1); border-left-color: #22c55e; }
+        .inventory { background: rgba(234, 179, 8, 0.1); border-left-color: #eab308; }
+        .analytics { background: rgba(217, 70, 239, 0.1); border-left-color: #d946ef; }
+        .dashboard { background: rgba(59, 130, 246, 0.1); border-left-color: #3b82f6; }
+        
+        .icon {
+            width: 24px;
+            height: 24px;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .containers .icon { background: #4ade80; }
+        .alerts .icon { background: #ef4444; }
+        .service .icon { background: #f97316; }
+        .technicians .icon { background: #a855f7; }
+        .scheduling .icon { background: #06b6d4; }
+        .clients .icon { background: #14b8a6; }
+        .whatsapp .icon { background: #22c55e; }
+        .inventory .icon { background: #eab308; }
+        .analytics .icon { background: #d946ef; }
+        .dashboard .icon { background: #3b82f6; }
+    </style>
+</head>
+<body>
+    <h1>ContainerGenie Color System Test</h1>
+    <p>This page shows the semantic color system for different functional areas.</p>
+    
+    <div class="color-test">
+        <div class="color-card containers">
+            <div class="icon"></div>
+            <strong>Containers & Fleet</strong> - Green (#4ade80)
+        </div>
+        <div class="color-card alerts">
+            <div class="icon"></div>
+            <strong>Alerts & Issues</strong> - Red (#ef4444)
+        </div>
+        <div class="color-card service">
+            <div class="icon"></div>
+            <strong>Service Requests</strong> - Orange (#f97316)
+        </div>
+        <div class="color-card technicians">
+            <div class="icon"></div>
+            <strong>Technicians</strong> - Purple (#a855f7)
+        </div>
+        <div class="color-card scheduling">
+            <div class="icon"></div>
+            <strong>Scheduling</strong> - Cyan (#06b6d4)
+        </div>
+        <div class="color-card clients">
+            <div class="icon"></div>
+            <strong>Clients & Customers</strong> - Teal (#14b8a6)
+        </div>
+        <div class="color-card whatsapp">
+            <div class="icon"></div>
+            <strong>WhatsApp Communication</strong> - WhatsApp Green (#22c55e)
+        </div>
+        <div class="color-card inventory">
+            <div class="icon"></div>
+            <strong>Inventory Management</strong> - Yellow (#eab308)
+        </div>
+        <div class="color-card analytics">
+            <div class="icon"></div>
+            <strong>Analytics & Reports</strong> - Magenta (#d946ef)
+        </div>
+        <div class="color-card dashboard">
+            <div class="icon"></div>
+            <strong>Dashboard & Overview</strong> - Blue (#3b82f6)
+        </div>
+    </div>
+    
+    <p><a href="http://localhost:5000" style="color: #3b82f6;">← Back to Dashboard</a></p>
+</body>
+</html>

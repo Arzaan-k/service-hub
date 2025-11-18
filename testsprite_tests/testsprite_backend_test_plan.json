@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "verify_container_registry_api_functionality",
+    "description": "Test the container registry API to ensure it supports both IoT-enabled and manual container tracking, allowing creation, update, retrieval, and deletion of container records."
+  },
+  {
+    "id": "TC002",
+    "title": "validate_real_time_container_health_monitoring",
+    "description": "Verify the real-time container health monitoring API integrates correctly with Orbcomm API, providing accurate and timely health status updates and alerts."
+  },
+  {
+    "id": "TC003",
+    "title": "test_ai_alert_detection_and_classification_api",
+    "description": "Ensure the AI-powered alert detection and classification API correctly identifies and categorizes alerts, triggering appropriate automated resolution workflows."
+  },
+  {
+    "id": "TC004",
+    "title": "check_client_portal_service_request_management",
+    "description": "Validate the client portal API for service request management, including creating, updating, viewing service requests, and receiving real-time notifications."
+  },
+  {
+    "id": "TC005",
+    "title": "verify_technician_management_and_whatsapp_integration",
+    "description": "Test the technician management API with WhatsApp interactive workflows, including schedule acknowledgment, GPS tracking, and status updates."
+  },
+  {
+    "id": "TC006",
+    "title": "validate_intelligent_scheduling_engine_api",
+    "description": "Test the intelligent scheduling engine API to ensure it optimizes daily technician assignments using AI algorithms and handles scheduling conflicts."
+  },
+  {
+    "id": "TC007",
+    "title": "test_automated_invoicing_and_payment_tracking_api",
+    "description": "Verify the automated invoicing and payment tracking API integrates with Razorpay/Stripe, supports prepaid and postpaid flows, and sends payment reminders."
+  },
+  {
+    "id": "TC008",
+    "title": "check_whatsapp_business_api_integration",
+    "description": "Validate end-to-end WhatsApp Business API integration, including sending and receiving customizable interactive message templates for clients and technicians."
+  },
+  {
+    "id": "TC009",
+    "title": "test_inventory_management_api_with_real_time_spare_parts_tracking",
+    "description": "Ensure the inventory management API supports real-time spare parts tracking, reservation, and updates inventory status accurately."
+  },
+  {
+    "id": "TC010",
+    "title": "validate_admin_dashboard_metrics_and_manual_overrides",
+    "description": "Test the admin dashboard API for metrics retrieval, real-time monitoring updates, manual overrides, and report generation."
+  }
+]
