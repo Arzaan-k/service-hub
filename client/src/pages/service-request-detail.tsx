@@ -1,4 +1,5 @@
 // Service Request Detail Page - Reformed UI with complete client info
+// PDF Generation Feature Added
 import { useRoute, Link } from "wouter";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
@@ -35,9 +36,11 @@ import {
   Wrench,
   Plus,
   Minus,
-  Box
+  Box,
+  FileDown
 } from "lucide-react";
 import { useState } from "react";
+import { generateServiceRequestPDF } from "@/lib/pdfGenerator";
 
 interface InventoryItem {
   id: string;
@@ -236,7 +239,7 @@ export default function ServiceRequestDetail() {
   const container = req.container || {};
   const technician = req.technician || {};
   const user = customer.user || {};
-  
+
   // Debug: Log allContainers to console
   if (data && (data as any).allContainers) {
     console.log('[FRONTEND] allContainers received:', (data as any).allContainers);
@@ -244,6 +247,98 @@ export default function ServiceRequestDetail() {
   } else {
     console.warn('[FRONTEND] allContainers not found in data:', data);
   }
+
+  // PDF Generation Handler
+  const handleGeneratePDF = async () => {
+    toast({
+      title: "Generating PDF",
+      description: "Please wait while we generate your PDF...",
+    });
+
+    try {
+      // Helper function to convert media URLs
+      const getMediaUrls = (mediaArray: any[]) => {
+        if (!mediaArray || !Array.isArray(mediaArray)) return [];
+        return mediaArray.map(id => {
+          // Handle both full URLs and IDs
+          if (typeof id === 'string') {
+            if (id.startsWith('http')) return id;
+            if (id.startsWith('wa:')) return `/api/whatsapp/media/${id}`;
+            return `/api/whatsapp/media/${id}`;
+          }
+          return '';
+        }).filter(url => url);
+      };
+
+      const pdfData = {
+        id: req.id,
+        requestNumber: req.requestNumber,
+        status: req.status,
+        priority: req.priority,
+        issueDescription: req.issueDescription,
+        createdAt: req.createdAt,
+        scheduledDate: req.scheduledDate,
+        completedAt: req.completedAt,
+        estimatedDuration: req.estimatedDuration,
+        actualDuration: req.actualDuration,
+        serviceType: req.serviceType,
+        urgency: req.urgency,
+        customer: (customer.contactPerson || customer.companyName || customer.name) ? {
+          name: customer.name,
+          contactPerson: customer.contactPerson || user.name,
+          email: customer.email || user.email,
+          phone: customer.phone || user.phoneNumber,
+          whatsappNumber: customer.whatsappNumber,
+          company: customer.company,
+          companyName: customer.companyName,
+          address: customer.address,
+          billingAddress: customer.billingAddress,
+          shippingAddress: customer.shippingAddress,
+          customerTier: customer.customerTier,
+          gstin: customer.gstin,
+          paymentTerms: customer.paymentTerms,
+          status: customer.status,
+        } : undefined,
+        technician: technician.name ? {
+          name: technician.name,
+          phone: technician.phone,
+          email: technician.email,
+          specialization: technician.specialization,
+        } : undefined,
+        containers: (data as any).allContainers?.map((c: any) => ({
+          containerCode: c.containerCode,
+          location: c.location,
+          type: c.type,
+          status: c.status,
+        })),
+        requiredParts: req.requiredParts,
+        diagnosis: req.diagnosis,
+        resolution: req.resolution,
+        workPerformed: req.workPerformed,
+        comments: req.comments,
+        totalCost: req.totalCost,
+        laborCost: req.laborCost,
+        partsCost: req.partsCost,
+        clientUploadedPhotos: getMediaUrls(req.clientUploadedPhotos),
+        beforePhotos: getMediaUrls(req.beforePhotos),
+        afterPhotos: getMediaUrls(req.afterPhotos),
+      };
+
+      await generateServiceRequestPDF(pdfData);
+
+      toast({
+        title: "PDF Generated Successfully",
+        description: `Service request ${req.requestNumber} has been downloaded as PDF`,
+      });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        title: "Error Generating PDF",
+        description: "There was an error generating the PDF. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Status badge color mapping
   const getStatusColor = (status: string) => {
@@ -324,6 +419,10 @@ export default function ServiceRequestDetail() {
               <ArrowLeft className="w-4 h-4" /> Back to Service Requests
             </Link>
             <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={handleGeneratePDF}>
+                <FileDown className="w-4 h-4 mr-2" />
+                Generate PDF
+              </Button>
               <Badge className={getStatusColor(req.status)}>{req.status}</Badge>
               <Badge className={getPriorityColor(req.priority)}>{req.priority}</Badge>
             </div>
