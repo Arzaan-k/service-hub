@@ -3,6 +3,8 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import axios from "axios";
 import * as fs from "fs";
+import * as path from "path";
+import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import { z } from "zod";
 import { authenticateUser, requireRole, authorizeWhatsAppMessage } from "./middleware/auth";
@@ -1568,6 +1570,379 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Third-party technicians - lightweight file-backed store to avoid JSON/HTML mismatch
+  const thirdPartyDir = path.join(process.cwd(), "server", "data");
+  const thirdPartyFile = path.join(thirdPartyDir, "thirdparty-technicians.json");
+  function readThirdPartyList(): any[] {
+    try {
+      if (!fs.existsSync(thirdPartyFile)) return [];
+      const raw = fs.readFileSync(thirdPartyFile, "utf8");
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  function writeThirdPartyList(list: any[]) {
+    if (!fs.existsSync(thirdPartyDir)) fs.mkdirSync(thirdPartyDir, { recursive: true });
+    fs.writeFileSync(thirdPartyFile, JSON.stringify(list, null, 2), "utf8");
+  }
+
+  // Third-party assignments file-backed store
+  const thirdPartyAssignFile = path.join(thirdPartyDir, "thirdparty-assignments.json");
+  function readThirdPartyAssignments(): any[] {
+    try {
+      if (!fs.existsSync(thirdPartyAssignFile)) return [];
+      const raw = fs.readFileSync(thirdPartyAssignFile, "utf8");
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  function writeThirdPartyAssignments(list: any[]) {
+    if (!fs.existsSync(thirdPartyDir)) fs.mkdirSync(thirdPartyDir, { recursive: true });
+    fs.writeFileSync(thirdPartyAssignFile, JSON.stringify(list, null, 2), "utf8");
+  }
+
+  // GET: /api/thirdparty-technicians
+  app.get("/api/thirdparty-technicians", authenticateUser, async (_req, res) => {
+    try {
+      const list = readThirdPartyList();
+      res.json(list);
+    } catch (error) {
+      console.error("Error fetching third-party technicians:", error);
+      res.status(500).json({ error: "Failed to fetch third-party technicians" });
+    }
+  });
+
+  // POST: /api/thirdparty-technicians
+  app.post("/api/thirdparty-technicians", authenticateUser, requireRole("admin"), async (req, res) => {
+    try {
+      const { contactName, phone, email, whatsappNumber, specialization, baseLocation, moneyAllowance } = req.body || {};
+      const parsedAllowance = typeof moneyAllowance === "string" ? parseFloat(moneyAllowance) : Number(moneyAllowance);
+      if (!contactName || !phone || Number.isNaN(parsedAllowance)) {
+        return res.status(400).json({ error: "contactName, phone and a valid moneyAllowance are required" });
+      }
+
+      const list = readThirdPartyList();
+      const item = {
+        id: randomUUID(),
+        contactName,
+        name: contactName, // for UI compatibility
+        phone,
+        email: email || null,
+        whatsappNumber: whatsappNumber || null,
+        specialization: specialization || "general",
+        baseLocation: baseLocation || "",
+        moneyAllowance: parsedAllowance,
+        assignedServices: [],
+        createdAt: new Date().toISOString(),
+      };
+      list.push(item);
+      writeThirdPartyList(list);
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error creating third-party technician:", error);
+      res.status(500).json({ error: "Failed to create third-party technician" });
+    }
+  });
+
+  // GET: /api/thirdparty-technicians/:id
+  app.get("/api/thirdparty-technicians/:id", authenticateUser, async (req, res) => {
+    try {
+      const list = readThirdPartyList();
+      const tp = list.find((t: any) => (t.id === req.params.id || t._id === req.params.id));
+      if (!tp) return res.status(404).json({ error: "Third-party technician not found" });
+      res.json(tp);
+    } catch (error) {
+      console.error("Error fetching third-party technician:", error);
+      res.status(500).json({ error: "Failed to fetch third-party technician" });
+    }
+  });
+
+  // PUT: /api/thirdparty-technicians/:id
+  app.put("/api/thirdparty-technicians/:id", authenticateUser, requireRole("admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const list = readThirdPartyList();
+      const idx = list.findIndex((t: any) => (t.id === id || t._id === id));
+      if (idx === -1) {
+        return res.status(404).json({ error: "Third-party technician not found" });
+      }
+      const incoming = req.body || {};
+      const updated = { ...list[idx] };
+      if (incoming.moneyAllowance !== undefined) {
+        const money = typeof incoming.moneyAllowance === "string" ? parseFloat(incoming.moneyAllowance) : Number(incoming.moneyAllowance);
+        if (Number.isNaN(money)) {
+          return res.status(400).json({ error: "Invalid moneyAllowance" });
+        }
+        updated.moneyAllowance = money;
+      }
+      if (incoming.specialization !== undefined) updated.specialization = incoming.specialization;
+      if (incoming.baseLocation !== undefined) updated.baseLocation = incoming.baseLocation;
+      if (incoming.phone !== undefined) updated.phone = incoming.phone;
+      if (incoming.email !== undefined) updated.email = incoming.email;
+      if (incoming.whatsappNumber !== undefined) updated.whatsappNumber = incoming.whatsappNumber;
+      if (incoming.name !== undefined || incoming.contactName !== undefined) {
+        updated.name = incoming.name || incoming.contactName || updated.name;
+        updated.contactName = incoming.contactName || updated.contactName;
+      }
+      list[idx] = updated;
+      writeThirdPartyList(list);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating third-party technician:", error);
+      res.status(500).json({ error: "Failed to update third-party technician" });
+    }
+  });
+
+  // Unified assignment route: supports internal and third-party
+  app.post("/api/assign-service", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
+    try {
+      const { serviceId, technicianId, type } = req.body || {};
+      if (!serviceId || !technicianId) {
+        return res.status(400).json({ error: "Missing data" });
+      }
+
+      if (type === "thirdparty") {
+        // Validate third-party exists
+        const list = readThirdPartyList();
+        const tech = list.find((t: any) => (t.id === technicianId || t._id === technicianId));
+        if (!tech) {
+          return res.status(404).json({ error: "Third-party technician not found" });
+        }
+        // Update service request status to assigned (DB)
+        try {
+          const existing = await storage.getServiceRequest(serviceId);
+          if (!existing) return res.status(404).json({ error: "Service request not found" });
+          await storage.updateServiceRequest(serviceId, { status: "assigned" } as any);
+        } catch (e) {
+          console.error("Failed to update service status for third-party assignment:", e);
+        }
+        // Record assignment
+        const assigns = readThirdPartyAssignments();
+        const normalizedTechId = tech.id || technicianId;
+        // ensure uniqueness
+        if (!assigns.find((a: any) => a.serviceId === serviceId && a.technicianId === normalizedTechId)) {
+          assigns.push({ serviceId, technicianId: normalizedTechId, assignedAt: new Date().toISOString() });
+        }
+        writeThirdPartyAssignments(assigns);
+        // Update third-party technician record with assigned service
+        try {
+          const tpList = readThirdPartyList();
+          const idx = tpList.findIndex((t: any) => (t.id === normalizedTechId || t._id === normalizedTechId));
+          if (idx > -1) {
+            const entry = tpList[idx];
+            const current = Array.isArray(entry.assignedServices) ? entry.assignedServices : [];
+            if (!current.includes(serviceId)) current.push(serviceId);
+            tpList[idx] = { ...entry, assignedServices: current };
+            writeThirdPartyList(tpList);
+          }
+        } catch (e) {
+          console.error("Failed updating third-party technician assignedServices:", e);
+        }
+
+        // Optionally mark scheduled/assigned without breaking existing workflow
+        try {
+          // No-op update to touch updatedAt safely
+          const existing = await storage.getServiceRequest(serviceId);
+          if (!existing) return res.status(404).json({ error: "Service request not found" });
+        } catch {}
+
+        // Optional: notify via WhatsApp (best-effort)
+        try {
+          const { sendTextMessage } = await import('./services/whatsapp');
+          if (tech.phone) await sendTextMessage(tech.phone, `You have a new service assignment (${serviceId}).`);
+        } catch {}
+
+        return res.json({ success: true, type: "thirdparty" });
+      }
+
+      // Default internal assignment - reuse existing logic
+      const reqAssigned = await storage.assignServiceRequest(serviceId, technicianId, undefined, undefined);
+      if (!reqAssigned) {
+        return res.status(404).json({ error: "Service request not found" });
+      }
+      return res.json({ success: true, type: "internal", request: reqAssigned });
+    } catch (err: any) {
+      console.error("Error assigning technician:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Consolidated services by technician (internal or third-party via ?type=thirdparty)
+  app.get("/api/services-by-technician/:id", authenticateUser, async (req, res) => {
+    try {
+      const technicianId = req.params.id;
+      const type = (req.query.type as string) || "internal";
+
+      if (type === "thirdparty") {
+        const assigns = readThirdPartyAssignments().filter((a: any) => a.technicianId === technicianId);
+        const details = await Promise.all(assigns.map(async (a: any) => {
+          try {
+            return await storage.getServiceRequest(a.serviceId);
+          } catch {
+            return null;
+          }
+        }));
+        return res.json(details.filter(Boolean));
+      }
+
+      // Internal
+      const list = await storage.getServiceRequestsByTechnician(technicianId);
+      return res.json(list);
+    } catch (err: any) {
+      console.error("Error fetching assigned services:", err);
+      res.status(500).json({ error: "Error fetching assigned services" });
+    }
+  });
+
+  // PATCH: /api/service-requests/:id/assign — assign ONLY the selected service
+  app.patch("/api/service-requests/:id/assign", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
+    try {
+      const serviceId = req.params.id;
+      const { technicianId, technicianType } = req.body || {};
+      if (!technicianId || !technicianType) {
+        return res.status(400).json({ message: "Missing technicianId or technicianType" });
+      }
+      if (!["internal", "thirdparty"].includes(String(technicianType))) {
+        return res.status(400).json({ message: "Invalid technicianType" });
+      }
+
+      const service = await storage.getServiceRequest(serviceId);
+      if (!service) {
+        return res.status(404).json({ message: "Service Request not found" });
+      }
+
+      // Prevent duplicate/competing assignments
+      // Internal assignment checks against assignedTechnicianId in DB
+      // Third-party assignment checks against file-backed assignment record and excelData indicator
+      if (technicianType === "internal") {
+        const alreadyAssignedTo = (service as any).assignedTechnicianId;
+        if (alreadyAssignedTo) {
+          if (alreadyAssignedTo === technicianId) {
+            return res.status(409).json({ message: "This service request is already assigned to this technician" });
+          }
+          return res.status(409).json({ message: "This service request is already assigned to another technician" });
+        }
+      } else {
+        // thirdparty
+        const assigns = readThirdPartyAssignments();
+        const existingAssign = assigns.find((a: any) => a.serviceId === serviceId);
+        if (existingAssign) {
+          if (existingAssign.technicianId === technicianId) {
+            return res.status(409).json({ message: "This service request is already assigned to this technician" });
+          }
+          return res.status(409).json({ message: "This service request is already assigned to another technician" });
+        }
+        // Also prevent conflict if internally assigned
+        if ((service as any).assignedTechnicianId) {
+          return res.status(409).json({ message: "This service request is already assigned to another technician" });
+        }
+      }
+
+      // Update only this service
+      if (technicianType === "thirdparty") {
+        // Merge third-party tech info into excelData for visibility
+        const mergedExcelData = {
+          ...(service.excelData || {}),
+          thirdPartyTechnicianId: technicianId,
+        };
+        await storage.updateServiceRequest(serviceId, { status: "assigned", excelData: mergedExcelData } as any);
+
+        // Update only the selected third-party tech in file-backed store
+        const tpList = readThirdPartyList();
+        const idx = tpList.findIndex((t: any) => (t.id === technicianId || t._id === technicianId));
+        if (idx === -1) {
+          return res.status(404).json({ message: "Third-party technician not found" });
+        }
+        const entry = tpList[idx];
+        const current = Array.isArray(entry.assignedServices) ? entry.assignedServices : [];
+        if (!current.includes(serviceId)) current.push(serviceId);
+        tpList[idx] = { ...entry, assignedServices: current };
+        writeThirdPartyList(tpList);
+
+        // Record assignment history
+        const assigns = readThirdPartyAssignments();
+        if (!assigns.find((a: any) => a.serviceId === serviceId && a.technicianId === (entry.id || technicianId))) {
+          assigns.push({ serviceId, technicianId: entry.id || technicianId, assignedAt: new Date().toISOString() });
+          writeThirdPartyAssignments(assigns);
+        }
+
+        console.log("Assigned service:", serviceId, "to technician:", technicianId);
+        return res.json({ success: true, message: "Service assigned successfully", service: { ...service, status: "assigned" } });
+      } else {
+        // Internal assignment - use existing storage logic (affects only this SR)
+        const assigned = await storage.assignServiceRequest(serviceId, technicianId, undefined, undefined);
+        if (!assigned) {
+          return res.status(404).json({ message: "Service Request not found" });
+        }
+        console.log("Assigned service:", serviceId, "to technician:", technicianId);
+        return res.json({ success: true, message: "Service assigned successfully", service: assigned });
+      }
+    } catch (error: any) {
+      console.error("❌ Error assigning technician:", error);
+      res.status(500).json({ message: error?.message || "Internal server error" });
+    }
+  });
+
+  // PATCH: /api/service-requests/:id/unassign — clear assignment safely
+  app.patch("/api/service-requests/:id/unassign", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
+    try {
+      const serviceId = req.params.id;
+      const service = await storage.getServiceRequest(serviceId);
+      if (!service) {
+        return res.status(404).json({ message: "Service Request not found" });
+      }
+
+      // Determine current assignment
+      const internalAssignedId = (service as any).assignedTechnicianId || (service as any).assignedTechnician;
+      const excelThird = (service as any).excelData?.thirdPartyTechnicianId;
+
+      if (!internalAssignedId && !excelThird) {
+        return res.json({ success: true, message: "Service was not assigned", service });
+      }
+
+      // If third-party: remove from file-backed stores and SR excelData
+      if (excelThird) {
+        try {
+          const tpList = readThirdPartyList();
+          const idx = tpList.findIndex((t: any) => (t.id === excelThird || t._id === excelThird));
+          if (idx > -1) {
+            const entry = tpList[idx];
+            const assigned = Array.isArray(entry.assignedServices) ? entry.assignedServices : [];
+            tpList[idx] = { ...entry, assignedServices: assigned.filter((sid: string) => sid !== serviceId) };
+            writeThirdPartyList(tpList);
+          }
+          const assigns = readThirdPartyAssignments().filter((a: any) => !(a.serviceId === serviceId));
+          writeThirdPartyAssignments(assigns);
+        } catch (e) {
+          console.error("Unassign cleanup for third-party failed (continuing):", e);
+        }
+      }
+
+      // Update service request to unassigned state
+      const nextExcel = { ...(service as any).excelData };
+      if (nextExcel && nextExcel.thirdPartyTechnicianId) {
+        delete nextExcel.thirdPartyTechnicianId;
+      }
+      await storage.updateServiceRequest(serviceId, {
+        status: "pending",
+        assignedTechnicianId: null,
+        assignedTechnician: null,
+        technicianType: null,
+        excelData: nextExcel,
+      } as any);
+
+      console.log("Unassigned service:", serviceId);
+      return res.json({ success: true, message: "Service unassigned successfully" });
+    } catch (error: any) {
+      console.error("❌ Error unassigning technician:", error);
+      res.status(500).json({ message: error?.message || "Internal server error" });
+    }
+  });
+
   // Get schedules for all technicians for a specific date - MUST come before /:id routes
   app.get("/api/technicians/schedules", authenticateUser, async (req, res) => {
     console.log("Technician schedules route called with query:", req.query);
@@ -1629,9 +2004,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const all = await storage.getAllTechnicians();
         technician = all.find((t: any) => t.userId === req.params.id) as any;
       }
+
+      // Fallback: check third-party technician store
       if (!technician) {
-        return res.status(404).json({ error: "Technician not found" });
+        try {
+          const thirdList = typeof readThirdPartyList === "function" ? readThirdPartyList() : [];
+          const tp = thirdList.find((t: any) => (t.id === req.params.id || t._id === req.params.id));
+          if (tp) {
+            // Normalize third-party response to overlap with internal fields where possible
+            const normalized = {
+              id: tp.id || tp._id,
+              name: tp.name || tp.contactName,
+              phone: tp.phone,
+              email: tp.email,
+              whatsappNumber: tp.whatsappNumber,
+              specialization: tp.specialization || "general",
+              baseLocation: tp.baseLocation || "",
+              averageRating: tp.rating ?? 0,
+              totalJobsCompleted: Array.isArray(tp.services) ? tp.services.length : (tp.servicesCompleted ?? 0),
+              type: "thirdparty",
+              moneyAllowance: tp.moneyAllowance,
+              status: "available",
+              experienceLevel: "mid",
+              skills: tp.specialization ? [tp.specialization] : ["general"],
+              createdAt: tp.createdAt || new Date().toISOString(),
+            };
+            return res.json(normalized);
+          }
+        } catch (e) {
+          // ignore file read errors and continue to 404
+        }
       }
+
+      if (!technician) return res.status(404).json({ error: "Technician not found" });
       res.json(technician);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch technician" });

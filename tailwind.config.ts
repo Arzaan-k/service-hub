@@ -14,6 +14,19 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       colors: {
+        peach: {
+          50: "#FFF5F3",
+          100: "#FFE1D9",
+          200: "#FFC9B8",
+          300: "#FFB89E",
+        },
+        // Global theme overrides
+        lightBg: "#FFF9F7",
+        lightCard: "#FFE9E0",
+        darkText: "#1F1F1F",
+        accentPeach: "#FFD4E3",
+        accentOrange: "#FFB899",
+        accentHover: "#FFC6A3",
         // Named palette tokens
         babyPink: "#FFD4E3",
         peach: "#FFE5B4",

@@ -16,6 +16,7 @@ import ServiceRequests from "@/pages/service-requests";
 import ServiceRequestDetail from "@/pages/service-request-detail";
 import Technicians from "@/pages/technicians";
 import TechnicianProfile from "@/pages/technician-profile";
+import AssignTechnician from "@/pages/assign-technician";
 import Scheduling from "@/pages/scheduling";
 import WhatsAppHub from "@/pages/whatsapp-hub";
 import Clients from "@/pages/clients";
@@ -72,6 +73,9 @@ function Router() {
       </Route>
       <Route path="/service-requests/:id">
         {() => <ProtectedRoute component={ServiceRequestDetail} />}
+      </Route>
+      <Route path="/assign-technician/:serviceId">
+        {() => <ProtectedRoute component={AssignTechnician} roles={["admin","coordinator","super_admin"]} />}
       </Route>
       <Route path="/technicians">
         {() => <ProtectedRoute component={Technicians} roles={["admin", "coordinator", "super_admin"]} />}

@@ -1,0 +1,37 @@
+[
+  {
+    "serviceId": "cbf349f7-d71f-4b97-b96b-00e7bc675ae2",
+    "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "assignedAt": "2025-11-18T09:55:49.732Z"
+  },
+  {
+    "serviceId": "cbf349f7-d71f-4b97-b96b-00e7bc675ae2",
+    "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "assignedAt": "2025-11-18T10:01:57.099Z"
+  },
+  {
+    "serviceId": "70d2c9b5-98d4-4a63-9100-f3ff4e6baa52",
+    "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "assignedAt": "2025-11-18T10:10:55.873Z"
+  },
+  {
+    "serviceId": "70d2c9b5-98d4-4a63-9100-f3ff4e6baa52",
+    "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "assignedAt": "2025-11-18T10:44:53.617Z"
+  },
+  {
+    "serviceId": "70d2c9b5-98d4-4a63-9100-f3ff4e6baa52",
+    "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "assignedAt": "2025-11-18T10:44:53.805Z"
+  },
+  {
+    "serviceId": "70d2c9b5-98d4-4a63-9100-f3ff4e6baa52",
+    "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "assignedAt": "2025-11-18T10:45:27.994Z"
+  },
+  {
+    "serviceId": "71c4456f-bbc2-4018-8a8d-0ad6490027c9",
+    "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "assignedAt": "2025-11-18T10:54:08.193Z"
+  }
+]
