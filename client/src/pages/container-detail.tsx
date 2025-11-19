@@ -699,8 +699,8 @@ export default function ContainerDetail() {
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" asChild>
-                        <a href={metadata.imageLinks} target="_blank" rel="noopener noreferrer">
+                      <Button variant="outline" asChild className="bg-background hover:bg-accent hover:text-accent-foreground border-border">
+                        <a href={metadata.imageLinks} target="_blank" rel="noopener noreferrer" className="inline-flex items-center">
                           <ExternalLink className="h-4 w-4 mr-2" />
                           View Images
                         </a>
@@ -792,11 +792,12 @@ export default function ContainerDetail() {
                           </p>
                         </div>
                         <div className="pt-2">
-                          <Button variant="outline" size="sm" asChild>
+                          <Button variant="outline" size="sm" asChild className="bg-background hover:bg-accent hover:text-accent-foreground border-border">
                             <a
                               href={`https://www.google.com/maps?q=${container.locationLat},${container.locationLng}`}
                               target="_blank"
                               rel="noopener noreferrer"
+                              className="inline-flex items-center"
                             >
                               <ExternalLink className="h-4 w-4 mr-2" />
                               View on Map
