@@ -14,7 +14,9 @@ import {
   sendListMessage,
   authorizeWhatsAppMessage,
   updateWhatsAppTemplate,
-  handleWebhook as handleWebhookHelper
+  handleWebhook as handleWebhookHelper,
+  formatOnsiteContactDisplay,
+  formatPreferredContactDisplay
 } from './whatsapp-helpers';
 // Re-export helpers so other modules can import from './whatsapp'
 export {
@@ -38,7 +40,9 @@ export {
   sendTechnicianSchedule,
   sendServiceStartPrompt,
   sendServiceCompletePrompt,
-  sendCustomerFeedbackRequest
+  sendCustomerFeedbackRequest,
+  formatOnsiteContactDisplay,
+  formatPreferredContactDisplay
 } from './whatsapp-helpers';
 
 // Import technician flow handlers
@@ -144,11 +148,14 @@ function isRoleTestNumber(input: string): boolean {
  */
 function getProgressIndicator(step: string): string {
   const steps: Record<string, { current: number; total: number; emoji: string; title: string }> = {
-    'awaiting_container_selection': { current: 1, total: 5, emoji: '📦', title: 'Container Selection' },
-    'awaiting_error_code': { current: 2, total: 5, emoji: '⚠️', title: 'Error Code' },
-    'awaiting_description': { current: 3, total: 5, emoji: '📝', title: 'Issue Description' },
-    'awaiting_photos': { current: 4, total: 5, emoji: '📸', title: 'Photo Upload' },
-    'awaiting_videos': { current: 5, total: 5, emoji: '🎥', title: 'Video Upload' }
+    'awaiting_error_code': { current: 1, total: 8, emoji: '⚠️', title: 'Error Code' },
+    'awaiting_description': { current: 2, total: 8, emoji: '📝', title: 'Issue Description' },
+    'awaiting_photos': { current: 3, total: 8, emoji: '📸', title: 'Photo Upload' },
+    'awaiting_videos': { current: 4, total: 8, emoji: '🎥', title: 'Video Upload' },
+    'awaiting_company_name': { current: 5, total: 8, emoji: '🏢', title: 'Company Name' },
+    'awaiting_onsite_contact': { current: 6, total: 8, emoji: '👤', title: 'Onsite Contact' },
+    'awaiting_site_address': { current: 7, total: 8, emoji: '📍', title: 'Site Address' },
+    'awaiting_preferred_contact': { current: 8, total: 8, emoji: '📅', title: 'Preferred Contact' }
   };
 
   const info = steps[step];
@@ -156,6 +163,39 @@ function getProgressIndicator(step: string): string {
 
   const progressBar = '▓'.repeat(info.current) + '░'.repeat(info.total - info.current);
   return `${info.emoji} *Step ${info.current}/${info.total}: ${info.title}*\n${progressBar}\n\n`;
+}
+
+function cleanOnsiteContactDigits(text: string): string {
+  return text.replace(/\D/g, '');
+}
+
+function isValidOnsiteContactPhone(digits: string): boolean {
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+function normalizeSiteAddressInput(text: string): string {
+  return text.trim().replace(/\s+/g, ' ');
+}
+
+async function promptCompanyNameInput(from: string): Promise<void> {
+  await sendTextMessage(
+    from,
+    `${getProgressIndicator('awaiting_company_name')} *What's the company name at the site?* \n\nPlease provide the full company name.`
+  );
+}
+
+async function promptOnsiteContactPhoneInput(from: string, userPhone: string): Promise<void> {
+  await sendTextMessage(
+    from,
+    `${getProgressIndicator('awaiting_onsite_contact')} *Onsite contact phone number?* \n\nThis is the person/technician at the site. Can be your number: ${userPhone}`
+  );
+}
+
+async function promptSiteAddressInput(from: string): Promise<void> {
+  await sendTextMessage(
+    from,
+    `${getProgressIndicator('awaiting_site_address')} *Site address (street, city, landmarks)?* \n\nFull address helps us route the technician accurately.`
+  );
 }
 
 async function sendRealClientMenu(to: string, user?: any, customer?: any, selectedContainers?: any[]): Promise<void> {
@@ -866,25 +906,6 @@ async function promptPreferredContactDate(from: string, user: any): Promise<void
   );
 }
 
-function formatPreferredContactDisplay(value: string | undefined | null): string {
-  if (!value) return 'Not provided';
-
-  const lower = value.toLowerCase();
-  if (lower === 'no preference') {
-    return 'No preference';
-  }
-
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleDateString(undefined, {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric'
-    });
-  }
-
-  return value;
-}
 
 async function finalizePreferredContactSelection(rawValue: string, from: string, user: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
@@ -924,7 +945,11 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       beforePhotos,
       videos,
       customerId,
-      preferredContactDate
+      preferredContactDate,
+      companyConfirmation,
+      onsiteContactPhone,
+      onsiteContactPhoneDigits,
+      siteAddress
     } = conversationState;
 
     console.log('[WhatsApp] Creating service request from WhatsApp:', {
@@ -935,7 +960,11 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       errorCode,
       photoCount: beforePhotos?.length || 0,
       videoCount: videos?.length || 0,
-      preferredContactDate
+      preferredContactDate,
+      companyConfirmation,
+      onsiteContactPhone,
+      onsiteContactPhoneDigits,
+      siteAddress
     });
 
     if (!preferredContactDate) {
@@ -1030,9 +1059,14 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       fullDescription += `\nAdditional Containers: ${otherContainers.map(c => c.containerCode).join(', ')}`;
     }
 
-    if (preferredContactDate) {
-      fullDescription += `\n\n☎️ Preferred Technician Call: ${formatPreferredContactDisplay(preferredContactDate)}`;
+    if (companyConfirmation) {
+      fullDescription += `\n\n🏢 Company (WhatsApp): ${companyConfirmation}`;
     }
+    fullDescription += `\n👤 Onsite Contact: ${formatOnsiteContactDisplay(onsiteContactPhone, onsiteContactPhoneDigits)}`;
+    if (siteAddress) {
+      fullDescription += `\n📍 Site Address: ${siteAddress}`;
+    }
+    fullDescription += `\n☎️ Preferred Technician Call: ${formatPreferredContactDisplay(preferredContactDate)}`;
 
     console.log(`[WhatsApp] Creating SINGLE service request for ${validContainers.length} container(s):`, {
       primaryContainerId: primaryContainer.id,
@@ -1109,6 +1143,9 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       `📋 *Request Number:* ${serviceRequest.requestNumber}\n` +
       `📦 *Container${validContainers.length > 1 ? 's' : ''}:* ${containerNames.join(', ')}\n` +
       `⚠️ *Error Code:* ${errorCode || 'None'}\n` +
+      `🏢 *Company:* ${companyConfirmation || 'N/A'}\n` +
+      `👤 *Onsite Contact:* ${formatOnsiteContactDisplay(onsiteContactPhone, onsiteContactPhoneDigits)}\n` +
+      `📍 *Site Address:* ${siteAddress || 'N/A'}\n` +
       `📸 *Photos:* ${photoCount}\n` +
       `🎥 *Videos:* ${videoCount}\n\n` +
       `✅ *What happens next?*\n` +
@@ -1119,9 +1156,6 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
     );
 
     console.log('[WhatsApp] ✅ Service request flow completed successfully');
-
-    // Show client menu again
-    await sendRealClientMenu(from, user);
 
   } catch (error: any) {
     console.error('[WhatsApp] CRITICAL ERROR in createServiceRequestFromWhatsApp:', {
@@ -2144,7 +2178,7 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
     return;
   }
 
-  if (user.role === 'client' || (isTestNumber && session.conversationState?.testingRole === 'client')) {
+  if (user.role === 'client' || user.role === 'admin' || (isTestNumber && session.conversationState?.testingRole === 'client')) {
     await handleClientButtonClick(buttonId, from, user, session, conversationState);
   } else if (user.role === 'technician' || (isTestNumber && session.conversationState?.testingRole === 'technician')) {
     await handleTechnicianButtonClick(buttonId, from, user, session, conversationState);
@@ -4527,7 +4561,7 @@ async function handleTextMessage(message: any, user: any, session: any): Promise
     try {
       console.log(`[WhatsApp] 🎯 Routing to ${user.role.toUpperCase()} flow...`);
       
-      if (user.role === 'client') {
+      if (user.role === 'client' || user.role === 'admin') {
         console.log(`[WhatsApp] 📱 Starting CLIENT MODE for ${from}`);
         // For clients, ask for container number first
         const { storage } = await import('../storage');
@@ -4848,7 +4882,7 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
         `${getProgressIndicator('awaiting_videos')}` +
         `✅ Photos received (${beforePhotos.length}).\n\n` +
         `🎥 *Please attach a short video showing the issue.*\n\n` +
-        `💡 Video is optional but helpful.\n\n` +
+        `💡 Video upload is mandatory.\n\n` +
         `Send the video, then type *DONE* to submit.`
       );
     } else {
@@ -4860,20 +4894,103 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
   // Handle DONE command after video uploads
   if (conversationState.step === 'awaiting_videos') {
     if (text.toUpperCase() === 'DONE') {
+      const videos = conversationState.videos || [];
+      
+      if (videos.length === 0) {
+        await sendTextMessage(
+          from,
+          `${getProgressIndicator('awaiting_videos')} *Video upload is mandatory.*\n\nPlease send at least one video showing the issue, then type *DONE* to proceed.`
+        );
+        return;
+      }
+      
       await storage.updateWhatsappSession(session.id, {
         conversationState: {
           ...conversationState,
-          step: 'awaiting_preferred_contact'
+          step: 'awaiting_company_name'
         }
       });
       session.conversationState = {
         ...conversationState,
-        step: 'awaiting_preferred_contact'
+        step: 'awaiting_company_name'
       };
-      await promptPreferredContactDate(from, user);
+      await promptCompanyNameInput(from);
     } else {
-      await sendTextMessage(from, '🎥 Please send a video or type *DONE* to submit the request.');
+      await sendTextMessage(from, `${getProgressIndicator('awaiting_videos')} *Video received.* Send more or type *DONE* when ready to proceed.`);
     }
+    return;
+  }
+
+  if (conversationState.step === 'awaiting_company_name') {
+    const companyInput = text.trim();
+    if (companyInput.length < 2) {
+      await sendTextMessage(from, '🏢 Company name must be at least 2 characters. Please re-enter.');
+      return;
+    }
+
+    const updatedState = {
+      ...conversationState,
+      companyConfirmation: companyInput,
+      step: 'awaiting_onsite_contact'
+    };
+
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: updatedState
+    });
+    session.conversationState = updatedState;
+
+    await promptOnsiteContactPhoneInput(from, user.phoneNumber || from);
+    return;
+  }
+
+  if (conversationState.step === 'awaiting_onsite_contact') {
+    const digits = cleanOnsiteContactDigits(text);
+    if (!isValidOnsiteContactPhone(digits)) {
+      await sendTextMessage(
+        from,
+        '📞 Please provide a valid phone number with 7-15 digits (e.g., +1 415 555 0101).'
+      );
+      return;
+    }
+
+    const updatedState = {
+      ...conversationState,
+      onsiteContactPhone: text.trim(),
+      onsiteContactPhoneDigits: digits,
+      step: 'awaiting_site_address'
+    };
+
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: updatedState
+    });
+    session.conversationState = updatedState;
+
+    await promptSiteAddressInput(from);
+    return;
+  }
+
+  if (conversationState.step === 'awaiting_site_address') {
+    const normalizedAddress = normalizeSiteAddressInput(text);
+    if (normalizedAddress.length < 5) {
+      await sendTextMessage(
+        from,
+        '📍 Address looks too short. Please include street, city, and any landmark (minimum 5 characters).'
+      );
+      return;
+    }
+
+    const updatedState = {
+      ...conversationState,
+      siteAddress: normalizedAddress,
+      step: 'awaiting_preferred_contact'
+    };
+
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: updatedState
+    });
+    session.conversationState = updatedState;
+
+    await promptPreferredContactDate(from, user); // Assume this exists
     return;
   }
 
