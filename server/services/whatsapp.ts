@@ -170,7 +170,7 @@ function cleanOnsiteContactDigits(text: string): string {
 }
 
 function isValidOnsiteContactPhone(digits: string): boolean {
-  return digits.length >= 7 && digits.length <= 15;
+  return digits.length === 10;
 }
 
 function normalizeSiteAddressInput(text: string): string {
@@ -180,21 +180,21 @@ function normalizeSiteAddressInput(text: string): string {
 async function promptCompanyNameInput(from: string): Promise<void> {
   await sendTextMessage(
     from,
-    `${getProgressIndicator('awaiting_company_name')} *What's the company name at the site?* \n\nPlease provide the full company name.`
+    `${getProgressIndicator('awaiting_company_name')} Please provide the name of the company you are messaging from.`
   );
 }
 
 async function promptOnsiteContactPhoneInput(from: string, userPhone: string): Promise<void> {
   await sendTextMessage(
     from,
-    `${getProgressIndicator('awaiting_onsite_contact')} *Onsite contact phone number?* \n\nThis is the person/technician at the site. Can be your number: ${userPhone}`
+    `${getProgressIndicator('awaiting_onsite_contact')} Please provide the onsite contact phone number (10 digits). This should be the person available at the site. You may share your own number if appropriate: ${userPhone}`
   );
 }
 
 async function promptSiteAddressInput(from: string): Promise<void> {
   await sendTextMessage(
     from,
-    `${getProgressIndicator('awaiting_site_address')} *Site address (street, city, landmarks)?* \n\nFull address helps us route the technician accurately.`
+    `${getProgressIndicator('awaiting_site_address')} Please provide the full site address (street, city, and any landmarks) so we can route the technician accurately.`
   );
 }
 
@@ -1152,7 +1152,7 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       `• Our team will review your request\n` +
       `• A technician will be assigned\n` +
       `• You'll receive updates via WhatsApp\n\n` +
-      `Type *hi* to return to menu or *status* to check progress.`
+      `Type *hi* to return to menu or type *status* to check progress.`
     );
 
     console.log('[WhatsApp] ✅ Service request flow completed successfully');
@@ -4945,10 +4945,11 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
 
   if (conversationState.step === 'awaiting_onsite_contact') {
     const digits = cleanOnsiteContactDigits(text);
+  
     if (!isValidOnsiteContactPhone(digits)) {
       await sendTextMessage(
         from,
-        '📞 Please provide a valid phone number with 7-15 digits (e.g., +1 415 555 0101).'
+        'Please enter a valid 10-digit phone number using numbers only (e.g., 9876543210).'
       );
       return;
     }
