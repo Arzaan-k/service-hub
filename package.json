@@ -8,6 +8,7 @@
     "build": "npx vite build && npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "build:deploy": "npm run build",
     "db:migrate:auth": "tsx server/tools/migrate-auth.ts",
+    "db:migrate:reefer": "tsx server/tools/migrate-reefer-fields.ts",
     "import:rentals": "tsx server/tools/import-rentals.ts",
     "import:excel": "node import-excel-data.js",
     "import:reefer-master": "node import-reefer-master-csv.js",
