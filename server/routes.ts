@@ -548,7 +548,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     status: z.enum(["active", "in_service", "maintenance", "retired", "in_transit", "for_sale", "sold"]).optional(),
     currentCustomerId: z.string().uuid().optional().nullable(),
     currentLocation: z.any().optional(),
-  });
+  }).passthrough();
 
   // Zod: service request create schema (subset)
   const srCreateSchema = z.object({
