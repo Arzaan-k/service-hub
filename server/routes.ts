@@ -32,6 +32,7 @@ import { runDiagnosis } from "./services/ragGraph";
 import { DocumentProcessor } from "./services/documentProcessor";
 import { vectorStore } from "./services/vectorStore";
 import multer from 'multer';
+import serviceHistoryRoutes from './routes/service-history';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -63,6 +64,9 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+
+  // Service History Routes (historical data from Excel)
+  app.use(serviceHistoryRoutes);
 
   // RAG API Endpoints
   app.post("/api/rag/query", authenticateUser, async (req: AuthRequest, res) => {
@@ -274,7 +278,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ok = await comparePasswords(password, user.password || '');
       if (!ok) return res.status(401).json({ error: "Invalid credentials" });
 
-      if (!user.emailVerified) {
+      // Skip email verification in development
+      if (!user.emailVerified && process.env.NODE_ENV !== 'development') {
         return res.status(403).json({ error: "Email not verified" });
       }
 

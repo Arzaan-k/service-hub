@@ -631,3 +631,6 @@ export type ManualChunk = typeof manualChunks.$inferSelect;
 export type InsertManualChunk = z.infer<typeof insertManualChunkSchema>;
 export type RagQuery = typeof ragQueries.$inferSelect;
 export type InsertRagQuery = z.infer<typeof insertRagQuerySchema>;
+
+// Export Service History schema
+export * from "../server/db/comprehensive-service-schema";
