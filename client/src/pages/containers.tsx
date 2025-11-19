@@ -126,25 +126,25 @@ export default function Containers() {
         container.containerCode ||
         (container as any).container_id ||
         ""
-      ).toString().toLowerCase();
+      )?.toString()?.toLowerCase() || "";
 
       const productType = (
         metadata.productType ||
         (container as any).product_type ||
         ""
-      ).toString().toLowerCase();
+      )?.toString()?.toLowerCase() || "";
 
       const location = (
         metadata.location ||
         (container as any).available_location ||
         ""
-      ).toString().toLowerCase();
+      )?.toString()?.toLowerCase() || "";
 
       const depot = (
         metadata.depot ||
         (container as any).depot ||
         ""
-      ).toString().toLowerCase();
+      )?.toString()?.toLowerCase() || "";
 
       const matchesSearch = 
         containerCode.includes(search) ||
