@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapse } from "@/components/ui/collapse";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,7 @@ interface Container {
     address?: string;
     depot?: string;
   };
+  [key: string]: any;
   currentCustomerId?: string;
   customer?: {
     id: string;
@@ -86,6 +88,54 @@ interface Container {
   orbcommDeviceId?: string;
   hasIot: boolean;
 }
+
+// CSV/import-driven fields from the containers table to display in Master Data
+const masterFieldDefinitions: { key: string; label: string }[] = [
+  { key: "product_type", label: "Product Type" },
+  { key: "size", label: "Size" },
+  { key: "size_type", label: "Size Type" },
+  { key: "group_name", label: "Group Name" },
+  { key: "gku_product_name", label: "GKU Product Name" },
+  { key: "category", label: "Category" },
+  { key: "available_location", label: "Available Location" },
+  { key: "depot", label: "Depot" },
+  { key: "mfg_year", label: "Manufacturing Year" },
+  { key: "inventory_status", label: "Inventory Status" },
+  { key: "current", label: "Current State" },
+  { key: "images_pti_survey", label: "Images / PTI / Survey" },
+  { key: "grade", label: "Grade" },
+  { key: "purchase_date", label: "Purchase Date" },
+  { key: "temperature", label: "Temperature" },
+  { key: "domestication", label: "Domestication" },
+  { key: "reefer_unit", label: "Reefer Unit" },
+  { key: "reefer_unit_model_name", label: "Reefer Unit Model" },
+  { key: "reefer_unit_serial_no", label: "Reefer Unit Serial No" },
+  { key: "controller_configuration_number", label: "Controller Config Number" },
+  { key: "controller_version", label: "Controller Version" },
+  { key: "city_of_purchase", label: "City of Purchase" },
+  { key: "purchase_yard_details", label: "Purchase Yard Details" },
+  { key: "cro_number", label: "CRO Number" },
+  { key: "brand_new_used", label: "Brand New / Used" },
+  { key: "date_of_arrival_in_depot", label: "Date of Arrival in Depot" },
+  { key: "in_house_run_test_report", label: "In House Run Test Report" },
+  { key: "condition", label: "Condition (CW / Ready / Repair)" },
+  { key: "curtains", label: "Curtains" },
+  { key: "lights", label: "Lights" },
+  { key: "colour", label: "Colour" },
+  { key: "logo_sticker", label: "Logo / Sticker" },
+  { key: "repair_remarks", label: "Repair Remarks" },
+  { key: "estimated_cost_for_repair", label: "Estimated Cost For Repair" },
+  { key: "crystal_smart_sr_no", label: "Crystal Smart Sr No" },
+  { key: "booking_order_number", label: "Booking Order Number" },
+  { key: "do_number", label: "DO Number" },
+  { key: "dispatch_date", label: "Dispatch Date" },
+  { key: "no_of_days", label: "No of Days" },
+  { key: "dispatch_location", label: "Dispatch Location" },
+  { key: "set_temperature_during_despatch_live", label: "Set Temperature During Despatch / Live" },
+  { key: "assets_belong_to", label: "Assets Belong To" },
+  { key: "blocked", label: "Blocked" },
+  { key: "remark", label: "Remark" },
+];
 
 export default function ContainerDetail() {
   const [, params] = useRoute("/containers/:id");
@@ -304,6 +354,40 @@ export default function ContainerDetail() {
 
   const metadata = container.excelMetadata || {};
 
+  const sections = (() => {
+    const groups: Record<string, Array<{ label: string; key: string; value: any }>> = {
+      "General Details": [],
+      "Inventory & Status": [],
+      "Reefer Unit Details": [],
+      "Purchase Details": [],
+      "Condition & Inspection": [],
+      "Dispatch Details": [],
+      "Other": []
+    };
+    const assign = (fieldKey: string, label: string, value: any) => {
+      const k = label.toLowerCase();
+      if (/(product|size|group|gku|container|location|depot|yom|sr no)/.test(k)) groups["General Details"].push({ label, key: fieldKey, value });
+      else if (/(inventory|stock|status|current|assets|blocked)/.test(k)) groups["Inventory & Status"].push({ label, key: fieldKey, value });
+      else if (/(reefer|unit|model|serial|controller|temperature)/.test(k)) groups["Reefer Unit Details"].push({ label, key: fieldKey, value });
+      else if (/(purchase|po|quotation|order|tenure|amount|deposit|invoice|yard|city|arrival)/.test(k)) groups["Purchase Details"].push({ label, key: fieldKey, value });
+      else if (/(condition|inspection|grade|repair|curtains|lights|colour|logo)/.test(k)) groups["Condition & Inspection"].push({ label, key: fieldKey, value });
+      else if (/(dispatch|shipping|no of days|do number|booking)/.test(k)) groups["Dispatch Details"].push({ label, key: fieldKey, value });
+      else groups["Other"].push({ label, key: fieldKey, value });
+    };
+
+    // Use scalar columns from containers table first, fall back to excelMetadata
+    for (const def of masterFieldDefinitions) {
+      const raw = (container as any)[def.key];
+      let value = raw;
+      if (value === undefined || value === null || value === "" || value === "NA" || value === "N/A") {
+        value = (metadata as any)[def.key];
+      }
+      if (value === undefined || value === null || value === "" || value === "NA" || value === "N/A") continue;
+      assign(def.key, def.label, value);
+    }
+    return groups;
+  })();
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
@@ -430,7 +514,7 @@ export default function ContainerDetail() {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-7">
+            <TabsList className="grid w-full grid-cols-8">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="telemetry">Telemetry</TabsTrigger>
               <TabsTrigger value="specifications">Specifications</TabsTrigger>
@@ -438,6 +522,7 @@ export default function ContainerDetail() {
               <TabsTrigger value="services">Service History</TabsTrigger>
               <TabsTrigger value="location">Location</TabsTrigger>
               <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
+              <TabsTrigger value="master">Master Data</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -455,27 +540,54 @@ export default function ContainerDetail() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Container Number</label>
-                        <p className="font-mono text-sm">{container.containerCode}</p>
+                        <p className="font-mono text-sm">
+                          {(container as any).container_no ||
+                            container.containerCode ||
+                            (container as any).container_id ||
+                            "N/A"}
+                        </p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Product Type</label>
-                        <p className="text-sm">{metadata.productType || container.type}</p>
+                        <p className="text-sm">
+                          {(container as any).product_type ||
+                            metadata.productType ||
+                            container.type ||
+                            "N/A"}
+                        </p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Size</label>
-                        <p className="text-sm">{metadata.size || container.capacity}</p>
+                        <p className="text-sm">
+                          {(container as any).size ||
+                            metadata.size ||
+                            container.capacity ||
+                            "N/A"}
+                        </p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Size Type</label>
-                        <p className="text-sm">{metadata.sizeType || 'N/A'}</p>
+                        <p className="text-sm">
+                          {(container as any).size_type ||
+                            metadata.sizeType ||
+                            "N/A"}
+                        </p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Group Name</label>
-                        <p className="text-sm">{metadata.groupName || 'N/A'}</p>
+                        <p className="text-sm">
+                          {(container as any).group_name ||
+                            metadata.groupName ||
+                            "N/A"}
+                        </p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">GKU Product Name</label>
-                        <p className="text-sm">{metadata.gkuProductName || 'N/A'}</p>
+                        <p className="text-sm">
+                          {(container as any).gku_product_name ||
+                            metadata.gkuProductName ||
+                            "N/A"}
+                        </p>
                       </div>
                       {customer && !customerError && (
                         <>
@@ -532,15 +644,29 @@ export default function ContainerDetail() {
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Current State</label>
-                        <p className="text-sm">{metadata.current || 'N/A'}</p>
+                        <p className="text-sm">
+                          {(container as any).current ||
+                            metadata.current ||
+                            "N/A"}
+                        </p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Category</label>
-                        <p className="text-sm">{metadata.category || 'N/A'}</p>
+                        <p className="text-sm">
+                          {(container as any).category ||
+                            metadata.category ||
+                            "N/A"}
+                        </p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Grade</label>
-                        <div className="mt-1">{getGradeBadge(metadata.grade || 'N/A')}</div>
+                        <div className="mt-1">
+                          {getGradeBadge(
+                            ((container as any).grade as string) ||
+                              metadata.grade ||
+                              "N/A"
+                          )}
+                        </div>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Health Score</label>
@@ -799,7 +925,90 @@ export default function ContainerDetail() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Additional Master Data (auto-render any new fields) */}
+                {metadata && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileText className="h-5 w-5" />
+                        Additional Master Data
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {(() => {
+                        const knownKeys = new Set([
+                          'productType','size','sizeType','groupName','gkuProductName','category','location','depot',
+                          'yom','status','current','imageLinks','grade','reeferUnit','reeferUnitModel'
+                        ]);
+                        const entries = Object.entries(metadata || {}).filter(([k, v]) => !!v && !knownKeys.has(k));
+                        if (entries.length === 0) {
+                          return <p className="text-sm text-muted-foreground">No additional fields.</p>;
+                        }
+                        return (
+                          <div className="grid grid-cols-2 gap-4">
+                            {entries.map(([key, value]) => (
+                              <div key={key}>
+                                <label className="text-sm font-medium text-muted-foreground">
+                                  {key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
+                                </label>
+                                <p className="text-sm break-words">
+                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
+            </TabsContent>
+
+            {/* Master Data Tab (single consolidated card) */}
+            <TabsContent value="master" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Master Data</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {Object.entries(sections).map(([section, items]) => {
+                      if (!items || items.length === 0) return null;
+                      return (
+                        <div
+                          key={section}
+                          className="rounded-xl border border-[#FFE0D6] bg-[#FFF6F9] p-4 h-full flex flex-col gap-3"
+                        >
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {section}
+                          </div>
+                          <div className="space-y-2">
+                            {items.map(({ key, label, value }) => (
+                              <div key={key} className="space-y-0.5">
+                                <div className="text-xs text-muted-foreground">
+                                  {label}
+                                </div>
+                                <div className="text-sm font-medium text-foreground break-words">
+                                  {(() => {
+                                    if (value instanceof Date)
+                                      return value.toLocaleDateString();
+                                    if (typeof value === "string") return value;
+                                    if (typeof value === "number") return String(value);
+                                    if (typeof value === "boolean") return value ? "Yes" : "No";
+                                    return JSON.stringify(value);
+                                  })()}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* Ownership History Tab */}

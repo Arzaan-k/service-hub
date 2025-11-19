@@ -1,0 +1,30 @@
+[
+  {
+    "id": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "contactName": "Thirdparty",
+    "name": "Thirdparty",
+    "phone": "123456789",
+    "email": "thirdparty@gmail.com",
+    "whatsappNumber": "4326189019",
+    "specialization": "general",
+    "baseLocation": "mumbai",
+    "moneyAllowance": 35000,
+    "createdAt": "2025-11-18T09:36:01.589Z",
+    "assignedServices": [
+      "71c4456f-bbc2-4018-8a8d-0ad6490027c9"
+    ]
+  },
+  {
+    "id": "5504b0f9-9060-48bb-8531-eecd51032394",
+    "contactName": "test123",
+    "name": "test123",
+    "phone": "123",
+    "email": "123",
+    "whatsappNumber": "123",
+    "specialization": "general",
+    "baseLocation": "123",
+    "moneyAllowance": 123,
+    "assignedServices": [],
+    "createdAt": "2025-11-18T11:29:01.816Z"
+  }
+]

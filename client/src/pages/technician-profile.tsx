@@ -11,7 +11,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
 import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import WageBreakdown from "@/components/wage-breakdown";
 import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
 
 function formatDate(d: string | Date) {
@@ -82,15 +81,98 @@ export default function TechnicianProfile() {
   const { data: requests, isLoading: isRequestsLoading } = useQuery({
     queryKey: ["/api/service-requests/technician", technicianId],
     queryFn: async () => (await apiRequest("GET", `/api/service-requests/technician/${technicianId}`)).json(),
-    enabled: !!technicianId,
+    enabled: !!technicianId && !(technician as any)?.type,
     refetchInterval: 30000, // Refetch every 30 seconds for real-time updates
     refetchIntervalInBackground: true, // Continue refetching even when tab is not active
+  });
+
+  // Third-party assigned services
+  const { data: tpRequests, isLoading: isTpRequestsLoading } = useQuery({
+    queryKey: ["/api/services-by-technician", technicianId, "thirdparty"],
+    queryFn: async () => (await apiRequest("GET", `/api/services-by-technician/${technicianId}?type=thirdparty`)).json(),
+    enabled: !!technicianId && (technician as any)?.type === "thirdparty",
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
   });
 
   const { data: performance } = useQuery({
     queryKey: ["/api/technicians", technicianId, "performance"],
     queryFn: async () => (await apiRequest("GET", `/api/technicians/${technicianId}/performance`)).json(),
     enabled: !!technicianId,
+  });
+
+  // Wage details (editable)
+  const { data: wageData, isLoading: isWageLoading } = useQuery({
+    queryKey: ["/api/technicians", technicianId, "wage"],
+    queryFn: async () => (await apiRequest("GET", `/api/technicians/${technicianId}/wage`)).json(),
+    enabled: !!technicianId,
+  });
+  const [wageEditMode, setWageEditMode] = useState(false);
+  const [wageForm, setWageForm] = useState<any>({
+    grade: "",
+    designation: "",
+    hotelAllowance: 0,
+    localTravelAllowance: 0,
+    foodAllowance: 0,
+    personalAllowance: 0,
+    moneyAllowance: "", // for third-party parity (UI-only here)
+  });
+  const isThirdParty = (technician as any)?.type === "thirdparty";
+  useEffect(() => {
+    if (wageData && wageEditMode) {
+      setWageForm({
+        grade: wageData.grade ?? "",
+        designation: wageData.designation ?? "",
+        hotelAllowance: wageData.hotelAllowance ?? 0,
+        localTravelAllowance: wageData.localTravelAllowance ?? 0,
+        foodAllowance: wageData.foodAllowance ?? 0,
+        personalAllowance: wageData.personalAllowance ?? 0,
+        moneyAllowance: (technician as any)?.moneyAllowance ?? "",
+      });
+    }
+  }, [wageData, wageEditMode, technician]);
+
+  const updateWage = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        grade: wageForm.grade,
+        designation: wageForm.designation,
+        hotelAllowance: Number(wageForm.hotelAllowance) || 0,
+        localTravelAllowance: Number(wageForm.localTravelAllowance) || 0,
+        foodAllowance: Number(wageForm.foodAllowance) || 0,
+        personalAllowance: Number(wageForm.personalAllowance) || 0,
+      };
+      const res = await apiRequest("PUT", `/api/technicians/${technicianId}/wage`, payload);
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "wage"] });
+      setWageEditMode(false);
+      toast({ title: "Saved", description: "Wage details updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update wage details", variant: "destructive" });
+    }
+  });
+
+  const updateThirdParty = useMutation({
+    mutationFn: async () => {
+      const money = wageForm.moneyAllowance === "" ? undefined : Number(wageForm.moneyAllowance);
+      if (money === undefined || Number.isNaN(money)) {
+        throw new Error("Enter a valid money allowance");
+      }
+      const res = await apiRequest("PUT", `/api/thirdparty-technicians/${technicianId}`, { moneyAllowance: money });
+      return await res.json();
+    },
+    onSuccess: () => {
+      // Refetch technician to reflect updated allowance (served from file-backed list normalization)
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId] });
+      setWageEditMode(false);
+      toast({ title: "Saved", description: "Money allowance updated successfully" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Error", description: e?.message || "Failed to update money allowance", variant: "destructive" });
+    }
   });
 
   const queryClient = useQueryClient();
@@ -181,7 +263,12 @@ export default function TechnicianProfile() {
                   <CardTitle className="text-xl">{technician.name}</CardTitle>
                   <div className="text-sm text-muted-foreground">{(technician.experienceLevel || "mid").toUpperCase()}</div>
                 </div>
-                <Badge>{technician.status || "available"}</Badge>
+                <div className="flex items-center gap-2">
+                  {technician.type === "thirdparty" && (
+                    <Badge className="bg-pink-200 text-pink-800">Third-Party</Badge>
+                  )}
+                  <Badge>{technician.status || "available"}</Badge>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -250,8 +337,125 @@ export default function TechnicianProfile() {
             </CardContent>
           </Card>
 
-          {/* Wage Breakdown Section */}
-          <WageBreakdown technicianId={technicianId} />
+          {/* Wage / Allowance Section (single, editable) */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle>{isThirdParty ? "Money Allowance" : "Wage Breakdown"}</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    className="bg-orange-200 hover:bg-orange-300 text-black"
+                    onClick={() => {
+                      if (!wageEditMode) return setWageEditMode(true);
+                      return isThirdParty ? updateThirdParty.mutate() : updateWage.mutate();
+                    }}
+                    disabled={isWageLoading || updateWage.isPending || updateThirdParty.isPending}
+                  >
+                    {wageEditMode
+                      ? ((updateWage.isPending || updateThirdParty.isPending) ? "Saving..." : "💾 Save Changes")
+                      : "✏️ Edit"}
+                  </Button>
+                  {wageEditMode && (
+                    <Button variant="outline" onClick={() => setWageEditMode(false)}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isWageLoading && <div className="text-sm text-muted-foreground">Loading wage details…</div>}
+              {!isWageLoading && (
+                <div className="p-4 rounded-xl" style={{ background: '#FFF9F7', border: '1px solid #FFE0D6' }}>
+                  {isThirdParty ? (
+                    <div className="grid grid-cols-1 gap-4 text-sm">
+                      <div>
+                        <Label>Total Allowance (₹)</Label>
+                        <Input
+                          type="number"
+                          className="mt-1 input-soft"
+                          value={wageForm.moneyAllowance}
+                          disabled={!wageEditMode}
+                          onChange={(e) => setWageForm({ ...wageForm, moneyAllowance: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <Label>Grade</Label>
+                          <Input
+                            className="mt-1 input-soft"
+                            value={wageForm.grade}
+                            disabled={!wageEditMode}
+                            onChange={(e) => setWageForm({ ...wageForm, grade: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label>Designation</Label>
+                          <Input
+                            className="mt-1 input-soft"
+                            value={wageForm.designation}
+                            disabled={!wageEditMode}
+                            onChange={(e) => setWageForm({ ...wageForm, designation: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label>Hotel Allowance (₹)</Label>
+                          <Input
+                            type="number"
+                            className="mt-1 input-soft"
+                            value={wageForm.hotelAllowance}
+                            disabled={!wageEditMode}
+                            onChange={(e) => setWageForm({ ...wageForm, hotelAllowance: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label>Food Allowance (₹)</Label>
+                          <Input
+                            type="number"
+                            className="mt-1 input-soft"
+                            value={wageForm.foodAllowance}
+                            disabled={!wageEditMode}
+                            onChange={(e) => setWageForm({ ...wageForm, foodAllowance: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label>Local Travel Allowance (₹)</Label>
+                          <Input
+                            type="number"
+                            className="mt-1 input-soft"
+                            value={wageForm.localTravelAllowance}
+                            disabled={!wageEditMode}
+                            onChange={(e) => setWageForm({ ...wageForm, localTravelAllowance: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label>Personal Allowance (₹)</Label>
+                          <Input
+                            type="number"
+                            className="mt-1 input-soft"
+                            value={wageForm.personalAllowance}
+                            disabled={!wageEditMode}
+                            onChange={(e) => setWageForm({ ...wageForm, personalAllowance: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <hr className="my-3 border-[#FFE0D6]" />
+                      <div className="font-semibold text-black">
+                        Total Daily Wage: ₹
+                        {(Number(wageForm.hotelAllowance) || 0) +
+                          (Number(wageForm.foodAllowance) || 0) +
+                          (Number(wageForm.localTravelAllowance) || 0) +
+                          (Number(wageForm.personalAllowance) || 0)}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-1">
@@ -298,11 +502,12 @@ export default function TechnicianProfile() {
               <CardTitle>Assigned Services</CardTitle>
             </CardHeader>
             <CardContent>
-              {isRequestsLoading ? (
+              {(isRequestsLoading || isTpRequestsLoading) ? (
                 <div className="text-sm text-muted-foreground">Loading services…</div>
               ) : (() => {
-                const assigned = Array.isArray(requests) 
-                  ? requests.filter((r: any) => ['scheduled', 'in_progress', 'pending'].includes(r.status))
+                const source = (technician as any)?.type === 'thirdparty' ? tpRequests : requests;
+                const assigned = Array.isArray(source) 
+                  ? source.filter((r: any) => ['scheduled', 'in_progress', 'pending', 'assigned'].includes(r.status))
                   : [];
                 
 return assigned.length > 0 ? (

@@ -271,9 +271,11 @@ export class DatabaseStorage implements IStorage {
     return deleted;
   }
 
-  async getAllContainers(): Promise<Container[]> {
-    const containerList = await db.select().from(containers).orderBy(containers.id);
-    return containerList.map(container => this.parseContainerData(container));
+  async getAllContainers(): Promise<any[]> {
+    // Use raw SELECT * to include dynamically added columns not present in typed schema
+    const result: any = await db.execute(sql`SELECT * FROM containers ORDER BY id`);
+    const rows: any[] = Array.isArray(result) ? result : (result?.rows || []);
+    return rows.map((row: any) => this.parseContainerData(row as any));
   }
 
   // Helper function to parse decimal fields and ensure currentLocation
@@ -319,9 +321,10 @@ export class DatabaseStorage implements IStorage {
     return parsedContainer;
   }
 
-  async getContainer(id: string): Promise<Container | undefined> {
-    const [container] = await db.select().from(containers).where(eq(containers.id, id));
-    return container ? this.parseContainerData(container) : undefined;
+  async getContainer(id: string): Promise<any | undefined> {
+    const out: any = await db.execute(sql`SELECT * FROM containers WHERE id = ${id} LIMIT 1`);
+    const row = Array.isArray(out) ? out[0] : out?.rows?.[0];
+    return row ? this.parseContainerData(row as any) : undefined;
   }
 
   async getContainerByContainerId(containerId: string): Promise<Container | undefined> {
@@ -339,13 +342,27 @@ export class DatabaseStorage implements IStorage {
     return newContainer;
   }
 
-  async updateContainer(id: string, container: any): Promise<Container> {
-    const [updated] = await db
-      .update(containers)
-      .set({ ...container, updatedAt: new Date() })
-      .where(eq(containers.id, id))
-      .returning();
-    return updated;
+  async updateContainer(id: string, container: any): Promise<any> {
+    // Split known typed fields (best-effort) and dynamic fields
+    const dynamicSets: string[] = [];
+    const params: any[] = [];
+
+    for (const [key, value] of Object.entries(container || {})) {
+      // Always allow dynamic columns; underlying DB will reject if column doesn't exist
+      dynamicSets.push(`${sql.raw(key)} = $${params.length + 1}`);
+      params.push(value);
+    }
+    // Always update updated_at
+    dynamicSets.push(`updated_at = NOW()`);
+
+    if (dynamicSets.length > 0) {
+      const q = `UPDATE containers SET ${dynamicSets.join(', ')} WHERE id = $${params.length + 1} RETURNING *`;
+      params.push(id);
+      const res: any = await db.execute(sql.raw(q), params as any);
+      const row = res?.rows?.[0] || (Array.isArray(res) ? res[0] : undefined);
+      return row ? this.parseContainerData(row as any) : undefined;
+    }
+    return this.getContainer(id);
   }
 
   async getContainerByOrbcommId(orbcommDeviceId: string): Promise<Container | undefined> {

@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { User, Phone, MapPin, Star, Wrench, Plus, Edit, Trash2 } from "lucide-react";
-import { Link } from "wouter";
+import { User, Phone, MapPin, Star, Wrench, Plus, Edit, Trash2, UserPlus, UserCog, IndianRupee } from "lucide-react";
+import { Link, useLocation } from "wouter";
 import { saveAuth, getAuthToken } from "@/lib/auth";
+import ThirdPartyTechnicianForm from "@/components/technicians/third-party-technician-form";
 
 interface Technician {
   id: string;
@@ -32,8 +33,10 @@ interface Technician {
 export default function Technicians() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isAddThirdPartyDialogOpen, setIsAddThirdPartyDialogOpen] = useState(false);
   const [selectedTech, setSelectedTech] = useState<Technician | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -45,6 +48,15 @@ export default function Technicians() {
     experienceLevel: "mid",
     specialization: "general",
     baseLocation: "",
+  });
+  const [thirdPartyFormData, setThirdPartyFormData] = useState({
+    contactName: "",
+    phone: "",
+    email: "",
+    whatsappNumber: "",
+    specialization: "general",
+    baseLocation: "",
+    moneyAllowance: "",
   });
 
   // Set up test user for development
@@ -65,6 +77,18 @@ export default function Technicians() {
     },
     onError: (error) => {
       console.error("Error loading technicians:", error);
+    },
+  });
+
+  const { data: thirdPartyTechs, isLoading: isLoadingThirdParty, error: thirdPartyError } = useQuery({
+    queryKey: ["/api/thirdparty-technicians"],
+    enabled: authReady && !!authToken,
+    retry: false,
+    onSuccess: (data) => {
+      console.log("Third-party technicians loaded successfully:", data);
+    },
+    onError: (error) => {
+      console.error("Error loading third-party technicians:", error);
     },
   });
 
@@ -100,6 +124,56 @@ export default function Technicians() {
     onError: (error: any) => {
       console.error("Technician creation error:", error);
       const errorMessage = error?.message || error?.response?.data?.details || "Failed to add technician";
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createThirdPartyTechnician = useMutation({
+    mutationFn: async (data: any) => {
+      const payload = {
+        contactName: data.contactName,
+        phone: data.phone,
+        email: data.email,
+        whatsappNumber: data.whatsappNumber,
+        specialization: data.specialization,
+        baseLocation: data.baseLocation,
+        moneyAllowance: data.moneyAllowance ? parseFloat(data.moneyAllowance) : undefined,
+      };
+      if (!payload.contactName || !payload.phone || payload.moneyAllowance === undefined || Number.isNaN(payload.moneyAllowance)) {
+        throw new Error("Contact person, phone, and valid money allowance are required");
+      }
+      const res = await apiRequest("POST", "/api/thirdparty-technicians", payload);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.details || errorData.error || "Failed to create third-party technician");
+      }
+      const json = await res.json();
+      return json;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/thirdparty-technicians"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
+      setIsAddThirdPartyDialogOpen(false);
+      setThirdPartyFormData({
+        contactName: "",
+        phone: "",
+        email: "",
+        whatsappNumber: "",
+        specialization: "general",
+        baseLocation: "",
+        moneyAllowance: "",
+      });
+      toast({
+        title: "Success",
+        description: "Third-party technician added successfully",
+      });
+    },
+    onError: (error: any) => {
+      const errorMessage = error?.message || error?.response?.data?.details || "Failed to add third-party technician";
       toast({
         title: "Error",
         description: errorMessage,
@@ -220,6 +294,29 @@ export default function Technicians() {
     }
   };
 
+  const handleAddThirdParty = () => {
+    try {
+      // Client-side validation
+      const allowanceNumber = parseFloat(thirdPartyFormData.moneyAllowance as any);
+      if (!thirdPartyFormData.contactName || !thirdPartyFormData.phone || !thirdPartyFormData.moneyAllowance || Number.isNaN(allowanceNumber)) {
+        toast({
+          title: "Validation Error",
+          description: "Contact person, phone, and a valid money allowance are required.",
+          variant: "destructive",
+        });
+        return;
+      }
+      createThirdPartyTechnician.mutate(thirdPartyFormData);
+    } catch (error) {
+      console.error("Error in handleAddThirdParty:", error);
+      toast({
+        title: "Error",
+        description: "Failed to submit third-party technician form",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleDelete = (id: string) => {
     if (confirm("Are you sure you want to delete this technician?")) {
       deleteTechnician.mutate(id);
@@ -245,7 +342,7 @@ export default function Technicians() {
     return colorMap[level] || colorMap.mid;
   };
 
-  if (isLoading) {
+  if (isLoading || isLoadingThirdParty) {
     return (
       <div className="flex min-h-screen">
         <Sidebar />
@@ -259,7 +356,7 @@ export default function Technicians() {
     );
   }
 
-  if (error) {
+  if (error || thirdPartyError) {
     return (
       <div className="flex min-h-screen">
         <Sidebar />
@@ -268,7 +365,7 @@ export default function Technicians() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <h3 className="text-lg font-semibold text-destructive mb-2">Error Loading Technicians</h3>
-              <p className="text-muted-foreground mb-4">{error.message}</p>
+              <p className="text-muted-foreground mb-4">{(error as any)?.message || (thirdPartyError as any)?.message}</p>
               <Button onClick={() => window.location.reload()}>Retry</Button>
             </div>
           </div>
@@ -286,18 +383,35 @@ export default function Technicians() {
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold text-foreground">Technicians</h2>
-              <p className="text-sm text-muted-foreground">Manage field technicians and their assignments</p>
+              <p className="text-sm text-muted-foreground">
+                👷 Internal Technicians: {(technicians as any[])?.length ?? 0} • 🧰 Third-Party Technicians: {(thirdPartyTechs as any[])?.length ?? 0}
+              </p>
             </div>
-            <Button onClick={() => setIsAddDialogOpen(true)} className="btn-primary">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Technician
-            </Button>
+            <div className="flex justify-end gap-3">
+              <button
+                className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFC6B3] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
+                onClick={() => setIsAddDialogOpen(true)}
+              >
+                <UserPlus className="w-4 h-4" />
+                Add Technician
+              </button>
+              <button
+                className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFA07A] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
+                onClick={() => setIsAddThirdPartyDialogOpen(true)}
+              >
+                <UserCog className="w-4 h-4" />
+                Add Third-Party Technician
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {technicians && technicians.length > 0 ? (
-              technicians.map((tech: Technician) => (
-                <Card key={tech.id} className="card-surface hover:shadow-soft transition-all">
+          {/* Internal Technicians */}
+          <div className="mb-3">
+            <h3 className="text-lg font-semibold text-foreground mb-3">Internal Technicians</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {technicians && (technicians as any[]).length > 0 ? (
+                (technicians as any[]).map((tech: Technician) => (
+                  <Card key={tech.id} className="shadow-sm hover:shadow-md transition-all" style={{ background: '#FFFFFF', borderColor: '#FFE0D6' }}>
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -346,40 +460,117 @@ export default function Technicians() {
                       {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
                       </span>
                     </div>
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        size="sm"
-                        className="flex-1 btn-secondary"
-                        onClick={() => handleEdit(tech)}
-                      >
-                        <Edit className="h-3 w-3 mr-1" />
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="btn-primary"
-                        onClick={() => handleDelete(tech.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
+                      <div className="mt-4">
+                        <button
+                          onClick={() => handleEdit(tech)}
+                          className="w-full bg-gradient-to-r from-peach-200 to-peach-300 text-black font-medium py-2 rounded-2xl shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
+                        >
+                          ✏️ Edit
+                        </button>
+                      </div>
                   </CardContent>
-                </Card>
-              ))
-            ) : (
-              <div className="col-span-full text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
-                  <User className="h-8 w-8 text-muted-foreground" />
+                  </Card>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-6 text-sm text-muted-foreground">
+                  No internal technicians found.
                 </div>
-                <h3 className="text-lg font-semibold mb-2">No Technicians Found</h3>
-                <p className="text-muted-foreground mb-4">Get started by adding your first technician</p>
-                <Button onClick={() => setIsAddDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Technician
-                </Button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
+
+          {/* Divider */}
+          <div className="my-8 border-t border-[#FFD4E3]"></div>
+
+          {/* Third-Party Technicians */}
+          <div className="mb-3">
+            <h3 className="text-lg font-semibold text-foreground mb-3">Third-Party Technicians</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {thirdPartyTechs && (thirdPartyTechs as any[]).length > 0 ? (
+                (thirdPartyTechs as any[]).map((tp: any) => (
+                  <Card
+                    key={tp.id}
+                    className="shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-[#FFF1EC] to-[#FFF9F7] cursor-pointer hover:shadow-lg transform hover:-translate-y-1 duration-200"
+                    style={{ borderColor: '#FFE0D6' }}
+                    onClick={() => setLocation(`/technicians/${tp.id || tp._id}`)}
+                  >
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: '#FFE5B4', border: '1px solid #FFE0D6' }}>
+                            <User className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-lg">{tp.name || tp.contactName}</CardTitle>
+                            <p className="text-sm font-medium text-muted-foreground">
+                              {(tp as any).specialization || "general"}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className="rounded-full" style={{ backgroundColor: '#FFD4E3', color: '#333' }}>
+                          Third-Party
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-foreground">{tp.phone}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <MapPin className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">
+                          {typeof tp.baseLocation === "string"
+                            ? (tp.baseLocation || "Not set")
+                            : (tp.baseLocation?.city || "Not set")}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <IndianRupee className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-foreground">Money Allowance (₹): {(tp as any).moneyAllowance ?? 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between pt-3 border-t border-border">
+                        <div className="flex items-center gap-1">
+                          <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                          <span className="text-sm font-medium">{(tp as any).rating ?? 0}/5</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {(tp as any).servicesCompleted ?? 0} services
+                        </span>
+                      </div>
+                      <div className="mt-4">
+                        <button
+                          onClick={() => setLocation(`/technicians/${tp.id}`)}
+                          className="w-full bg-gradient-to-r from-peach-200 to-peach-300 text-black font-medium py-2 rounded-2xl shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
+                        >
+                          ✏️ Edit
+                        </button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-6 text-sm text-muted-foreground">
+                  No third-party technicians found.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Overall empty state */}
+          {(!(technicians as any[])?.length && !(thirdPartyTechs as any[])?.length) && (
+            <div className="col-span-full text-center py-12">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+                <User className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">No Technicians Found</h3>
+              <p className="text-muted-foreground mb-4">Get started by adding your first technician</p>
+              <Button onClick={() => setIsAddDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Technician
+              </Button>
+            </div>
+          )}
         </div>
       </main>
 
@@ -470,6 +661,33 @@ export default function Technicians() {
             <Button onClick={handleAdd} disabled={createTechnician.isPending}>
               {createTechnician.isPending ? "Adding..." : "Add Technician"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Third-Party Technician Dialog */}
+      <Dialog open={isAddThirdPartyDialogOpen} onOpenChange={setIsAddThirdPartyDialogOpen}>
+        <DialogContent className="max-w-md modal-content modal">
+          <DialogHeader>
+            <DialogTitle>Add Third-Party Technician</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <ThirdPartyTechnicianForm
+              value={thirdPartyFormData}
+              onChange={setThirdPartyFormData}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddThirdPartyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <button
+              className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFA07A] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
+              onClick={handleAddThirdParty}
+              disabled={createThirdPartyTechnician.isPending}
+            >
+              {createThirdPartyTechnician.isPending ? "Adding..." : "Add Third-Party Technician"}
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
