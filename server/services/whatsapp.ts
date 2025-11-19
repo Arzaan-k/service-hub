@@ -174,9 +174,9 @@ async function sendRealClientMenu(to: string, user?: any, customer?: any): Promi
       const userName = user.name || user.username || 'there';
       const companyName = customer.companyName || '';
       greeting = `👋 *Welcome ${userName}!*`;
-      if (companyName) {
-        greeting += `\n🏢 *${companyName}*`;
-      }
+      // if (companyName) {
+      //   greeting += `\n🏢 *${companyName}*`;
+      // }
     }
     
     await sendInteractiveButtons(
@@ -1171,9 +1171,6 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
 
     console.log('[WhatsApp] ✅ Service request flow completed successfully');
 
-    // Show client menu again
-    await sendRealClientMenu(from, user);
-
   } catch (error: any) {
     console.error('[WhatsApp] CRITICAL ERROR in createServiceRequestFromWhatsApp:', {
       function: 'createServiceRequestFromWhatsApp',
@@ -2071,8 +2068,7 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
 
     if (selectedContainers.length === 0) {
       console.warn('[WhatsApp] No containers selected when proceeding');
-      await sendTextMessage(from, '❌ No containers selected. Please start again.');
-      await sendRealClientMenu(from, user);
+      await sendTextMessage(from, 'No containers selected. Type hi to start again.');
       return;
     }
 

@@ -21,6 +21,18 @@ function cleanPhone(number: string): string {
   return String(number || '').replace(/\D/g, '');
 }
 
+const EMOJI_REGEX = /[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu;
+
+function sanitizeContent(input?: string | null, options: { trim?: boolean } = {}): string {
+  if (!input) {
+    return '';
+  }
+  let sanitized = input.replace(EMOJI_REGEX, '');
+  sanitized = sanitized.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n');
+  sanitized = sanitized.replace(/^\s+/, '');
+  return options.trim ? sanitized.trim() : sanitized;
+}
+
 // ========================================
 // WHATSAPP API HELPER FUNCTIONS
 // ========================================
@@ -31,8 +43,9 @@ function cleanPhone(number: string): string {
 export async function sendTextMessage(to: string, text: string): Promise<any> {
   ensureWhatsAppConfig();
   const cleanedPhone = cleanPhone(to);
+  const sanitizedText = sanitizeContent(text);
   
-  console.log(`📤 Attempting to send WhatsApp message to: ${to} Text: ${text.substring(0, 50)}...`);
+  console.log(`📤 Attempting to send WhatsApp message to: ${to} Text: ${sanitizedText.substring(0, 50)}...`);
 
   try {
     const response = await axios.post(
@@ -41,7 +54,7 @@ export async function sendTextMessage(to: string, text: string): Promise<any> {
         messaging_product: 'whatsapp',
         to: cleanedPhone,
         type: 'text',
-        text: { body: text }
+        text: { body: sanitizedText || '' }
       },
       {
         headers: {
@@ -64,6 +77,18 @@ export async function sendTextMessage(to: string, text: string): Promise<any> {
 export async function sendInteractiveButtons(to: string, bodyText: string, buttons: Array<{ id: string; title: string }>): Promise<any> {
   ensureWhatsAppConfig();
   const cleanedPhone = cleanPhone(to);
+  const sanitizedBody = sanitizeContent(bodyText);
+  const normalizedButtons = buttons.slice(0, 3).map((btn, idx) => {
+    const title = sanitizeContent(btn.title, { trim: true });
+    const safeTitle = (title || `Option ${idx + 1}`).substring(0, 20);
+    return {
+      type: 'reply',
+      reply: {
+        id: btn.id,
+        title: safeTitle
+      }
+    };
+  });
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -71,15 +96,9 @@ export async function sendInteractiveButtons(to: string, bodyText: string, butto
     type: 'interactive',
     interactive: {
       type: 'button',
-      body: { text: bodyText },
+      body: { text: sanitizedBody || '' },
       action: {
-        buttons: buttons.slice(0, 3).map(btn => ({
-          type: 'reply',
-          reply: {
-            id: btn.id,
-            title: btn.title.substring(0, 20)
-          }
-        }))
+        buttons: normalizedButtons
       }
     }
   };
@@ -104,6 +123,24 @@ export async function sendInteractiveButtons(to: string, bodyText: string, butto
 export async function sendInteractiveList(to: string, bodyText: string, buttonText: string, sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>): Promise<any> {
   ensureWhatsAppConfig();
   const cleanedPhone = cleanPhone(to);
+  const sanitizedBody = sanitizeContent(bodyText);
+  const buttonLabel = (sanitizeContent(buttonText, { trim: true }) || 'Select').substring(0, 20);
+  const normalizedSections = sections.map((section, sectionIdx) => {
+    const sectionTitle = sanitizeContent(section.title, { trim: true }) || `Section ${sectionIdx + 1}`;
+    return {
+      title: sectionTitle,
+      rows: section.rows.map((row, rowIdx) => {
+        const rowTitle = sanitizeContent(row.title, { trim: true });
+        const safeRowTitle = (rowTitle || `Item ${rowIdx + 1}`).substring(0, 24);
+        const rowDescription = sanitizeContent(row.description, { trim: true }).substring(0, 72);
+        return {
+          id: row.id,
+          title: safeRowTitle,
+          description: rowDescription
+        };
+      })
+    };
+  });
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -111,17 +148,10 @@ export async function sendInteractiveList(to: string, bodyText: string, buttonTe
     type: 'interactive',
     interactive: {
       type: 'list',
-      body: { text: bodyText },
+      body: { text: sanitizedBody || '' },
       action: {
-        button: buttonText,
-        sections: sections.map(section => ({
-          title: section.title,
-          rows: section.rows.map(row => ({
-            id: row.id,
-            title: row.title.substring(0, 24),
-            description: row.description?.substring(0, 72) || ''
-          }))
-        }))
+        button: buttonLabel,
+        sections: normalizedSections
       }
     }
   };
@@ -146,6 +176,7 @@ export async function sendInteractiveList(to: string, bodyText: string, buttonTe
 export async function sendImageMessage(to: string, imageUrl: string, caption?: string): Promise<any> {
   ensureWhatsAppConfig();
   const cleanedPhone = cleanPhone(to);
+  const sanitizedCaption = sanitizeContent(caption, { trim: true });
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -153,7 +184,7 @@ export async function sendImageMessage(to: string, imageUrl: string, caption?: s
     type: 'image',
     image: {
       link: imageUrl,
-      caption: caption || ''
+      caption: sanitizedCaption || undefined
     }
   };
 
@@ -177,6 +208,7 @@ export async function sendImageMessage(to: string, imageUrl: string, caption?: s
 export async function sendVideoMessage(to: string, videoUrl: string, caption?: string): Promise<any> {
   ensureWhatsAppConfig();
   const cleanedPhone = cleanPhone(to);
+  const sanitizedCaption = sanitizeContent(caption, { trim: true });
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -184,7 +216,7 @@ export async function sendVideoMessage(to: string, videoUrl: string, caption?: s
     type: 'video',
     video: {
       link: videoUrl,
-      caption: caption || ''
+      caption: sanitizedCaption || undefined
     }
   };
 
@@ -208,6 +240,7 @@ export async function sendVideoMessage(to: string, videoUrl: string, caption?: s
 export async function sendTemplateMessage(to: string, templateName: string, languageCode: string, parameters: string[]): Promise<any> {
   ensureWhatsAppConfig();
   const cleanedPhone = cleanPhone(to);
+  const sanitizedParameters = parameters.map(p => sanitizeContent(p, { trim: true }));
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -219,7 +252,7 @@ export async function sendTemplateMessage(to: string, templateName: string, lang
       components: [
         {
           type: 'body',
-          parameters: parameters.map(p => ({ type: 'text', text: p }))
+          parameters: sanitizedParameters.map(text => ({ type: 'text', text }))
         }
       ]
     }
