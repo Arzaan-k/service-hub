@@ -40,7 +40,57 @@ interface Container {
     reeferUnit: string;
     reeferUnitModel: string;
   };
+  [key: string]: any;
 }
+
+// CSV/import-driven fields from the containers table to display in the UI
+const csvFieldDefinitions: { key: string; label: string }[] = [
+  // labels match DB column names exactly as requested
+  { key: "product_type", label: "product_type" },
+  { key: "size", label: "size" },
+  { key: "size_type", label: "size_type" },
+  { key: "group_name", label: "group_name" },
+  { key: "gku_product_name", label: "gku_product_name" },
+  { key: "category", label: "category" },
+  { key: "available_location", label: "available_location" },
+  { key: "depot", label: "depot" },
+  { key: "mfg_year", label: "mfg_year" },
+  { key: "inventory_status", label: "inventory_status" },
+  { key: "current", label: "current" },
+  { key: "images_pti_survey", label: "images_pti_survey" },
+  { key: "grade", label: "grade" },
+  { key: "purchase_date", label: "purchase_date" },
+  { key: "temperature", label: "temperature" },
+  { key: "domestication", label: "domestication" },
+  { key: "reefer_unit", label: "reefer_unit" },
+  { key: "reefer_unit_model_name", label: "reefer_unit_model_name" },
+  { key: "reefer_unit_serial_no", label: "reefer_unit_serial_no" },
+  { key: "controller_configuration_number", label: "controller_configuration_number" },
+  { key: "controller_version", label: "controller_version" },
+  { key: "city_of_purchase", label: "city_of_purchase" },
+  { key: "purchase_yard_details", label: "purchase_yard_details" },
+  { key: "cro_number", label: "cro_number" },
+  { key: "brand_new_used", label: "brand_new_used" },
+  { key: "date_of_arrival_in_depot", label: "date_of_arrival_in_depot" },
+  { key: "in_house_run_test_report", label: "in_house_run_test_report" },
+  { key: "condition", label: "condition" },
+  { key: "curtains", label: "curtains" },
+  { key: "lights", label: "lights" },
+  { key: "colour", label: "colour" },
+  { key: "logo_sticker", label: "logo_sticker" },
+  { key: "repair_remarks", label: "repair_remarks" },
+  { key: "estimated_cost_for_repair", label: "estimated_cost_for_repair" },
+  { key: "crystal_smart_sr_no", label: "crystal_smart_sr_no" },
+  { key: "booking_order_number", label: "booking_order_number" },
+  { key: "do_number", label: "do_number" },
+  { key: "dispatch_date", label: "dispatch_date" },
+  { key: "no_of_days", label: "no_of_days" },
+  { key: "dispatch_location", label: "dispatch_location" },
+  { key: "set_temperature_during_despatch_live", label: "set_temperature_during_despatch_live" },
+  { key: "assets_belong_to", label: "assets_belong_to" },
+  { key: "blocked", label: "blocked" },
+  { key: "remark", label: "remark" },
+];
 
 export default function Containers() {
   const queryClient = useQueryClient();
@@ -70,11 +120,37 @@ export default function Containers() {
   const filteredAndSortedContainers = useMemo(() => {
     let filtered = containers.filter((container: Container) => {
       const metadata = container.excelMetadata || {};
+      const search = (searchTerm || "").toLowerCase();
+
+      const containerCode = (
+        container.containerCode ||
+        (container as any).container_id ||
+        ""
+      ).toString().toLowerCase();
+
+      const productType = (
+        metadata.productType ||
+        (container as any).product_type ||
+        ""
+      ).toString().toLowerCase();
+
+      const location = (
+        metadata.location ||
+        (container as any).available_location ||
+        ""
+      ).toString().toLowerCase();
+
+      const depot = (
+        metadata.depot ||
+        (container as any).depot ||
+        ""
+      ).toString().toLowerCase();
+
       const matchesSearch = 
-        container.containerCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        metadata.productType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        metadata.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        metadata.depot?.toLowerCase().includes(searchTerm.toLowerCase());
+        containerCode.includes(search) ||
+        productType.includes(search) ||
+        location.includes(search) ||
+        depot.includes(search);
       
       const matchesStatus = statusFilter === "all" ||
         (statusFilter === "deployed" && metadata.status === "DEPLOYED") ||
@@ -96,7 +172,11 @@ export default function Containers() {
     filtered.sort((a: Container, b: Container) => {
       switch (sortBy) {
         case "containerCode":
-          return a.containerCode.localeCompare(b.containerCode);
+          return (
+            (a.containerCode || (a as any).container_id || "").toString()
+          ).localeCompare(
+            (b.containerCode || (b as any).container_id || "").toString()
+          );
         case "status":
           return (a.excelMetadata?.status || "").localeCompare(b.excelMetadata?.status || "");
         case "location":
@@ -303,7 +383,8 @@ export default function Containers() {
                 <table className="w-full text-sm table-soft">
                   <thead className="border-b" style={{ borderColor: '#FFE0D6' }}>
                     <tr>
-                      <th className="text-left py-3 px-2">Container Number</th>
+                      {/* Match DB field name for primary identifier */}
+                      <th className="text-left py-3 px-2">container_id</th>
                       <th className="text-left py-3 px-2">Product Type</th>
                       <th className="text-left py-3 px-2">Size</th>
                       <th className="text-left py-3 px-2">Size Type</th>
@@ -325,6 +406,11 @@ export default function Containers() {
                   <tbody>
                     {filteredAndSortedContainers.map((container: Container) => {
                       const metadata = container.excelMetadata || {};
+                      const containerNumber =
+                        (container as any).container_no ||
+                        container.containerCode ||
+                        (container as any).container_id ||
+                        "";
                       return (
                         <tr 
                           key={container.id} 
@@ -332,7 +418,9 @@ export default function Containers() {
                           style={{ borderColor: '#FFE0D6' }}
                           onClick={() => setLocation(`/containers/${container.id}`)}
                         >
-                          <td className="py-3 px-2 font-mono text-xs font-medium text-foreground">{container.containerCode}</td>
+                          <td className="py-3 px-2 font-mono text-xs font-medium text-foreground">
+                            {containerNumber || "—"}
+                          </td>
                           <td className="py-3 px-2 text-xs text-foreground">{metadata.productType || container.type}</td>
                           <td className="py-3 px-2 text-xs text-foreground">{metadata.size || container.capacity}</td>
                           <td className="py-3 px-2 text-xs text-foreground">{metadata.sizeType || 'N/A'}</td>

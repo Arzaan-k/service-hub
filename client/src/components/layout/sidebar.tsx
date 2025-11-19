@@ -37,7 +37,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="sidebar w-64 bg-[#FFF8F5] border-r border-[#FFE0D6] flex flex-col sticky top-0 h-screen">
+    <aside className="sidebar w-64 bg-[#FFF9F7] border-r border-[#E0E0E0] flex flex-col sticky top-0 h-screen">
       {/* Logo */}
       <div className="p-6 border-b border-[#FFE0D6]">
         <div className="flex items-center gap-3">
@@ -64,10 +64,11 @@ export default function Sidebar() {
                   : "text-foreground hover:bg-[#FFF6F9]"
               }`}
               style={location === item.path ? {
-                backgroundColor: '#FFD4E3',
+                backgroundImage: 'linear-gradient(90deg, #FFD4E3, #FFB6A0)',
                 borderLeftColor: '#FFA07A',
                 borderLeftWidth: '4px',
-                color: '#333333'
+                color: '#1F1F1F',
+                boxShadow: '0 6px 16px rgba(230,191,191,0.35)'
               } : {}}
               data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
             >

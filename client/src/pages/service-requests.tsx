@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -63,6 +63,7 @@ interface ServiceRequest {
 export default function ServiceRequests() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const getRequestId = (req: any): string => (req?.id || req?._id || "") as string;
   const [activeTab, setActiveTab] = useState("all");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [newContainerId, setNewContainerId] = useState("");
@@ -79,6 +80,9 @@ export default function ServiceRequests() {
   const [selectedTechnicianId, setSelectedTechnicianId] = useState("");
   const [completionNotes, setCompletionNotes] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  const [, setLocation] = useLocation();
+
+  // Dropdown removed: direct navigation to assign page simplifies UX
 
   const { data: requests, isLoading } = useQuery({
     queryKey: ["/api/service-requests"],
@@ -230,6 +234,8 @@ export default function ServiceRequests() {
     if (!selectedRequest) return;
     completeService.mutate({ id: selectedRequest.id, resolutionNotes: completionNotes });
   };
+
+  // Direct assignment handled on dedicated page
 
   const handleCancel = () => {
     if (!selectedRequest) return;
@@ -384,7 +390,7 @@ export default function ServiceRequests() {
 
             <TabsContent value={activeTab} className="space-y-4">
               {filteredRequests?.map((request: ServiceRequest) => (
-                <Card key={request.id} className="card-surface hover:shadow-soft transition-all" style={request.status === 'completed' ? { background: '#F0FFF6' } : {}}>
+                <Card key={(request as any)?._id || request.id} className="card-surface hover:shadow-soft transition-all overflow-visible" style={request.status === 'completed' ? { background: '#F0FFF6' } : {}}>
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
@@ -498,13 +504,11 @@ export default function ServiceRequests() {
 
                     <div className="flex flex-wrap gap-3 pt-4 border-t border-border">
                       {request.status === "pending" && (
-                        <div className="flex flex-wrap gap-3 w-full">
+                        <div className="flex items-center gap-3 w-full relative z-10 overflow-visible flex-nowrap">
                           <button
-                            onClick={() => {
-                              setSelectedRequest(request);
-                              setAssignDialogOpen(true);
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FFD4E3] hover:bg-[#FFC6B3] text-[#3A3A3A] font-medium dark:bg-[#2A2A2A] dark:hover:bg-[#3A3A3A] dark:text-[#FFD4E3] transition-all duration-300 shadow-sm"
+                            onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
+                            title="Assign Technician"
                           >
                             <UserCog className="w-4 h-4" /> Assign Technician
                           </button>
@@ -528,7 +532,14 @@ export default function ServiceRequests() {
                         </div>
                       )}
                       {request.status === "scheduled" && (
-                        <div className="flex flex-wrap gap-3 w-full">
+                        <div className="flex items-center gap-3 w-full relative z-10 overflow-visible flex-nowrap">
+                          <button
+                            onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
+                            title="Assign Technician"
+                          >
+                            <UserCog className="w-4 h-4" /> Assign Technician
+                          </button>
                           <button
                             onClick={() => startService.mutate(request.id)}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#FFA07A] text-[#FFA07A] hover:bg-[#FFF2ED] dark:hover:bg-[#1F1F1F] transition-all duration-300"
