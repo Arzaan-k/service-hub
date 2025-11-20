@@ -203,18 +203,13 @@ app.use((req, res, next) => {
   const port = parseInt(process.env.PORT || '5000', 10);
   console.log(`[SERVER] Attempting to listen on all interfaces port ${port}`);
   
-  // Try multiple binding strategies for maximum compatibility
+  // Listen on all interfaces (IPv4 and IPv6)
   server.listen(port, '0.0.0.0', () => {
     log(`serving on port ${port}`);
     console.log(`[SERVER] Server is now listening on all interfaces port ${port}`);
     console.log(`[SERVER] Try accessing at: http://localhost:${port}`);
     console.log(`[SERVER] Process ID: ${process.pid}`);
     console.log(`[SERVER] NODE_ENV: ${process.env.NODE_ENV}`);
-  });
-  
-  // Also listen on IPv6
-  server.listen(port, '::', () => {
-    console.log(`[SERVER] Server is also listening on IPv6 port ${port}`);
   });
   
   // Add error handling for the server
