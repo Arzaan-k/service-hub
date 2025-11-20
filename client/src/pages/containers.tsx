@@ -92,6 +92,16 @@ const csvFieldDefinitions: { key: string; label: string }[] = [
   { key: "remark", label: "remark" },
 ];
 
+const safeLower = (val: any): string => {
+  if (val === null || val === undefined) return "";
+  try {
+    return String(val).toLowerCase();
+  } catch (e) {
+    console.error("Error in safeLower:", e, val);
+    return "";
+  }
+};
+
 export default function Containers() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -107,8 +117,8 @@ export default function Containers() {
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/containers");
       const data = await response.json();
-      console.log('[Containers Page] Fetched containers:', data.length, 'containers');
-      return data;
+      console.log('[Containers Page] Fetched containers:', Array.isArray(data) ? data.length : 'Not an array', data);
+      return Array.isArray(data) ? data : [];
     },
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
@@ -119,7 +129,7 @@ export default function Containers() {
     console.log('[Containers Page] Render state:', {
       isLoading,
       hasError: !!error,
-      containerCount: containers.length
+      containerCount: Array.isArray(containers) ? containers.length : 'Not an array'
     });
   }, [isLoading, error, containers]);
 
@@ -129,75 +139,86 @@ export default function Containers() {
   }, []);
 
   const filteredAndSortedContainers = useMemo(() => {
+    if (!Array.isArray(containers)) {
+      console.warn("Containers data is not an array:", containers);
+      return [];
+    }
+
     let filtered = containers.filter((container: Container) => {
-      const metadata = container.excelMetadata || {};
-      const search = (searchTerm || "").toLowerCase();
-
-      const containerCode = (
-        container.containerCode ||
-        (container as any).container_id ||
-        ""
-      )?.toString()?.toLowerCase() || "";
-
-      const productType = (
-        metadata.productType ||
-        (container as any).product_type ||
-        ""
-      )?.toString()?.toLowerCase() || "";
-
-      const location = (
-        metadata.location ||
-        (container as any).available_location ||
-        ""
-      )?.toString()?.toLowerCase() || "";
-
-      const depot = (
-        metadata.depot ||
-        (container as any).depot ||
-        ""
-      )?.toString()?.toLowerCase() || "";
-
-      const matchesSearch = 
-        containerCode.includes(search) ||
-        productType.includes(search) ||
-        location.includes(search) ||
-        depot.includes(search);
+      if (!container) return false;
       
-      const matchesStatus = statusFilter === "all" ||
-        (statusFilter === "deployed" && metadata.status === "DEPLOYED") ||
-        (statusFilter === "sale" && metadata.status === "SALE") ||
-        (statusFilter === "sold" && metadata.status === "SOLD") ||
-        (statusFilter === "maintenance" && container.status === "maintenance");
-      
-      const matchesType = typeFilter === "all" || 
-        (typeFilter === "reefer" && metadata.productType === "Reefer") ||
-        (typeFilter === "dry" && metadata.productType === "Dry");
-      
-      const matchesGrade = gradeFilter === "all" || 
-        metadata.grade === gradeFilter.toUpperCase();
+      try {
+        const metadata = container.excelMetadata || {};
+        const search = safeLower(searchTerm);
 
-      return matchesSearch && matchesStatus && matchesType && matchesGrade;
+        const containerCode = safeLower(
+          container.containerCode ||
+          (container as any).container_id
+        );
+
+        const productType = safeLower(
+          metadata.productType ||
+          (container as any).product_type
+        );
+
+        const location = safeLower(
+          metadata.location ||
+          (container as any).available_location
+        );
+
+        const depot = safeLower(
+          metadata.depot ||
+          (container as any).depot
+        );
+
+        const matchesSearch = 
+          containerCode.includes(search) ||
+          productType.includes(search) ||
+          location.includes(search) ||
+          depot.includes(search);
+        
+        const matchesStatus = statusFilter === "all" ||
+          (statusFilter === "deployed" && metadata.status === "DEPLOYED") ||
+          (statusFilter === "sale" && metadata.status === "SALE") ||
+          (statusFilter === "sold" && metadata.status === "SOLD") ||
+          (statusFilter === "maintenance" && container.status === "maintenance");
+        
+        const matchesType = typeFilter === "all" || 
+          (typeFilter === "reefer" && metadata.productType === "Reefer") ||
+          (typeFilter === "dry" && metadata.productType === "Dry");
+        
+        const matchesGrade = gradeFilter === "all" || 
+          metadata.grade === gradeFilter.toUpperCase();
+
+        return matchesSearch && matchesStatus && matchesType && matchesGrade;
+      } catch (err) {
+        console.error("Error filtering container:", container, err);
+        return false;
+      }
     });
 
     // Sort containers
     filtered.sort((a: Container, b: Container) => {
-      switch (sortBy) {
-        case "containerCode":
-          return (
-            (a.containerCode || (a as any).container_id || "").toString()
-          ).localeCompare(
-            (b.containerCode || (b as any).container_id || "").toString()
-          );
-        case "status":
-          return (a.excelMetadata?.status || "").localeCompare(b.excelMetadata?.status || "");
-        case "location":
-          return (a.excelMetadata?.location || "").localeCompare(b.excelMetadata?.location || "");
-        case "grade":
-          return (a.excelMetadata?.grade || "").localeCompare(b.excelMetadata?.grade || "");
-        case "yom":
-          return (b.excelMetadata?.yom || 0) - (a.excelMetadata?.yom || 0);
-        default:
-          return 0;
+      try {
+        switch (sortBy) {
+          case "containerCode":
+            return safeLower(a.containerCode || (a as any).container_id).localeCompare(
+              safeLower(b.containerCode || (b as any).container_id)
+            );
+          case "status":
+            return (a.excelMetadata?.status || "").localeCompare(b.excelMetadata?.status || "");
+          case "location":
+            return (a.excelMetadata?.location || "").localeCompare(b.excelMetadata?.location || "");
+          case "grade":
+            return (a.excelMetadata?.grade || "").localeCompare(b.excelMetadata?.grade || "");
+          case "yom":
+            return (b.excelMetadata?.yom || 0) - (a.excelMetadata?.yom || 0);
+          default:
+            return 0;
+        }
+      } catch (err) {
+        console.error("Error sorting containers:", err);
+        return 0;
       }
     });
 
@@ -432,20 +453,20 @@ export default function Containers() {
                           <td className="py-3 px-2 font-mono text-xs font-medium text-foreground">
                             {containerNumber || "—"}
                           </td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.productType || container.type}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.size || container.capacity}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.sizeType || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.groupName || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.gkuProductName || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.category || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.location || 'Unknown'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.depot || 'Unknown'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.yom || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs">{getStatusBadge(metadata.status || container.status)}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.current || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs">{getGradeBadge(metadata.grade || 'N/A')}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.reeferUnit || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{metadata.reeferUnitModel || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).product_type || metadata.productType || container.type || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).size || metadata.size || container.capacity || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).size_type || metadata.sizeType || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).group_name || metadata.groupName || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).gku_product_name || metadata.gkuProductName || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).category || metadata.category || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).available_location || metadata.location || 'Unknown'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).depot || metadata.depot || 'Unknown'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).mfg_year || metadata.yom || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs">{getStatusBadge((container as any).inventory_status || metadata.status || container.status)}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).current || metadata.current || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs">{getGradeBadge((container as any).grade || metadata.grade || 'N/A')}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).reefer_unit || metadata.reeferUnit || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).reefer_unit_model_name || metadata.reeferUnitModel || 'N/A'}</td>
                           <td className="py-3 px-2 text-xs">{getHealthScoreBadge(container.healthScore || 0)}</td>
                           <td className="py-3 px-2 text-xs">
                             <Button 
