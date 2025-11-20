@@ -112,6 +112,10 @@ export default function Containers() {
   const [gradeFilter, setGradeFilter] = useState("all");
   const [sortBy, setSortBy] = useState("containerCode");
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+
   const { data: containers = [], isLoading, error } = useQuery({
     queryKey: ["/api/containers"],
     queryFn: async () => {
@@ -234,6 +238,18 @@ export default function Containers() {
 
     return filtered;
   }, [containers, searchTerm, statusFilter, typeFilter, gradeFilter, sortBy]);
+
+  // Pagination logic
+  const totalItems = filteredAndSortedContainers.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedContainers = filteredAndSortedContainers.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, typeFilter, gradeFilter]);
 
   const getStatusBadge = (status: string) => {
     const statusMap = {
@@ -446,7 +462,7 @@ export default function Containers() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredAndSortedContainers.map((container: Container) => {
+                    {paginatedContainers.map((container: Container) => {
                       const metadata = container.excelMetadata || {};
                       const containerNumber =
                         (container as any).container_no ||
@@ -496,6 +512,103 @@ export default function Containers() {
                     })}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Pagination Controls */}
+              <div className="mt-4 flex items-center justify-between px-4 pb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} containers
+                  </span>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(value) => {
+                      setItemsPerPage(Number(value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[100px] bg-[#1a2332] border-[#2a3f5f]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a2332] border-[#2a3f5f]">
+                      <SelectItem value="25">25 / page</SelectItem>
+                      <SelectItem value="50">50 / page</SelectItem>
+                      <SelectItem value="100">100 / page</SelectItem>
+                      <SelectItem value="200">200 / page</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="bg-[#1a2332] border-[#2a3f5f] hover:bg-[#2a3f5f]"
+                  >
+                    First
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="bg-[#1a2332] border-[#2a3f5f] hover:bg-[#2a3f5f]"
+                  >
+                    Previous
+                  </Button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={
+                            currentPage === pageNum
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-[#1a2332] border-[#2a3f5f] hover:bg-[#2a3f5f]"
+                          }
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="bg-[#1a2332] border-[#2a3f5f] hover:bg-[#2a3f5f]"
+                  >
+                    Next
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="bg-[#1a2332] border-[#2a3f5f] hover:bg-[#2a3f5f]"
+                  >
+                    Last
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
