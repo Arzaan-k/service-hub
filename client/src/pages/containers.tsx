@@ -102,15 +102,26 @@ export default function Containers() {
   const [gradeFilter, setGradeFilter] = useState("all");
   const [sortBy, setSortBy] = useState("containerCode");
 
-  const { data: containers = [], isLoading } = useQuery({
+  const { data: containers = [], isLoading, error } = useQuery({
     queryKey: ["/api/containers"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/containers");
-      return response.json();
+      const data = await response.json();
+      console.log('[Containers Page] Fetched containers:', data.length, 'containers');
+      return data;
     },
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
   });
+
+  // Debug logging
+  useEffect(() => {
+    console.log('[Containers Page] Render state:', {
+      isLoading,
+      hasError: !!error,
+      containerCount: containers.length
+    });
+  }, [isLoading, error, containers]);
 
   // Initialize data on component mount
   useEffect(() => {
@@ -241,9 +252,9 @@ export default function Containers() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden bg-background">
         <Header title="Container Master Sheet" />
         <div className="flex-1 overflow-y-auto p-6">
           {/* Summary Cards */}
