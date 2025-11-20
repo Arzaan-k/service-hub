@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npm run dev:*)",
       "Bash(npm install)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(npx tsx check-container-data.ts)",
+      "Bash(node import-reefer-master-csv.js:*)"
     ],
     "deny": [],
     "ask": []

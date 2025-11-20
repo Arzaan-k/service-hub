@@ -8,27 +8,27 @@ export default function Sidebar() {
   const role = (user?.role || "client").toLowerCase();
   const navItems = [
     // Everyone
-    { path: "/", label: "Dashboard", icon: "fas fa-th-large", badge: "3", color: "dashboard", roles: ["admin","coordinator","technician","client","super_admin"] },
-    { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250", color: "containers", roles: ["admin","coordinator","technician","client","super_admin"] },
-    { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", color: "alerts", roles: ["admin","coordinator","technician","client","super_admin"] },
-    { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench", color: "service", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/", label: "Dashboard", icon: "fas fa-th-large", badge: "3", color: "dashboard", roles: ["admin", "coordinator", "technician", "client", "super_admin"] },
+    { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250", color: "containers", roles: ["admin", "coordinator", "technician", "client", "super_admin"] },
+    { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", color: "alerts", roles: ["admin", "coordinator", "technician", "client", "super_admin"] },
+    { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench", color: "service", roles: ["admin", "coordinator", "technician", "client", "super_admin"] },
     // Client self profile quick link
     { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", color: "clients", roles: ["client"] },
     // Technician self profile quick link
     { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", color: "technicians", roles: ["technician"] },
     // Admin/Coordinator only
-    { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat", color: "technicians", roles: ["admin","coordinator","super_admin"] },
-    { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", color: "scheduling", roles: ["admin","coordinator","super_admin"] },
-    { path: "/clients", label: "Clients", icon: "fas fa-users", color: "clients", roles: ["admin","coordinator","super_admin"] },
+    { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat", color: "technicians", roles: ["admin", "coordinator", "super_admin"] },
+    { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", color: "scheduling", roles: ["admin", "coordinator", "super_admin"] },
+    { path: "/clients", label: "Clients", icon: "fas fa-users", color: "clients", roles: ["admin", "coordinator", "super_admin"] },
     // Admin/Coordinator/Technician
-    { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true, color: "whatsapp", roles: ["admin","coordinator","super_admin"] },
-    { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", color: "inventory", roles: ["admin","coordinator","technician","super_admin"] },
+    { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true, color: "whatsapp", roles: ["admin", "coordinator", "super_admin"] },
+    { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", color: "inventory", roles: ["admin", "coordinator", "technician", "super_admin"] },
     // Admin-only analytics
-    { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", color: "analytics", roles: ["admin","super_admin"] },
+    { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", color: "analytics", roles: ["admin", "super_admin"] },
     // Manuals for all users
-    { path: "/manuals", label: "Manuals", icon: "fas fa-book-open", color: "manuals", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/manuals", label: "Manuals", icon: "fas fa-book-open", color: "manuals", roles: ["admin", "coordinator", "technician", "client", "super_admin"] },
     // RAG Chat for everyone
-    { path: "/rag-chat", label: "AI Assistant", icon: "fas fa-robot", color: "rag", roles: ["admin","coordinator","technician","client","super_admin"] },
+    { path: "/rag-chat", label: "AI Assistant", icon: "fas fa-robot", color: "rag", roles: ["admin", "coordinator", "technician", "client", "super_admin"] },
   ].filter(item => item.roles.includes(role));
 
   const handleLogout = () => {
@@ -55,14 +55,13 @@ export default function Sidebar() {
       <nav className="flex-1 p-4 overflow-y-auto scrollbar-thin">
         <div className="space-y-1">
           {navItems.map((item) => (
-            <Link 
-              key={item.path} 
+            <Link
+              key={item.path}
               href={item.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth group ${
-                location === item.path
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-smooth group ${location === item.path
                   ? "text-foreground"
                   : "text-foreground hover:bg-[#FFF6F9]"
-              }`}
+                }`}
               style={location === item.path ? {
                 backgroundImage: 'linear-gradient(90deg, #FFD4E3, #FFB6A0)',
                 borderLeftColor: '#FFA07A',
@@ -72,12 +71,12 @@ export default function Sidebar() {
               } : {}}
               data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
             >
-              <i 
+              <i
                 className={`${item.icon} w-5`}
                 style={location === item.path ? {
                   color: item.color === 'alerts' ? '#FF6F61' :
-                         item.color === 'service' ? '#FFA07A' :
-                         '#E19E64'
+                    item.color === 'service' ? '#FFA07A' :
+                      '#E19E64'
                 } : {}}
               ></i>
               <span className="font-medium text-foreground">{item.label}</span>
@@ -86,15 +85,15 @@ export default function Sidebar() {
                   className="ml-auto text-foreground text-xs px-2 py-0.5 rounded-full"
                   style={{
                     backgroundColor: item.color === 'alerts' ? '#FFD4E3' :
-                                     item.color === 'service' ? '#FFCBA4' :
-                                     '#FFE5B4'
+                      item.color === 'service' ? '#FFCBA4' :
+                        '#FFE5B4'
                   }}
                 >
                   {item.badge}
                 </span>
               )}
               {item.hasPulse && (
-                <span 
+                <span
                   className="ml-auto w-2 h-2 rounded-full pulse-dot"
                   style={{
                     backgroundColor: item.color === 'whatsapp' ? '#CFEFDB' : '#FFCBA4'
@@ -106,7 +105,7 @@ export default function Sidebar() {
         </div>
 
         <div className="mt-6 pt-6 border-t border-[#FFE0D6] space-y-1">
-          <Link 
+          <Link
             href="/settings"
             className="flex items-center gap-3 px-4 py-3 rounded-lg text-foreground hover:bg-[#FFF6F9] transition-smooth"
           >
