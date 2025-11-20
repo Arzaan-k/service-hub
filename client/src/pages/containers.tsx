@@ -117,7 +117,14 @@ export default function Containers() {
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/containers");
       const data = await response.json();
-      console.log('[Containers Page] Fetched containers:', Array.isArray(data) ? data.length : 'Not an array', data);
+      console.log('[Containers Page] Fetched containers:', Array.isArray(data) ? data.length : 'Not an array');
+      if (data.length > 0) {
+        console.log('[Containers Page] First container sample:', data[0]);
+        console.log('[Containers Page] Container keys:', Object.keys(data[0]));
+        console.log('[Containers Page] product_type:', data[0].product_type);
+        console.log('[Containers Page] depot:', data[0].depot);
+        console.log('[Containers Page] grade:', data[0].grade);
+      }
       return Array.isArray(data) ? data : [];
     },
     staleTime: 30000, // 30 seconds
@@ -153,22 +160,25 @@ export default function Containers() {
 
         const containerCode = safeLower(
           container.containerCode ||
-          (container as any).container_id
+          (container as any).container_id ||
+          (container as any).containerNo
         );
 
         const productType = safeLower(
-          metadata.productType ||
-          (container as any).product_type
+          (container as any).productType ||
+          (container as any).product_type ||
+          metadata.productType
         );
 
         const location = safeLower(
-          metadata.location ||
-          (container as any).available_location
+          (container as any).availableLocation ||
+          (container as any).available_location ||
+          metadata.location
         );
 
         const depot = safeLower(
-          metadata.depot ||
-          (container as any).depot
+          (container as any).depot ||
+          metadata.depot
         );
 
         const matchesSearch = 
@@ -178,17 +188,17 @@ export default function Containers() {
           depot.includes(search);
         
         const matchesStatus = statusFilter === "all" ||
-          (statusFilter === "deployed" && metadata.status === "DEPLOYED") ||
-          (statusFilter === "sale" && metadata.status === "SALE") ||
-          (statusFilter === "sold" && metadata.status === "SOLD") ||
-          (statusFilter === "maintenance" && container.status === "maintenance");
-        
-        const matchesType = typeFilter === "all" || 
-          (typeFilter === "reefer" && metadata.productType === "Reefer") ||
-          (typeFilter === "dry" && metadata.productType === "Dry");
-        
-        const matchesGrade = gradeFilter === "all" || 
-          metadata.grade === gradeFilter.toUpperCase();
+          (statusFilter === "deployed" && ((container as any).inventoryStatus === "DEPLOYED" || (container as any).inventory_status === "DEPLOYED" || metadata.status === "DEPLOYED")) ||
+          (statusFilter === "sale" && ((container as any).inventoryStatus === "SALE" || (container as any).inventory_status === "SALE" || metadata.status === "SALE")) ||
+          (statusFilter === "sold" && ((container as any).inventoryStatus === "SOLD" || (container as any).inventory_status === "SOLD" || metadata.status === "SOLD")) ||
+          (statusFilter === "maintenance" && (container.status === "maintenance" || (container as any).inventoryStatus === "maintenance" || (container as any).inventory_status === "maintenance"));
+
+        const matchesType = typeFilter === "all" ||
+          (typeFilter === "reefer" && ((container as any).productType === "Reefer" || (container as any).product_type === "Reefer" || metadata.productType === "Reefer")) ||
+          (typeFilter === "dry" && ((container as any).productType === "Dry" || (container as any).product_type === "Dry" || metadata.productType === "Dry"));
+
+        const matchesGrade = gradeFilter === "all" ||
+          ((container as any).grade === gradeFilter.toUpperCase() || metadata.grade === gradeFilter.toUpperCase());
 
         return matchesSearch && matchesStatus && matchesType && matchesGrade;
       } catch (err) {
@@ -453,20 +463,20 @@ export default function Containers() {
                           <td className="py-3 px-2 font-mono text-xs font-medium text-foreground">
                             {containerNumber || "—"}
                           </td>
-                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).product_type || metadata.productType || container.type || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).productType || (container as any).product_type || metadata.productType || container.type || 'N/A'}</td>
                           <td className="py-3 px-2 text-xs text-foreground">{(container as any).size || metadata.size || container.capacity || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).size_type || metadata.sizeType || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).group_name || metadata.groupName || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).gku_product_name || metadata.gkuProductName || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).sizeType || (container as any).size_type || metadata.sizeType || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).groupName || (container as any).group_name || metadata.groupName || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).gkuProductName || (container as any).gku_product_name || metadata.gkuProductName || 'N/A'}</td>
                           <td className="py-3 px-2 text-xs text-foreground">{(container as any).category || metadata.category || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).available_location || metadata.location || 'Unknown'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).availableLocation || (container as any).available_location || metadata.location || 'Unknown'}</td>
                           <td className="py-3 px-2 text-xs text-foreground">{(container as any).depot || metadata.depot || 'Unknown'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).mfg_year || metadata.yom || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs">{getStatusBadge((container as any).inventory_status || metadata.status || container.status)}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).mfgYear || (container as any).mfg_year || metadata.yom || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs">{getStatusBadge((container as any).inventoryStatus || (container as any).inventory_status || metadata.status || container.status)}</td>
                           <td className="py-3 px-2 text-xs text-foreground">{(container as any).current || metadata.current || 'N/A'}</td>
                           <td className="py-3 px-2 text-xs">{getGradeBadge((container as any).grade || metadata.grade || 'N/A')}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).reefer_unit || metadata.reeferUnit || 'N/A'}</td>
-                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).reefer_unit_model_name || metadata.reeferUnitModel || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).reeferUnit || (container as any).reefer_unit || metadata.reeferUnit || 'N/A'}</td>
+                          <td className="py-3 px-2 text-xs text-foreground">{(container as any).reeferUnitModelName || (container as any).reefer_unit_model_name || (container as any).reeferModel || (container as any).reefer_model || metadata.reeferUnitModel || 'N/A'}</td>
                           <td className="py-3 px-2 text-xs">{getHealthScoreBadge(container.healthScore || 0)}</td>
                           <td className="py-3 px-2 text-xs">
                             <Button 

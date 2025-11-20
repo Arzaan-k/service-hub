@@ -283,11 +283,45 @@ export class DatabaseStorage implements IStorage {
     if (!container) return container;
 
     // Parse decimal fields from strings to numbers
-    const parsedContainer = {
+    const parsedContainer: any = {
       ...container,
       locationLat: container.locationLat ? parseFloat(container.locationLat as string) : undefined,
       locationLng: container.locationLng ? parseFloat(container.locationLng as string) : undefined
     };
+
+    // Add camelCase aliases for frontend compatibility
+    parsedContainer.containerCode = parsedContainer.container_id || parsedContainer.containerCode;
+    parsedContainer.productType = parsedContainer.product_type || parsedContainer.productType;
+    parsedContainer.sizeType = parsedContainer.size_type || parsedContainer.sizeType;
+    parsedContainer.groupName = parsedContainer.group_name || parsedContainer.groupName;
+    parsedContainer.gkuProductName = parsedContainer.gku_product_name || parsedContainer.gkuProductName;
+    parsedContainer.availableLocation = parsedContainer.available_location || parsedContainer.availableLocation;
+    parsedContainer.mfgYear = parsedContainer.mfg_year || parsedContainer.mfgYear;
+    parsedContainer.inventoryStatus = parsedContainer.inventory_status || parsedContainer.inventoryStatus;
+    parsedContainer.reeferUnit = parsedContainer.reefer_unit || parsedContainer.reeferUnit;
+    parsedContainer.reeferModel = parsedContainer.reefer_model || parsedContainer.reeferModel;
+    parsedContainer.reeferUnitModelName = parsedContainer.reefer_unit_model_name || parsedContainer.reeferUnitModelName;
+    parsedContainer.reeferUnitSerialNo = parsedContainer.reefer_unit_serial_no || parsedContainer.reeferUnitSerialNo;
+    parsedContainer.imageLinks = parsedContainer.images_pti_survey || parsedContainer.image_links || parsedContainer.imageLinks;
+    parsedContainer.masterSheetData = parsedContainer.master_sheet_data || parsedContainer.masterSheetData;
+    parsedContainer.containerNo = parsedContainer.container_no || parsedContainer.containerNo;
+    parsedContainer.controllerConfigurationNumber = parsedContainer.controller_configuration_number || parsedContainer.controllerConfigurationNumber;
+    parsedContainer.controllerVersion = parsedContainer.controller_version || parsedContainer.controllerVersion;
+    parsedContainer.cityOfPurchase = parsedContainer.city_of_purchase || parsedContainer.cityOfPurchase;
+    parsedContainer.purchaseYardDetails = parsedContainer.purchase_yard_details || parsedContainer.purchaseYardDetails;
+    parsedContainer.dispatchLocation = parsedContainer.dispatch_location || parsedContainer.dispatchLocation;
+    parsedContainer.dispatchDate = parsedContainer.dispatch_date || parsedContainer.dispatchDate;
+    parsedContainer.croNumber = parsedContainer.cro_number || parsedContainer.croNumber;
+    parsedContainer.brandNewUsed = parsedContainer.brand_new_used || parsedContainer.brandNewUsed;
+    parsedContainer.inHouseRunTestReport = parsedContainer.in_house_run_test_report || parsedContainer.inHouseRunTestReport;
+    parsedContainer.repairRemarks = parsedContainer.repair_remarks || parsedContainer.repairRemarks;
+    parsedContainer.estimatedCostForRepair = parsedContainer.estimated_cost_for_repair || parsedContainer.estimatedCostForRepair;
+    parsedContainer.logoSticker = parsedContainer.logo_sticker || parsedContainer.logoSticker;
+
+    // Add excelMetadata from excel_metadata if exists
+    if (parsedContainer.excel_metadata && !parsedContainer.excelMetadata) {
+      parsedContainer.excelMetadata = parsedContainer.excel_metadata;
+    }
 
     // Ensure container has currentLocation data for map display
     if (!parsedContainer.currentLocation) {
