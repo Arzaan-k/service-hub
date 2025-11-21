@@ -4763,6 +4763,16 @@ async function handleContainerVerification(text: string, from: string, user: any
     if (container) {
       console.log(`[WhatsApp] Container ${containerNumber} found for customer ${container.currentCustomerId}`);
 
+      // If container exists but is not assigned to any company/customer, block the flow
+      if (!container.currentCustomerId) {
+        console.log(`[WhatsApp] Container ${containerNumber} is not assigned to any company. Blocking flow.`);
+        await sendTextMessage(
+          from,
+          `Container not assigned to any company\n\nContainer ${containerNumber} is not currently assigned to a company. Please contact support at *+91 8655997229* to assign this container first.`
+        );
+        return;
+      }
+
       // Get current selected containers list
       const selectedContainers = conversationState.selectedContainers || [];
       const verifiedCustomerId = conversationState.verifiedCustomerId;
@@ -4865,7 +4875,7 @@ async function handleContainerVerification(text: string, from: string, user: any
         // Second failed attempt - ask to contact support
         await sendTextMessage(
           from,
-          `Container number not found.\n\nPlease contact support at *+917021307474* for assistance.`
+          `Container number not found.\n\nPlease contact support at *+91 8655997229* for assistance.`
         );
 
         // Reset flow
@@ -4995,7 +5005,7 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
       from,
       `${getProgressIndicator('awaiting_onsite_contact')}` +
       `📞 *Onsite contact phone number?*\n\n` +
-      `Please provide the onsite contact phone number (10 digits). This should be the person available at the site. You may share your own number if appropriate: *${from}*`
+      `Please provide the onsite contact phone number . This should be the person available at the site. You may share your own number if appropriate: *${from}*`
     );
     return;
   }
@@ -5007,17 +5017,18 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
       return;
     }
 
-    // Validate phone number format (10 digits)
-    const phoneDigits = text.trim().replace(/\D/g, ''); // Remove non-digits
-    if (phoneDigits.length !== 10) {
+    // Validate phone number format (10-12 digits, accept prefixes like +91)
+    const digitsOnly = text.trim().replace(/\D/g, ''); // Remove non-digits
+    if (digitsOnly.length < 10 || digitsOnly.length > 12) {
       await sendTextMessage(
         from,
-        `❌ Please enter a valid 10-digit phone number using numbers only (e.g., *9876543210*).\n\n` +
+        `❌ Please enter a valid phone number using 10 to 12 digits (e.g., *+91 9876543210*).\n\n` +
         `You entered: ${text.trim()}\n` +
-        `Digits found: ${phoneDigits.length}`
+        `Digits found: ${digitsOnly.length}`
       );
       return;
     }
+    const phoneDigits = digitsOnly.slice(-10); // Use last 10 digits
 
     await storage.updateWhatsappSession(session.id, {
       conversationState: {
