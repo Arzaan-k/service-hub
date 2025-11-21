@@ -14,9 +14,7 @@ import {
   sendListMessage,
   authorizeWhatsAppMessage,
   updateWhatsAppTemplate,
-  handleWebhook as handleWebhookHelper,
-  formatOnsiteContactDisplay,
-  formatPreferredContactDisplay
+  handleWebhook as handleWebhookHelper
 } from './whatsapp-helpers';
 // Re-export helpers so other modules can import from './whatsapp'
 export {
@@ -40,9 +38,7 @@ export {
   sendTechnicianSchedule,
   sendServiceStartPrompt,
   sendServiceCompletePrompt,
-  sendCustomerFeedbackRequest,
-  formatOnsiteContactDisplay,
-  formatPreferredContactDisplay
+  sendCustomerFeedbackRequest
 } from './whatsapp-helpers';
 
 // Import technician flow handlers
@@ -148,14 +144,14 @@ function isRoleTestNumber(input: string): boolean {
  */
 function getProgressIndicator(step: string): string {
   const steps: Record<string, { current: number; total: number; emoji: string; title: string }> = {
-    'awaiting_error_code': { current: 1, total: 8, emoji: '⚠️', title: 'Error Code' },
-    'awaiting_description': { current: 2, total: 8, emoji: '📝', title: 'Issue Description' },
-    'awaiting_photos': { current: 3, total: 8, emoji: '📸', title: 'Photo Upload' },
-    'awaiting_videos': { current: 4, total: 8, emoji: '🎥', title: 'Video Upload' },
-    'awaiting_company_name': { current: 5, total: 8, emoji: '🏢', title: 'Company Name' },
-    'awaiting_onsite_contact': { current: 6, total: 8, emoji: '👤', title: 'Onsite Contact' },
-    'awaiting_site_address': { current: 7, total: 8, emoji: '📍', title: 'Site Address' },
-    'awaiting_preferred_contact': { current: 8, total: 8, emoji: '📅', title: 'Preferred Contact' }
+    'awaiting_container_number': { current: 1, total: 8, emoji: '📦', title: 'Container Selection' },
+    'awaiting_error_code': { current: 2, total: 8, emoji: '⚠️', title: 'Error Code' },
+    'awaiting_description': { current: 3, total: 8, emoji: '📝', title: 'Issue Description' },
+    'awaiting_photos': { current: 4, total: 8, emoji: '📸', title: 'Photo Upload' },
+    'awaiting_videos': { current: 5, total: 8, emoji: '🎥', title: 'Video Upload' },
+    'awaiting_company_name': { current: 6, total: 8, emoji: '🏢', title: 'Company Name' },
+    'awaiting_onsite_contact': { current: 7, total: 8, emoji: '📞', title: 'Onsite Contact' },
+    'awaiting_site_address': { current: 8, total: 8, emoji: '📍', title: 'Site Address' }
   };
 
   const info = steps[step];
@@ -163,39 +159,6 @@ function getProgressIndicator(step: string): string {
 
   const progressBar = '▓'.repeat(info.current) + '░'.repeat(info.total - info.current);
   return `${info.emoji} *Step ${info.current}/${info.total}: ${info.title}*\n${progressBar}\n\n`;
-}
-
-function cleanOnsiteContactDigits(text: string): string {
-  return text.replace(/\D/g, '');
-}
-
-function isValidOnsiteContactPhone(digits: string): boolean {
-  return digits.length >= 7 && digits.length <= 15;
-}
-
-function normalizeSiteAddressInput(text: string): string {
-  return text.trim().replace(/\s+/g, ' ');
-}
-
-async function promptCompanyNameInput(from: string): Promise<void> {
-  await sendTextMessage(
-    from,
-    `${getProgressIndicator('awaiting_company_name')} *What's the company name at the site?* \n\nPlease provide the full company name.`
-  );
-}
-
-async function promptOnsiteContactPhoneInput(from: string, userPhone: string): Promise<void> {
-  await sendTextMessage(
-    from,
-    `${getProgressIndicator('awaiting_onsite_contact')} *Onsite contact phone number?* \n\nThis is the person/technician at the site. Can be your number: ${userPhone}`
-  );
-}
-
-async function promptSiteAddressInput(from: string): Promise<void> {
-  await sendTextMessage(
-    from,
-    `${getProgressIndicator('awaiting_site_address')} *Site address (street, city, landmarks)?* \n\nFull address helps us route the technician accurately.`
-  );
 }
 
 async function sendRealClientMenu(to: string, user?: any, customer?: any, selectedContainers?: any[]): Promise<void> {
@@ -604,14 +567,32 @@ async function handleRealClientRequestService(from: string, user: any, session: 
         `Type the error code (e.g., E407), or reply *NA* if no error code.`
       );
       
-      // Send reference video
+      // Send reference videos to help client identify error codes
       await sendTextMessage(
         from,
-        `🎥 *Reference Video:*\nHere's a helpful video showing where to find error codes on your container:`
+        `🎥 *Reference Videos:*\nHere are helpful videos showing where to find error codes on different container types:`
       );
-      
-      const videoLink = 'https://media.istockphoto.com/id/1332047605/video/error-system-failure-emergency-error-glitchloop-animation.mp4?s=mp4-640x640-is&k=20&c=YTsQNFseW-7-T1DNpSb9f2gtdDEc1cx7zGn3OpT5E9A=';
-      await sendVideoMessage(from, videoLink, '🎬 Error Code Reference Video');
+
+      // Video 1: Carrier Unit
+      await sendVideoMessage(
+        from,
+        'https://res.cloudinary.com/dsnzo163t/video/upload/v1763700758/How_to_check_alarm_in_carrier_unit_bxqqzg.mp4',
+        '🎥 How to check alarm in Carrier unit'
+      );
+
+      // Video 2: Thermoking MP-4000 Unit
+      await sendVideoMessage(
+        from,
+        'https://res.cloudinary.com/dsnzo163t/video/upload/v1/How_to_check_alaram_in_mp_4000_unit_tharmoking_njc1pe.mp4',
+        '🎥 How to check alarm in MP-4000 unit (Thermoking)'
+      );
+
+      // Video 3: Daikin Unit
+      await sendVideoMessage(
+        from,
+        'https://res.cloudinary.com/dsnzo163t/video/upload/v1/How_to_check_return_temperature_supply_temperature_alarm_in_daikin_unit_nwaxew.mp4',
+        '🎥 How to check return/supply temperature alarm in Daikin unit'
+      );
       
       return;
     }
@@ -742,17 +723,32 @@ async function handleErrorCodeInput(errorCode: string, from: string, user: any, 
       }
     });
 
-    // If error code is NA, send reference video
+    // If error code is NA, send reference videos
     if (errorCode.toUpperCase() === 'NA') {
       await sendTextMessage(
         from,
-        `✅ No error code noted.\n\n🎥 *Here's a reference video to help identify error codes:*`
+        `✅ No error code noted.\n\n🎥 *Here are reference videos to help identify error codes:*`
       );
       
+      // Video 1: Carrier Unit
       await sendVideoMessage(
         from,
-        'https://media.istockphoto.com/id/1332047605/video/error-system-failure-emergency-error-glitchloop-animation.mp4?s=mp4-640x640-is&k=20&c=YTsQNFseW-7-T1DNpSb9f2gtdDEc1cx7zGn3OpT5E9A=',
-        '🎥 Error Code Reference Video'
+        'https://res.cloudinary.com/dsnzo163t/video/upload/v1763700758/How_to_check_alarm_in_carrier_unit_bxqqzg.mp4',
+        '🎥 How to check alarm in Carrier unit'
+      );
+
+      // Video 2: Thermoking MP-4000 Unit
+      await sendVideoMessage(
+        from,
+        'https://res.cloudinary.com/dsnzo163t/video/upload/v1/How_to_check_alaram_in_mp_4000_unit_tharmoking_njc1pe.mp4',
+        '🎥 How to check alarm in MP-4000 unit (Thermoking)'
+      );
+
+      // Video 3: Daikin Unit
+      await sendVideoMessage(
+        from,
+        'https://res.cloudinary.com/dsnzo163t/video/upload/v1/How_to_check_return_temperature_supply_temperature_alarm_in_daikin_unit_nwaxew.mp4',
+        '🎥 How to check return/supply temperature alarm in Daikin unit'
       );
     } else {
       await sendTextMessage(
@@ -906,6 +902,25 @@ async function promptPreferredContactDate(from: string, user: any): Promise<void
   );
 }
 
+function formatPreferredContactDisplay(value: string | undefined | null): string {
+  if (!value) return 'Not provided';
+
+  const lower = value.toLowerCase();
+  if (lower === 'no preference') {
+    return 'No preference';
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
+    });
+  }
+
+  return value;
+}
 
 async function finalizePreferredContactSelection(rawValue: string, from: string, user: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
@@ -939,33 +954,40 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
   try {
     const conversationState = session.conversationState || {};
     const {
-      selectedContainers,
-      errorCode,
       issueDescription,
+      errorCode,
       beforePhotos,
+      selectedContainers,
       videos,
-      customerId,
+      customerId: sessionCustomerId,
       preferredContactDate,
-      companyConfirmation,
-      onsiteContactPhone,
-      onsiteContactPhoneDigits,
+      companyName,
+      onsiteContact,
       siteAddress
     } = conversationState;
 
     console.log('[WhatsApp] Creating service request from WhatsApp:', {
       userId: user.id,
       phoneNumber: from,
-      customerId,
+      sessionCustomerId,
       selectedContainers,
       errorCode,
       photoCount: beforePhotos?.length || 0,
       videoCount: videos?.length || 0,
-      preferredContactDate,
-      companyConfirmation,
-      onsiteContactPhone,
-      onsiteContactPhoneDigits,
-      siteAddress
+      preferredContactDate
     });
+
+    // Determine the correct customer ID from the selected container (primary source of truth)
+    let customerId = sessionCustomerId;
+    
+    if (selectedContainers && selectedContainers.length > 0) {
+      const firstContainer = selectedContainers[0];
+      // Handle both object format (new) and potential string format (old/fallback)
+      if (typeof firstContainer === 'object' && firstContainer.customerId) {
+        customerId = firstContainer.customerId;
+        console.log(`[WhatsApp] Using customer ID from selected container: ${customerId}`);
+      }
+    }
 
     if (!preferredContactDate) {
       console.warn('[WhatsApp] Preferred contact date missing, prompting user before creating request');
@@ -1059,14 +1081,20 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       fullDescription += `\nAdditional Containers: ${otherContainers.map(c => c.containerCode).join(', ')}`;
     }
 
-    if (companyConfirmation) {
-      fullDescription += `\n\n🏢 Company (WhatsApp): ${companyConfirmation}`;
+    // Add site information
+    if (companyName) {
+      fullDescription += `\n\n🏢 Company Name: ${companyName}`;
     }
-    fullDescription += `\n👤 Onsite Contact: ${formatOnsiteContactDisplay(onsiteContactPhone, onsiteContactPhoneDigits)}`;
+    if (onsiteContact) {
+      fullDescription += `\n📞 Onsite Contact: ${onsiteContact}`;
+    }
     if (siteAddress) {
       fullDescription += `\n📍 Site Address: ${siteAddress}`;
     }
-    fullDescription += `\n☎️ Preferred Technician Call: ${formatPreferredContactDisplay(preferredContactDate)}`;
+
+    if (preferredContactDate) {
+      fullDescription += `\n\n☎️ Preferred Technician Call: ${formatPreferredContactDisplay(preferredContactDate)}`;
+    }
 
     console.log(`[WhatsApp] Creating SINGLE service request for ${validContainers.length} container(s):`, {
       primaryContainerId: primaryContainer.id,
@@ -1137,25 +1165,36 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
     const photoCount = beforePhotos?.length || 0;
     const videoCount = videos?.length || 0;
 
-    await sendTextMessage(
-      from,
-      `✅ *Service Request Created Successfully!*\n\n` +
+    // Build confirmation message with all collected information
+    let confirmationMessage = `✅ *Service Request Created Successfully!*\n\n` +
       `📋 *Request Number:* ${serviceRequest.requestNumber}\n` +
       `📦 *Container${validContainers.length > 1 ? 's' : ''}:* ${containerNames.join(', ')}\n` +
-      `⚠️ *Error Code:* ${errorCode || 'None'}\n` +
-      `🏢 *Company:* ${companyConfirmation || 'N/A'}\n` +
-      `👤 *Onsite Contact:* ${formatOnsiteContactDisplay(onsiteContactPhone, onsiteContactPhoneDigits)}\n` +
-      `📍 *Site Address:* ${siteAddress || 'N/A'}\n` +
-      `📸 *Photos:* ${photoCount}\n` +
+      `⚠️ *Error Code:* ${errorCode || 'None'}\n`;
+    
+    // Add site information if provided
+    if (companyName) {
+      confirmationMessage += `🏢 *Company:* ${companyName}\n`;
+    }
+    if (onsiteContact) {
+      confirmationMessage += `📞 *Onsite Contact:* ${onsiteContact}\n`;
+    }
+    if (siteAddress) {
+      confirmationMessage += `📍 *Site Address:* ${siteAddress}\n`;
+    }
+    
+    confirmationMessage += `📸 *Photos:* ${photoCount}\n` +
       `🎥 *Videos:* ${videoCount}\n\n` +
       `✅ *What happens next?*\n` +
       `• Our team will review your request\n` +
       `• A technician will be assigned\n` +
       `• You'll receive updates via WhatsApp\n\n` +
-      `Type *hi* to return to menu or *status* to check progress.`
-    );
+      `Type *hi* to return to menu or *status* to check progress.`;
+
+    await sendTextMessage(from, confirmationMessage);
 
     console.log('[WhatsApp] ✅ Service request flow completed successfully');
+
+    // Don't show menu again - user can type 'hi' if needed (as mentioned in confirmation)
 
   } catch (error: any) {
     console.error('[WhatsApp] CRITICAL ERROR in createServiceRequestFromWhatsApp:', {
@@ -2163,22 +2202,37 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
       `Type the error code (e.g., E407), or reply *NA* if no error code.`
     );
 
-    // Send reference video to help client identify error codes
+    // Send reference videos to help client identify error codes
     await sendTextMessage(
       from,
-      `🎥 *Reference Video:*\nHere's a helpful video showing where to find error codes on your container:`
+      `🎥 *Reference Videos:*\nHere are helpful videos showing where to find error codes on different container types:`
     );
 
+    // Video 1: Carrier Unit
     await sendVideoMessage(
       from,
-      'https://media.istockphoto.com/id/1332047605/video/error-system-failure-emergency-error-glitchloop-animation.mp4?s=mp4-640x640-is&k=20&c=YTsQNFseW-7-T1DNpSb9f2gtdDEc1cx7zGn3OpT5E9A=',
-      '🎥 Error Code Reference Video'
+      'https://res.cloudinary.com/dsnzo163t/video/upload/v1763700758/How_to_check_alarm_in_carrier_unit_bxqqzg.mp4',
+      '🎥 How to check alarm in Carrier unit'
+    );
+
+    // Video 2: Thermoking MP-4000 Unit
+    await sendVideoMessage(
+      from,
+      'https://res.cloudinary.com/dsnzo163t/video/upload/v1/How_to_check_alaram_in_mp_4000_unit_tharmoking_njc1pe.mp4',
+      '🎥 How to check alarm in MP-4000 unit (Thermoking)'
+    );
+
+    // Video 3: Daikin Unit
+    await sendVideoMessage(
+      from,
+      'https://res.cloudinary.com/dsnzo163t/video/upload/v1/How_to_check_return_temperature_supply_temperature_alarm_in_daikin_unit_nwaxew.mp4',
+      '🎥 How to check return/supply temperature alarm in Daikin unit'
     );
 
     return;
   }
 
-  if (user.role === 'client' || user.role === 'admin' || (isTestNumber && session.conversationState?.testingRole === 'client')) {
+  if (user.role === 'client' || (isTestNumber && session.conversationState?.testingRole === 'client')) {
     await handleClientButtonClick(buttonId, from, user, session, conversationState);
   } else if (user.role === 'technician' || (isTestNumber && session.conversationState?.testingRole === 'technician')) {
     await handleTechnicianButtonClick(buttonId, from, user, session, conversationState);
@@ -4561,7 +4615,7 @@ async function handleTextMessage(message: any, user: any, session: any): Promise
     try {
       console.log(`[WhatsApp] 🎯 Routing to ${user.role.toUpperCase()} flow...`);
       
-      if (user.role === 'client' || user.role === 'admin') {
+      if (user.role === 'client') {
         console.log(`[WhatsApp] 📱 Starting CLIENT MODE for ${from}`);
         // For clients, ask for container number first
         const { storage } = await import('../storage');
@@ -4882,7 +4936,7 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
         `${getProgressIndicator('awaiting_videos')}` +
         `✅ Photos received (${beforePhotos.length}).\n\n` +
         `🎥 *Please attach a short video showing the issue.*\n\n` +
-        `💡 Video upload is mandatory.\n\n` +
+        `💡 Video is optional but helpful.\n\n` +
         `Send the video, then type *DONE* to submit.`
       );
     } else {
@@ -4894,16 +4948,6 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
   // Handle DONE command after video uploads
   if (conversationState.step === 'awaiting_videos') {
     if (text.toUpperCase() === 'DONE') {
-      const videos = conversationState.videos || [];
-      
-      if (videos.length === 0) {
-        await sendTextMessage(
-          from,
-          `${getProgressIndicator('awaiting_videos')} *Video upload is mandatory.*\n\nPlease send at least one video showing the issue, then type *DONE* to proceed.`
-        );
-        return;
-      }
-      
       await storage.updateWhatsappSession(session.id, {
         conversationState: {
           ...conversationState,
@@ -4914,83 +4958,110 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
         ...conversationState,
         step: 'awaiting_company_name'
       };
-      await promptCompanyNameInput(from);
+      
+      await sendTextMessage(
+        from,
+        `${getProgressIndicator('awaiting_company_name')}` +
+        `🏢 *What's the company name at the site?*\n\n` +
+        `Please provide the full company name.`
+      );
     } else {
-      await sendTextMessage(from, `${getProgressIndicator('awaiting_videos')} *Video received.* Send more or type *DONE* when ready to proceed.`);
+      await sendTextMessage(from, '🎥 Please send a video or type *DONE* to continue.');
     }
     return;
   }
 
+  // Handle company name input
   if (conversationState.step === 'awaiting_company_name') {
-    const companyInput = text.trim();
-    if (companyInput.length < 2) {
-      await sendTextMessage(from, '🏢 Company name must be at least 2 characters. Please re-enter.');
+    if (!text || text.trim().length === 0) {
+      await sendTextMessage(from, '❌ Please provide the company name.');
       return;
     }
 
-    const updatedState = {
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        companyName: text.trim(),
+        step: 'awaiting_onsite_contact'
+      }
+    });
+    session.conversationState = {
       ...conversationState,
-      companyConfirmation: companyInput,
+      companyName: text.trim(),
       step: 'awaiting_onsite_contact'
     };
 
-    await storage.updateWhatsappSession(session.id, {
-      conversationState: updatedState
-    });
-    session.conversationState = updatedState;
-
-    await promptOnsiteContactPhoneInput(from, user.phoneNumber || from);
+    await sendTextMessage(
+      from,
+      `${getProgressIndicator('awaiting_onsite_contact')}` +
+      `📞 *Onsite contact phone number?*\n\n` +
+      `Please provide the onsite contact phone number (10 digits). This should be the person available at the site. You may share your own number if appropriate: *${from}*`
+    );
     return;
   }
 
+  // Handle onsite contact input
   if (conversationState.step === 'awaiting_onsite_contact') {
-    const digits = cleanOnsiteContactDigits(text);
-    if (!isValidOnsiteContactPhone(digits)) {
+    if (!text || text.trim().length === 0) {
+      await sendTextMessage(from, '❌ Please provide the onsite contact number.');
+      return;
+    }
+
+    // Validate phone number format (10 digits)
+    const phoneDigits = text.trim().replace(/\D/g, ''); // Remove non-digits
+    if (phoneDigits.length !== 10) {
       await sendTextMessage(
         from,
-        '📞 Please provide a valid phone number with 7-15 digits (e.g., +1 415 555 0101).'
+        `❌ Please enter a valid 10-digit phone number using numbers only (e.g., *9876543210*).\n\n` +
+        `You entered: ${text.trim()}\n` +
+        `Digits found: ${phoneDigits.length}`
       );
       return;
     }
 
-    const updatedState = {
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        onsiteContact: phoneDigits, // Store cleaned phone number
+        step: 'awaiting_site_address'
+      }
+    });
+    session.conversationState = {
       ...conversationState,
-      onsiteContactPhone: text.trim(),
-      onsiteContactPhoneDigits: digits,
+      onsiteContact: phoneDigits,
       step: 'awaiting_site_address'
     };
 
-    await storage.updateWhatsappSession(session.id, {
-      conversationState: updatedState
-    });
-    session.conversationState = updatedState;
-
-    await promptSiteAddressInput(from);
+    await sendTextMessage(
+      from,
+      `${getProgressIndicator('awaiting_site_address')}` +
+      `📍 *Site address (street, city, landmarks)?*\n\n` +
+      `Full address helps us route the technician accurately.`
+    );
     return;
   }
 
+  // Handle site address input
   if (conversationState.step === 'awaiting_site_address') {
-    const normalizedAddress = normalizeSiteAddressInput(text);
-    if (normalizedAddress.length < 5) {
-      await sendTextMessage(
-        from,
-        '📍 Address looks too short. Please include street, city, and any landmark (minimum 5 characters).'
-      );
+    if (!text || text.trim().length === 0) {
+      await sendTextMessage(from, '❌ Please provide the site address.');
       return;
     }
 
-    const updatedState = {
+    await storage.updateWhatsappSession(session.id, {
+      conversationState: {
+        ...conversationState,
+        siteAddress: text.trim(),
+        step: 'awaiting_preferred_contact'
+      }
+    });
+    session.conversationState = {
       ...conversationState,
-      siteAddress: normalizedAddress,
+      siteAddress: text.trim(),
       step: 'awaiting_preferred_contact'
     };
 
-    await storage.updateWhatsappSession(session.id, {
-      conversationState: updatedState
-    });
-    session.conversationState = updatedState;
-
-    await promptPreferredContactDate(from, user); // Assume this exists
+    await promptPreferredContactDate(from, user);
     return;
   }
 

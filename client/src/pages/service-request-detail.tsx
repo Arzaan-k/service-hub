@@ -75,8 +75,9 @@ export default function ServiceRequestDetail() {
     enabled: !!id,
   });
 
-  const { data: inventory } = useQuery({
+  const { data: inventory } = useQuery<InventoryItem[]>({
     queryKey: ["/api/inventory"],
+    queryFn: async () => (await apiRequest("GET", "/api/inventory")).json(),
     enabled: isInventoryDialogOpen,
   });
 
