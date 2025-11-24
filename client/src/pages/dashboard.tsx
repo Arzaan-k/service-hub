@@ -132,14 +132,14 @@ export default function Dashboard() {
       } catch {}
     };
 
-    websocket.on("alert_created", () => {
+    const onAlertCreated = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-    });
+    };
 
-    websocket.on("container_created", () => {
+    const onContainerCreated = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-    });
+    };
 
     // Handle Orbcomm real-time container updates
     const onContainerUpdate = (payload: any) => {
@@ -172,13 +172,37 @@ export default function Dashboard() {
       }
     };
 
+    const onServiceRequestAssigned = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+    };
+
+    const onServiceRequestStarted = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+    };
+
+    const onServiceRequestCompleted = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    };
+
+    websocket.on("alert_created", onAlertCreated);
+    websocket.on("container_created", onContainerCreated);
+    websocket.on("service_request_assigned", onServiceRequestAssigned);
+    websocket.on("service_request_started", onServiceRequestStarted);
+    websocket.on("service_request_completed", onServiceRequestCompleted);
     websocket.on("device_update", onDeviceUpdate);
     websocket.on("container_location_update", onContainerLocUpdate);
     websocket.on("container_update", onContainerUpdate);
 
     return () => {
-      websocket.off("alert_created");
-      websocket.off("container_created");
+      websocket.off("alert_created", onAlertCreated);
+      websocket.off("container_created", onContainerCreated);
+      websocket.off("service_request_assigned", onServiceRequestAssigned);
+      websocket.off("service_request_started", onServiceRequestStarted);
+      websocket.off("service_request_completed", onServiceRequestCompleted);
       websocket.off("device_update", onDeviceUpdate);
       websocket.off("container_location_update", onContainerLocUpdate);
       websocket.off("container_update", onContainerUpdate);
