@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GlassCard } from "@/components/ui/animated-card";
 import { Button } from "@/components/ui/button";
 import { MapPin, RefreshCw, Eye, EyeOff, Filter, Globe } from "lucide-react";
 
@@ -67,7 +68,7 @@ const GLOBAL_PORTS = [
   { name: "Colombo", country: "Sri Lanka", lat: 6.9271, lng: 79.8612 },
   { name: "Karachi", country: "Pakistan", lat: 24.8607, lng: 67.0011 },
   { name: "Chittagong", country: "Bangladesh", lat: 22.3569, lng: 91.7832 },
-  
+
   // Europe
   { name: "Rotterdam", country: "Netherlands", lat: 51.9244, lng: 4.4777 },
   { name: "Antwerp", country: "Belgium", lat: 51.2194, lng: 4.4025 },
@@ -97,7 +98,7 @@ const GLOBAL_PORTS = [
   { name: "Istanbul", country: "Turkey", lat: 41.0082, lng: 28.9784 },
   { name: "Piraeus", country: "Greece", lat: 37.9755, lng: 23.7348 },
   { name: "Thessaloniki", country: "Greece", lat: 40.6401, lng: 22.9444 },
-  
+
   // North America
   { name: "Los Angeles", country: "USA", lat: 33.7175, lng: -118.2726 },
   { name: "Long Beach", country: "USA", lat: 33.7701, lng: -118.1937 },
@@ -117,7 +118,7 @@ const GLOBAL_PORTS = [
   { name: "New Orleans", country: "USA", lat: 29.9511, lng: -90.0715 },
   { name: "Montreal", country: "Canada", lat: 45.5017, lng: -73.5673 },
   { name: "Halifax", country: "Canada", lat: 44.6488, lng: -63.5752 },
-  
+
   // South America
   { name: "Santos", country: "Brazil", lat: -23.9608, lng: -46.3331 },
   { name: "Rio de Janeiro", country: "Brazil", lat: -22.9068, lng: -43.1729 },
@@ -127,7 +128,7 @@ const GLOBAL_PORTS = [
   { name: "Cartagena", country: "Colombia", lat: 10.3910, lng: -75.4794 },
   { name: "Guayaquil", country: "Ecuador", lat: -2.1894, lng: -79.8890 },
   { name: "Montevideo", country: "Uruguay", lat: -34.9011, lng: -56.1645 },
-  
+
   // Africa
   { name: "Cape Town", country: "South Africa", lat: -33.9249, lng: 18.4241 },
   { name: "Durban", country: "South Africa", lat: -29.8587, lng: 31.0218 },
@@ -141,7 +142,7 @@ const GLOBAL_PORTS = [
   { name: "Port Said", country: "Egypt", lat: 31.2653, lng: 32.3019 },
   { name: "Mombasa", country: "Kenya", lat: -4.0435, lng: 39.6682 },
   { name: "Dar es Salaam", country: "Tanzania", lat: -6.7924, lng: 39.2083 },
-  
+
   // Oceania
   { name: "Sydney", country: "Australia", lat: -33.8688, lng: 151.2093 },
   { name: "Melbourne", country: "Australia", lat: -37.8136, lng: 144.9631 },
@@ -251,7 +252,7 @@ GLOBAL_PORTS.forEach(port => {
     name: port.name,
     country: port.country
   };
-  
+
   // Also add country-based mapping
   const countryKey = port.country.toLowerCase().replace(/\s+/g, '');
   if (!LOCATION_MAPPING[countryKey]) {
@@ -300,11 +301,11 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         const m = new Map<string, { lat: number; lng: number; name: string; country: string }>(Object.entries(obj));
         resolvedCacheRef.current = m;
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
-    try { localStorage.setItem('map_region', region); } catch {}
+    try { localStorage.setItem('map_region', region); } catch { }
   }, [region]);
 
   const persistCache = () => {
@@ -312,7 +313,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
       const obj: Record<string, { lat: number; lng: number; name: string; country: string }> = {};
       resolvedCacheRef.current.forEach((v, k) => { obj[k] = v; });
       localStorage.setItem(CACHE_KEY, JSON.stringify(obj));
-    } catch {}
+    } catch { }
   };
 
   // Heuristic: determine if the location/depot is most likely in India
@@ -320,11 +321,11 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
     const text = `${location} ${depot}`.toLowerCase();
     // If explicit non-India country is present, bail out early
     const nonIndiaCountries = [
-      'nigeria','ghana','kenya','tanzania','egypt','morocco','senegal','ivory coast','cote d ivoire',
-      'south africa','uae','united arab emirates','qatar','saudi','oman','kuwait',
-      'spain','france','italy','uk','united kingdom','germany','poland','russia','turkey','greece',
-      'usa','united states','canada','mexico','brazil','argentina','chile','peru',
-      'australia','new zealand','japan','korea','china','taiwan','singapore','malaysia','indonesia','vietnam','thailand','philippines','sri lanka','pakistan','bangladesh'
+      'nigeria', 'ghana', 'kenya', 'tanzania', 'egypt', 'morocco', 'senegal', 'ivory coast', 'cote d ivoire',
+      'south africa', 'uae', 'united arab emirates', 'qatar', 'saudi', 'oman', 'kuwait',
+      'spain', 'france', 'italy', 'uk', 'united kingdom', 'germany', 'poland', 'russia', 'turkey', 'greece',
+      'usa', 'united states', 'canada', 'mexico', 'brazil', 'argentina', 'chile', 'peru',
+      'australia', 'new zealand', 'japan', 'korea', 'china', 'taiwan', 'singapore', 'malaysia', 'indonesia', 'vietnam', 'thailand', 'philippines', 'sri lanka', 'pakistan', 'bangladesh'
     ];
     if (nonIndiaCountries.some(c => text.includes(c))) return false;
 
@@ -332,10 +333,10 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
     const indiaMarkers = [
       'india',
       // frequent depot/city markers
-      'mumbai','jnpt','nhava','sheva','navi mumbai','thane','bhiwandi','borivali','taloja','panvel',
-      'pune','chakan','bengaluru','bangalore','hyderabad','visakhapatnam','vizag','solapur','anantapur','ananthapur',
-      'chennai','ennore','kattupalli','kochi','cochin','kolkata','howrah','ahmedabad','surat','vadodara','vapi',
-      'andhra','telangana','tamil nadu','maharashtra','gujarat','karnataka','kerala','west bengal','jharkhand','punjab'
+      'mumbai', 'jnpt', 'nhava', 'sheva', 'navi mumbai', 'thane', 'bhiwandi', 'borivali', 'taloja', 'panvel',
+      'pune', 'chakan', 'bengaluru', 'bangalore', 'hyderabad', 'visakhapatnam', 'vizag', 'solapur', 'anantapur', 'ananthapur',
+      'chennai', 'ennore', 'kattupalli', 'kochi', 'cochin', 'kolkata', 'howrah', 'ahmedabad', 'surat', 'vadodara', 'vapi',
+      'andhra', 'telangana', 'tamil nadu', 'maharashtra', 'gujarat', 'karnataka', 'kerala', 'west bengal', 'jharkhand', 'punjab'
     ];
     return indiaMarkers.some(k => text.includes(k));
   };
@@ -343,18 +344,18 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
   const isLikelyNonIndia = (location: string, depot: string) => {
     const text = `${location} ${depot}`.toLowerCase();
     const nonIndiaCountries = [
-      'nigeria','ghana','kenya','tanzania','egypt','morocco','senegal','ivory coast','cote d ivoire',
-      'south africa','uae','united arab emirates','qatar','saudi','oman','kuwait',
-      'spain','france','italy','uk','united kingdom','germany','poland','russia','turkey','greece',
-      'usa','united states','canada','mexico','brazil','argentina','chile','peru',
-      'australia','new zealand','japan','korea','china','taiwan','singapore','malaysia','indonesia','vietnam','thailand','philippines','sri lanka','pakistan','bangladesh'
+      'nigeria', 'ghana', 'kenya', 'tanzania', 'egypt', 'morocco', 'senegal', 'ivory coast', 'cote d ivoire',
+      'south africa', 'uae', 'united arab emirates', 'qatar', 'saudi', 'oman', 'kuwait',
+      'spain', 'france', 'italy', 'uk', 'united kingdom', 'germany', 'poland', 'russia', 'turkey', 'greece',
+      'usa', 'united states', 'canada', 'mexico', 'brazil', 'argentina', 'chile', 'peru',
+      'australia', 'new zealand', 'japan', 'korea', 'china', 'taiwan', 'singapore', 'malaysia', 'indonesia', 'vietnam', 'thailand', 'philippines', 'sri lanka', 'pakistan', 'bangladesh'
     ];
     const nonIndiaCities = [
-      'lagos','abuja','port harcourt','accra','tema','tamale','kumasi',
-      'doha','dubai','jebel ali','abu dhabi','riyadh','jeddah','dammam','muscat','kuwait city',
-      'paris','marseille','lyon','rome','milan','naples','madrid','barcelona','valencia','seville','london','manchester','birmingham','berlin','hamburg','munich','istanbul','athens',
-      'new york','los angeles','long beach','seattle','vancouver','montreal','toronto','mexico city','santos','rio de janeiro','buenos aires','lima','santiago',
-      'sydney','melbourne','auckland','tokyo','osaka','seoul','busan','shanghai','ningbo','tianjin','taipei','singapore','kuala lumpur','jakarta','ho chi minh','bangkok','manila'
+      'lagos', 'abuja', 'port harcourt', 'accra', 'tema', 'tamale', 'kumasi',
+      'doha', 'dubai', 'jebel ali', 'abu dhabi', 'riyadh', 'jeddah', 'dammam', 'muscat', 'kuwait city',
+      'paris', 'marseille', 'lyon', 'rome', 'milan', 'naples', 'madrid', 'barcelona', 'valencia', 'seville', 'london', 'manchester', 'birmingham', 'berlin', 'hamburg', 'munich', 'istanbul', 'athens',
+      'new york', 'los angeles', 'long beach', 'seattle', 'vancouver', 'montreal', 'toronto', 'mexico city', 'santos', 'rio de janeiro', 'buenos aires', 'lima', 'santiago',
+      'sydney', 'melbourne', 'auckland', 'tokyo', 'osaka', 'seoul', 'busan', 'shanghai', 'ningbo', 'tianjin', 'taipei', 'singapore', 'kuala lumpur', 'jakarta', 'ho chi minh', 'bangkok', 'manila'
     ];
     return nonIndiaCountries.some(c => text.includes(c)) || nonIndiaCities.some(c => text.includes(c));
   };
@@ -371,7 +372,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
     const locationKey = normalizeText(location);
     const depotKey = normalizeText(depot);
     const tokens = extractTokens(locationKey, depotKey);
-    
+
     // Check for your specific locations first
     if (locationKey.includes('nicon marine') || locationKey.includes('nicon')) {
       return {
@@ -381,7 +382,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         country: 'India'
       };
     }
-    
+
     if (locationKey.includes('zircon')) {
       return {
         lat: 13.2300,
@@ -390,7 +391,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         country: 'India'
       };
     }
-    
+
     // Check if depot is Chennai and use Chennai area coordinates
     if (region === 'india' && depotKey.includes('chennai')) {
       // Use different Chennai area coordinates based on location
@@ -418,10 +419,10 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         };
       }
     }
-    
+
     // Check for other known locations from your data
     const locationKeyClean = locationKey.replace(/\s+/g, '');
-    
+
     // If Google API is configured, skip hardcoded dictionary and rely on geocoding
     const GOOGLE_API_KEY = (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY;
     if (!GOOGLE_API_KEY && LOCATION_MAPPING[locationKeyClean]) {
@@ -438,10 +439,10 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         // Do not accept India match when an explicit non-India country is present
         // proceed to other checks
       } else {
-      return coords;
+        return coords;
       }
     }
-    
+
     // Try token-based dictionary lookup first
     for (const t of tokens) {
       const k = t.replace(/\s+/g, '');
@@ -468,7 +469,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
     if (locationKey.includes('ranchi') || locationKey.includes('jharkhand')) {
       return LOCATION_MAPPING['ranchi'] || { lat: 23.3441, lng: 85.3096, name: 'Ranchi, Jharkhand', country: 'India' };
     }
-    
+
     // If a state is mentioned, use state centroid
     for (const t of tokens) {
       if (INDIA_STATES[t]) {
@@ -488,7 +489,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         return { lat: s.lat, lng: s.lng, name: s.name, country: 'India' };
       }
     }
-    
+
     // Optional Google Geocoding fallback for higher accuracy when dictionary fails
     // Provide VITE_GOOGLE_MAPS_API_KEY in your env to enable
     if (GOOGLE_API_KEY) {
@@ -523,7 +524,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
             return coords;
           }
         }
-      } catch {}
+      } catch { }
     }
 
     // Free alternative: OpenStreetMap Nominatim (no key required)
@@ -576,14 +577,14 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
       const result = await callNominatim(false);
       if (result) {
         // If the token set contains strong India cities (vizag/visakhapatnam, baramati), override to India coordinates
-        const strongIndiaTokens = ['visakhapatnam','vizag','baramati','bengaluru','bangalore','chennai','mumbai','pune'];
+        const strongIndiaTokens = ['visakhapatnam', 'vizag', 'baramati', 'bengaluru', 'bangalore', 'chennai', 'mumbai', 'pune'];
         const tokenStr = `${locationKey} ${depotKey}`;
         const containsStrongIndia = strongIndiaTokens.some(t => tokenStr.includes(t));
         if (containsStrongIndia && result.country !== 'India') {
           // Override by returning dictionary coordinates for those cities
           const overrideKey = tokenStr.includes('vizag') || tokenStr.includes('visakhapatnam') ? 'visakhapatnam'
-                            : tokenStr.includes('baramati') ? 'baramati'
-                            : '';
+            : tokenStr.includes('baramati') ? 'baramati'
+              : '';
           if (overrideKey && LOCATION_MAPPING[overrideKey]) {
             const coords = LOCATION_MAPPING[overrideKey];
             resolvedCacheRef.current.set(cacheKey, coords);
@@ -601,8 +602,8 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
           return result;
         }
       }
-    } catch {}
-    
+    } catch { }
+
     // If all else fails, use a default location based on depot or India preference
     if ((region === 'india' && indiaPreferred) || depotKey.includes('india') || depotKey.includes('chennai')) {
       return {
@@ -612,7 +613,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         country: 'India'
       };
     }
-    
+
     // Default fallback - use neutral global centroid to avoid misleading placement
     const coords = {
       lat: 20.0,
@@ -631,7 +632,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
   useEffect(() => {
     const processContainers = async () => {
       if (!containers || containers.length === 0) return;
-      
+
       setIsLoading(true);
       const processedContainers: Container[] = [];
 
@@ -693,7 +694,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         const depot = container.excelMetadata?.depot || 'Unknown';
         const key = `${location}|${depot}`.toLowerCase();
         const coords = resolved.get(key);
-        
+
         if (coords) {
           processed.currentLocation = {
             lat: coords.lat,
@@ -719,7 +720,7 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
             if (!HAS_GOOGLE) { await new Promise(r => setTimeout(r, 600)); }
           }
           if (HAS_GOOGLE) { await new Promise(r => setTimeout(r, 80)); }
-          
+
           // Update containers with newly resolved coordinates
           setContainersWithLocations(containers.map(container => {
             const processed = { ...container };
@@ -741,14 +742,143 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
           }));
         }
       }
-    };
+      processContainers();
+    }, [containers, region]);
 
-    processContainers();
-  }, [containers, region]);
+  // Initialize Map
+  useEffect(() => {
+    if (!mapRef.current || !window.L) return;
+
+    if (!mapInstanceRef.current) {
+      const L = window.L;
+      const map = L.map(mapRef.current).setView([20.5937, 78.9629], 5); // Default to India
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      mapInstanceRef.current = map;
+    }
+
+    // Update markers
+    const map = mapInstanceRef.current;
+    const L = window.L;
+
+    // Clear existing markers
+    markersRef.current.forEach(marker => map.removeLayer(marker));
+    markersRef.current = [];
+
+    // Add new markers
+    const markers = L.markerClusterGroup ? L.markerClusterGroup() : L.layerGroup();
+
+    containersWithLocations.forEach(container => {
+      if (!container.currentLocation) return;
+
+      // Filter logic
+      if (filterStatus !== "all" && container.status?.toLowerCase() !== filterStatus) return;
+      if (filterDepot !== "all" && container.excelMetadata?.depot?.toLowerCase() !== filterDepot) return;
+
+      const { lat, lng, address } = container.currentLocation;
+
+      const markerColor = container.hasIot ? "blue" : "gray";
+      const markerHtml = `
+        <div style="
+          background-color: ${markerColor === 'blue' ? '#3B82F6' : '#6B7280'};
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          border: 2px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        "></div>
+      `;
+
+      const icon = L.divIcon({
+        className: "custom-marker",
+        html: markerHtml,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+      });
+
+      const marker = L.marker([lat, lng], { icon });
+
+      marker.bindPopup(`
+        <div class="p-2 min-w-[200px]">
+          <h3 class="font-bold text-sm mb-1">${container.containerCode}</h3>
+          <div class="text-xs space-y-1">
+            <p><span class="text-muted-foreground">Type:</span> ${container.type}</p>
+            <p><span class="text-muted-foreground">Status:</span> <span class="capitalize">${container.status}</span></p>
+            <p><span class="text-muted-foreground">Location:</span> ${address || 'Unknown'}</p>
+            ${container.hasIot ? '<span class="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium mt-1">IoT Connected</span>' : ''}
+          </div>
+        </div>
+      `);
+
+      markers.addLayer(marker);
+      markersRef.current.push(marker);
+    });
+
+    map.addLayer(markers);
+
+    // Fit bounds if markers exist
+    if (markers.getBounds().isValid()) {
+      map.fitBounds(markers.getBounds(), { padding: [50, 50] });
+    }
+
+  }, [containersWithLocations, filterStatus, filterDepot]);
 
   return (
-    <Card className="h-full">
-      {/* Rest of your component JSX */}
-    </Card>
+    <GlassCard className="h-[600px] p-0 overflow-hidden flex flex-col relative">
+      <div className="absolute top-4 right-4 z-[400] flex gap-2">
+        <div className="bg-white/90 backdrop-blur shadow-sm rounded-lg p-1 flex gap-1">
+          <Button
+            variant={region === 'india' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setRegion('india')}
+            className="h-8 text-xs"
+          >
+            India
+          </Button>
+          <Button
+            variant={region === 'global' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setRegion('global')}
+            className="h-8 text-xs"
+          >
+            Global
+          </Button>
+        </div>
+
+        <div className="bg-white/90 backdrop-blur shadow-sm rounded-lg p-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => {
+              if (mapInstanceRef.current) {
+                mapInstanceRef.current.setView([20.5937, 78.9629], 5);
+              }
+            }}
+          >
+            <Globe className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="p-4 border-b border-border/50 flex items-center justify-between bg-white/50 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <MapPin className="h-5 w-5 text-primary" />
+          <h3 className="font-semibold text-foreground">Global Fleet Map</h3>
+          {isLoading && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground ml-2" />}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground mr-4">
+            <span className="w-2 h-2 rounded-full bg-blue-500"></span> IoT
+            <span className="w-2 h-2 rounded-full bg-gray-500 ml-2"></span> Manual
+          </div>
+        </div>
+      </div>
+
+      <div ref={mapRef} className="flex-1 w-full bg-muted/20" />
+    </GlassCard>
   );
 }

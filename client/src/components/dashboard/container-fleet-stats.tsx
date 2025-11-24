@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GlassCard } from "@/components/ui/animated-card";
 import { Badge } from "@/components/ui/badge";
 import { Package, Factory, MapPin, Award, Calendar, TrendingUp } from "lucide-react";
 
@@ -58,10 +58,10 @@ export default function ContainerFleetStats({ containers }: ContainerFleetStatsP
 
   const getGradeColor = (grade: string) => {
     switch (grade?.toUpperCase()) {
-      case "A": return "bg-green-500/20 text-green-200 border-green-400/30";
-      case "B": return "bg-blue-500/20 text-blue-200 border-blue-400/30";
-      case "C": return "bg-yellow-500/20 text-yellow-200 border-yellow-400/30";
-      default: return "bg-gray-500/20 text-gray-200 border-gray-400/30";
+      case "A": return "bg-green-500/20 text-green-500 border-green-500/30";
+      case "B": return "bg-blue-500/20 text-blue-500 border-blue-500/30";
+      case "C": return "bg-amber-500/20 text-amber-500 border-amber-500/30";
+      default: return "bg-gray-500/20 text-gray-500 border-gray-500/30";
     }
   };
 
@@ -72,34 +72,37 @@ export default function ContainerFleetStats({ containers }: ContainerFleetStatsP
   };
 
   return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Package className="h-5 w-5" />
-          Container Fleet Overview
-          <Badge variant="outline" className="ml-auto">
-            {stats.withMasterData}/{stats.total} with master data
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <GlassCard className="h-full p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-purple-500/10 rounded-xl">
+            <Package className="h-5 w-5 text-purple-500" />
+          </div>
+          <h3 className="text-xl font-bold text-foreground tracking-tight">Fleet Overview</h3>
+        </div>
+        <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/20">
+          {stats.withMasterData}/{stats.total} tracked
+        </Badge>
+      </div>
+
+      <div className="space-y-8">
         {/* Product Type Breakdown */}
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Package className="h-4 w-4 text-muted-foreground" />
-            <h4 className="text-sm font-semibold">By Product Type</h4>
+          <div className="flex items-center gap-2 mb-4">
+            <Package className="h-4 w-4 text-purple-500" />
+            <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">By Product Type</h4>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             {Object.entries(stats.byProductType)
               .sort((a, b) => b[1] - a[1])
               .slice(0, 6)
               .map(([type, count]) => (
-                <div key={type} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                  <span className="text-sm flex items-center gap-1">
+                <div key={type} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+                  <span className="text-sm flex items-center gap-2 font-medium">
                     <span>{getProductTypeIcon(type)}</span>
-                    <span className="truncate">{type || "Unknown"}</span>
+                    <span className="truncate max-w-[80px]">{type || "Unknown"}</span>
                   </span>
-                  <Badge variant="secondary" className="text-xs">{count}</Badge>
+                  <span className="text-xs font-bold bg-white/10 px-2 py-1 rounded-md">{count}</span>
                 </div>
               ))}
           </div>
@@ -108,17 +111,18 @@ export default function ContainerFleetStats({ containers }: ContainerFleetStatsP
         {/* Grade Distribution */}
         {Object.keys(stats.byGrade).length > 0 && (
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Award className="h-4 w-4 text-muted-foreground" />
-              <h4 className="text-sm font-semibold">By Grade</h4>
+            <div className="flex items-center gap-2 mb-4">
+              <Award className="h-4 w-4 text-purple-500" />
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">By Grade</h4>
             </div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(stats.byGrade)
                 .sort((a, b) => b[1] - a[1])
                 .map(([grade, count]) => (
-                  <Badge key={grade} className={`${getGradeColor(grade)} border`}>
-                    Grade {grade}: {count}
-                  </Badge>
+                  <div key={grade} className={`px-3 py-1.5 rounded-lg border ${getGradeColor(grade)} flex items-center gap-2`}>
+                    <span className="text-xs font-bold">Grade {grade}</span>
+                    <span className="text-xs opacity-80 border-l border-current pl-2 ml-1">{count}</span>
+                  </div>
                 ))}
             </div>
           </div>
@@ -127,25 +131,25 @@ export default function ContainerFleetStats({ containers }: ContainerFleetStatsP
         {/* Depot/Location Breakdown */}
         {Object.keys(stats.byDepot).length > 0 && (
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <h4 className="text-sm font-semibold">Top Depots</h4>
+            <div className="flex items-center gap-2 mb-4">
+              <MapPin className="h-4 w-4 text-purple-500" />
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Top Depots</h4>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {Object.entries(stats.byDepot)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 5)
                 .map(([depot, count]) => (
-                  <div key={depot} className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground truncate">{depot}</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
+                  <div key={depot} className="flex items-center justify-between group">
+                    <span className="text-sm text-foreground/80 truncate group-hover:text-purple-500 transition-colors">{depot}</span>
+                    <div className="flex items-center gap-3">
+                      <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-primary"
+                          className="h-full bg-purple-500 rounded-full"
                           style={{ width: `${(count / stats.total) * 100}%` }}
                         />
                       </div>
-                      <span className="text-xs font-medium w-8 text-right">{count}</span>
+                      <span className="text-xs font-bold w-8 text-right">{count}</span>
                     </div>
                   </div>
                 ))}
@@ -156,15 +160,15 @@ export default function ContainerFleetStats({ containers }: ContainerFleetStatsP
         {/* Category Breakdown */}
         {Object.keys(stats.byCategory).length > 0 && (
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Factory className="h-4 w-4 text-muted-foreground" />
-              <h4 className="text-sm font-semibold">By Category</h4>
+            <div className="flex items-center gap-2 mb-4">
+              <Factory className="h-4 w-4 text-purple-500" />
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">By Category</h4>
             </div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(stats.byCategory)
                 .sort((a, b) => b[1] - a[1])
                 .map(([category, count]) => (
-                  <Badge key={category} variant="outline">
+                  <Badge key={category} variant="outline" className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors py-1.5">
                     {category}: {count}
                   </Badge>
                 ))}
@@ -174,32 +178,37 @@ export default function ContainerFleetStats({ containers }: ContainerFleetStatsP
 
         {/* Average Year of Manufacture */}
         {stats.avgYom > 0 && (
-          <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-500/20 rounded-lg">
+                <Calendar className="h-4 w-4 text-purple-500" />
+              </div>
               <span className="text-sm font-medium">Avg. Year of Manufacture</span>
             </div>
-            <Badge variant="secondary">{stats.avgYom}</Badge>
+            <span className="text-lg font-bold text-foreground">{stats.avgYom}</span>
           </div>
         )}
 
         {/* Data Coverage */}
-        <div className="pt-3 border-t">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Master Sheet Coverage</span>
+        <div className="pt-4 border-t border-white/10">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-green-500" />
+              <span className="text-sm font-medium">Data Completeness</span>
+            </div>
+            <span className="text-xs font-bold text-green-500">{Math.round((stats.withMasterData / stats.total) * 100)}%</span>
           </div>
-          <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+          <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
             <div
-              className="h-full bg-green-500"
+              className="h-full bg-gradient-to-r from-green-500 to-emerald-400"
               style={{ width: `${(stats.withMasterData / stats.total) * 100}%` }}
             />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {stats.withMasterData} of {stats.total} containers ({Math.round((stats.withMasterData / stats.total) * 100)}%)
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            {stats.withMasterData} of {stats.total} containers have complete master data
           </p>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </GlassCard>
   );
 }

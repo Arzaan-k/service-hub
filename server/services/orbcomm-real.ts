@@ -45,7 +45,7 @@ class OrbcommAPIClient {
     private url: string,
     private username: string,
     private password: string
-  ) {}
+  ) { }
 
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -53,7 +53,7 @@ class OrbcommAPIClient {
         console.log('🔌 Connecting to Orbcomm CDH API...');
         console.log(`📍 URL: ${this.url}`);
         console.log(`👤 Username: ${this.username}`);
-        
+
         // Create WebSocket connection with CDH protocol per ORBCOMM support instructions
         // Must use subprotocol 'cdh.orbcomm.com' and specific Basic Auth format
         this.ws = new WebSocket(
@@ -76,22 +76,22 @@ class OrbcommAPIClient {
           console.log('✅ Connected to Orbcomm CDH WebSocket');
           this._isConnected = true;
           this.reconnectAttempts = 0;
-          
+
           // Wait a moment before sending initial request to avoid session conflicts
           setTimeout(() => {
             this.sendAuthMessage();
           }, 2000); // 2 second delay
-          
+
           // Set up periodic refresh after initial connection
           setTimeout(() => {
             this.sendPeriodicRequest();
           }, 10000); // Wait 10 seconds before first periodic request
-          
+
           // Set up regular periodic requests - per ORBCOMM docs, be conservative with timing
           setInterval(() => {
             this.sendPeriodicRequest();
           }, 120000); // Refresh every 2 minutes (very conservative timing to avoid 2006 faults)
-          
+
           resolve();
         });
 
@@ -146,9 +146,9 @@ class OrbcommAPIClient {
       console.log('⏳ CDH request already in progress, skipping auth message...');
       return;
     }
-    
+
     this.requestInProgress = true;
-    
+
     // GetEvents message using correct CDH protocol format per documentation
     const getEventsMessage = {
       "GetEvents": {
@@ -159,17 +159,17 @@ class OrbcommAPIClient {
         "MaxEventCount": 1000                  // Optional - integer 1-50,000
       }
     };
-    
+
     console.log('🔐 Sending CDH GetEvents request...');
     console.log('📋 Request:', JSON.stringify(getEventsMessage, null, 2));
-    
+
     try {
       this.ws.send(JSON.stringify(getEventsMessage));
     } catch (error) {
       console.error('❌ Failed to send CDH auth request:', error);
       this.requestInProgress = false; // Reset flag on send failure
     }
-    
+
     // Reset request flag after a delay
     setTimeout(() => {
       this.requestInProgress = false;
@@ -178,13 +178,13 @@ class OrbcommAPIClient {
 
   private handleMessage(message: any): void {
     console.log('📨 Processing CDH message:', message);
-    
+
     // Handle CDH fault responses per documentation
     if (message.faults && Array.isArray(message.faults)) {
       for (const faultWrapper of message.faults) {
         const fault = faultWrapper.fault || faultWrapper; // Handle nested fault structure
         console.log(`⚠️ CDH Fault - Code: ${fault.faultCode}, Severity: ${fault.faultSeverity}, Text: ${fault.faultText}`);
-        
+
         // Handle specific fault codes per CDH documentation
         switch (fault.faultCode) {
           case 2001:
@@ -223,14 +223,14 @@ class OrbcommAPIClient {
       }
       return;
     }
-    
+
     // Handle CDH Event responses per documentation
     if (message.Event && message.Event.EventClass) {
       console.log(`📱 Received CDH Event - Class: ${message.Event.EventClass}`);
-      
+
       // Reset request flag since we received a response
       this.requestInProgress = false;
-      
+
       // Process different event classes
       switch (message.Event.EventClass) {
         case 'DeviceMessage':
@@ -248,12 +248,12 @@ class OrbcommAPIClient {
       }
       return;
     }
-    
+
     // Handle bulk event responses (multiple events in one message)
     if (message.Events && Array.isArray(message.Events)) {
       console.log(`📱 Received bulk CDH events: ${message.Events.length} events`);
       this.requestInProgress = false; // Reset flag since we received a response
-      
+
       // Process all events in the bulk response
       for (const event of message.Events) {
         if (event.EventClass) {
@@ -274,7 +274,7 @@ class OrbcommAPIClient {
       }
       return;
     }
-    
+
     // Handle other message types
     if (message.type) {
       switch (message.type) {
@@ -282,11 +282,11 @@ class OrbcommAPIClient {
           console.log(`📊 Received data for device: ${message.deviceId}`);
           this.processDeviceData(message);
           break;
-          
+
         case 'error':
           console.error('❌ CDH API error:', message.error);
           break;
-          
+
         default:
           console.log('📨 Unknown message type:', message.type);
       }
@@ -306,9 +306,9 @@ class OrbcommAPIClient {
       console.log('⏳ CDH request already in progress, skipping periodic request...');
       return;
     }
-    
+
     this.requestInProgress = true;
-    
+
     // Send periodic GetEvents request using correct CDH protocol format
     const getEventsMessage = {
       "GetEvents": {
@@ -319,16 +319,16 @@ class OrbcommAPIClient {
         "MaxEventCount": 100                   // Optional - integer 1-50,000
       }
     };
-    
+
     console.log('🔄 Sending periodic CDH GetEvents request...');
-    
+
     try {
       this.ws.send(JSON.stringify(getEventsMessage));
     } catch (error) {
       console.error('❌ Failed to send periodic CDH request:', error);
       this.requestInProgress = false; // Reset flag on send failure
     }
-    
+
     // Reset request flag after a delay
     setTimeout(() => {
       this.requestInProgress = false;
@@ -339,11 +339,11 @@ class OrbcommAPIClient {
   private processDeviceMessage(event: any): void {
     try {
       console.log('📱 Processing CDH DeviceMessage');
-      
+
       const deviceId = event.DeviceData?.DeviceID || event.DeviceId;
       const assetId = event.DeviceData?.LastAssetID || event.ReeferData?.AssetID;
       const timestamp = event.MessageData?.EventDtm || event.MessageData?.AppDtm || new Date().toISOString();
-      
+
       // Extract location data
       let location: { latitude: number; longitude: number } | undefined = undefined;
       if (event.DeviceData?.GPSLatitude && event.DeviceData?.GPSLongitude) {
@@ -352,7 +352,7 @@ class OrbcommAPIClient {
           longitude: parseFloat(event.DeviceData.GPSLongitude)
         };
       }
-      
+
       // Extract device status data
       const deviceData = {
         deviceId,
@@ -363,14 +363,14 @@ class OrbcommAPIClient {
         doorStatus: event.DeviceData?.DoorState,
         powerStatus: event.DeviceData?.ExtPower ? 'on' : 'off',
         batteryLevel: event.DeviceData?.BatteryVoltage,
-        errorCodes: event.ReeferData?.ReeferAlarms ? 
+        errorCodes: event.ReeferData?.ReeferAlarms ?
           event.ReeferData.ReeferAlarms.map((alarm: any) => alarm.RCAlias || `E${alarm.OemAlarm}`) : [],
         rawData: event
       };
-      
+
       // Process with database integration - pass the full event structure
       this.processEvents([event]);
-      
+
     } catch (error) {
       console.error('❌ Error processing DeviceMessage:', error);
     }
@@ -380,10 +380,10 @@ class OrbcommAPIClient {
   private processReeferMessage(event: any): void {
     try {
       console.log('📱 Processing CDH ReeferMessage');
-      
+
       const deviceId = event.AssetID || event.DeviceID || event.DeviceId;
       const timestamp = event.EventUTC || event.EventDtm || new Date().toISOString();
-      
+
       // Extract location data
       let location: { latitude: number; longitude: number } | undefined = undefined;
       if (event.GPSLatitude && event.GPSLongitude) {
@@ -392,7 +392,7 @@ class OrbcommAPIClient {
           longitude: parseFloat(event.GPSLongitude)
         };
       }
-      
+
       // Extract reefer-specific data
       const reeferData = {
         deviceId,
@@ -405,9 +405,9 @@ class OrbcommAPIClient {
         errorCodes: event.ReeferAlarms ? event.ReeferAlarms.map((alarm: any) => `E${alarm.OemAlarm || alarm.code || alarm}`) : [],
         rawData: event
       };
-      
+
       this.processEvents([event]);
-      
+
     } catch (error) {
       console.error('❌ Error processing ReeferMessage:', error);
     }
@@ -417,10 +417,10 @@ class OrbcommAPIClient {
   private processLocationMessage(event: any): void {
     try {
       console.log('📱 Processing CDH LocationMessage');
-      
+
       const deviceId = event.DeviceID || event.DeviceId;
       const timestamp = event.EventUTC || event.EventDtm || new Date().toISOString();
-      
+
       // Extract location data
       let location: { latitude: number; longitude: number } | undefined = undefined;
       if (event.GPSLatitude && event.GPSLongitude) {
@@ -429,16 +429,16 @@ class OrbcommAPIClient {
           longitude: parseFloat(event.GPSLongitude)
         };
       }
-      
+
       const locationData = {
         deviceId,
         timestamp,
         location,
         rawData: event
       };
-      
+
       this.processEvents([event]);
-      
+
     } catch (error) {
       console.error('❌ Error processing LocationMessage:', error);
     }
@@ -457,11 +457,11 @@ class OrbcommAPIClient {
         // Extract device information from event - handle nested Event structure
         const eventData = event.Event || event;
         const deviceId = eventData.deviceId || eventData.DeviceId || eventData.IMEI ||
-                        eventData.DeviceData?.DeviceID || eventData.DeviceData?.DeviceId ||
-                        eventData.MessageData?.DeviceID;
+          eventData.DeviceData?.DeviceID || eventData.DeviceData?.DeviceId ||
+          eventData.MessageData?.DeviceID;
         const assetId = eventData.assetId || eventData.AssetID || eventData.LastAssetID ||
-                       eventData.ReeferData?.AssetID || eventData.DeviceData?.LastAssetID ||
-                       eventData.MessageData?.AssetID;
+          eventData.ReeferData?.AssetID || eventData.DeviceData?.LastAssetID ||
+          eventData.MessageData?.AssetID;
 
         // Skip processing if no assetId (container ID) is available
         if (!assetId) {
@@ -475,7 +475,7 @@ class OrbcommAPIClient {
         // Extract location data from various sources
         let location: { latitude: number; longitude: number } | undefined = undefined;
         const deviceData = eventData.DeviceData || {};
-        
+
         if (eventData.location) {
           location = {
             latitude: parseFloat(eventData.location.latitude),
@@ -492,40 +492,40 @@ class OrbcommAPIClient {
             longitude: parseFloat(deviceData.GPSLongitude)
           };
         }
-        
+
         // Extract timestamp
-        const timestamp = eventData.timestamp || eventData.EventUTC || eventData.Timestamp || 
-                         eventData.MessageData?.EventDtm || new Date().toISOString();
-        
+        const timestamp = eventData.timestamp || eventData.EventUTC || eventData.Timestamp ||
+          eventData.MessageData?.EventDtm || new Date().toISOString();
+
         if (deviceId) {
           console.log(`📱 Found device: ${deviceId}, processing...`);
-          
+
           // Extract additional device information from the event structure
           const reeferData = eventData.ReeferData || {};
-          
+
           // Extract temperature from various sources
           let temperature: number | undefined;
           if (reeferData.TAmb !== undefined) temperature = reeferData.TAmb;
           else if (deviceData.DeviceTemp !== undefined) temperature = deviceData.DeviceTemp;
           else if (eventData.Temperature !== undefined) temperature = eventData.Temperature;
-          
+
           // Extract door status
           let doorStatus: string | undefined;
           if (deviceData.DoorState) doorStatus = deviceData.DoorState.toLowerCase();
           else if (eventData.DoorState) doorStatus = eventData.DoorState.toLowerCase();
-          
+
           // Extract power status
           let powerStatus: string | undefined;
           if (deviceData.ExtPower !== undefined) powerStatus = deviceData.ExtPower ? 'on' : 'off';
           else if (eventData.PowerStatus) powerStatus = eventData.PowerStatus.toLowerCase();
-          
+
           // Extract battery level
           let batteryLevel: number | undefined;
           if (deviceData.BatteryVoltage !== undefined) {
             // Convert voltage to percentage (assuming 8.1V is 100%)
             batteryLevel = Math.min(100, Math.max(0, (deviceData.BatteryVoltage / 8.1) * 100));
           }
-          
+
           // Extract error codes/alarms
           const errorCodes: string[] = [];
           if (reeferData.ReeferAlarms && Array.isArray(reeferData.ReeferAlarms)) {
@@ -535,10 +535,10 @@ class OrbcommAPIClient {
               }
             });
           }
-          
+
           // Extract asset ID for container matching
           const lastAssetId = deviceData.LastAssetID || assetId;
-          
+
           const deviceInfo = {
             deviceId,
             deviceName,
@@ -556,21 +556,21 @@ class OrbcommAPIClient {
             deviceData,
             reeferData
           };
-          
+
           devices.set(deviceId, deviceInfo);
           console.log(`📱 Added device to map: ${deviceId}`, deviceInfo);
-          
+
           // Emit realtime broadcast for location updates
           if (location) {
             try {
               (global as any).broadcast?.({
                 type: 'device_update',
-                data: { 
-                  deviceId, 
-                  lat: location.latitude, 
-                  lng: location.longitude, 
-                  status: 'active', 
-                  ts: Date.now() 
+                data: {
+                  deviceId,
+                  lat: location.latitude,
+                  lng: location.longitude,
+                  status: 'active',
+                  ts: Date.now()
                 }
               });
             } catch (err) {
@@ -635,9 +635,9 @@ class OrbcommAPIClient {
                   // Check for existing alerts to prevent duplicates
                   const existingAlerts = await storage.getAlertsByContainer(container.id);
                   const alertCode = `ORBCOMM-${anomalies.join('-')}`;
-                  const hasRecentAlert = existingAlerts.some(a => 
-                    a.alertCode === alertCode && 
-                    a.status === 'open' && 
+                  const hasRecentAlert = existingAlerts.some(a =>
+                    a.alertCode === alertCode &&
+                    a.status === 'open' &&
                     new Date(a.detectedAt).getTime() > (Date.now() - 10 * 60 * 1000) // 10 minutes deduplication window
                   );
 
@@ -661,7 +661,7 @@ class OrbcommAPIClient {
 
                   try {
                     (global as any).broadcast?.({ type: 'alert_created', data: alert });
-                  } catch {}
+                  } catch { }
                 } catch (e) {
                   console.error('Error creating alert from Orbcomm anomaly:', e);
                 }
@@ -704,15 +704,15 @@ class OrbcommAPIClient {
         console.error('Error processing event:', err, event);
       }
     }
-    
+
     // Persist associations and DB locations based on latest events
-    try { this.updateContainersFromDevices(); } catch {}
-    
+    try { this.updateContainersFromDevices(); } catch { }
+
     // Store processed devices
     this.devices = Array.from(devices.values());
     console.log(`✅ Processed ${this.devices.length} unique devices from events`);
     console.log(`📱 Device IDs:`, this.devices.map(d => d.deviceId));
-    
+
     // Update database with device information
     this.updateContainersFromDevices();
   }
@@ -794,7 +794,7 @@ class OrbcommAPIClient {
                 }
               });
             }
-          } catch {}
+          } catch { }
         } else {
           console.log(`⚠️ No container found with exact container ID ${lastAssetId} for Orbcomm device ${device.deviceId}`);
         }
@@ -806,7 +806,7 @@ class OrbcommAPIClient {
 
   private processDeviceList(devices: any[]): void {
     console.log(`📱 Processing ${devices.length} devices from Orbcomm`);
-    
+
     // Store devices for later use
     this.devices = devices.map(device => ({
       deviceId: device.deviceId || device.id || device.imei,
@@ -818,13 +818,13 @@ class OrbcommAPIClient {
         longitude: parseFloat(device.location.lng || device.location.longitude)
       } : undefined
     }));
-    
+
     console.log('✅ Device list processed and stored');
   }
 
   private processDeviceData(data: any): void {
     console.log(`📊 Processing device data for ${data.deviceId}`);
-    
+
     // Store device data for later retrieval
     this.deviceData[data.deviceId] = {
       deviceId: data.deviceId,
@@ -846,7 +846,7 @@ class OrbcommAPIClient {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       console.log(`🔄 Attempting to reconnect to CDH (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-      
+
       setTimeout(() => {
         this.connect().catch((error) => {
           console.error('❌ CDH reconnection failed:', error);
@@ -861,7 +861,7 @@ class OrbcommAPIClient {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
-        this._isConnected = false;
+      this._isConnected = false;
     }
   }
 
@@ -893,23 +893,23 @@ class OrbcommAPIClient {
     });
   }
 
-// Get all devices (read-only) - returns ONLY devices with real ORBCOMM telemetry data
+  // Get all devices (read-only) - returns ONLY devices with real ORBCOMM telemetry data
   async getAllDevices(): Promise<OrbcommDevice[]> {
     console.log(`📱 getAllDevices called - CDH connected: ${this.isConnected}, cached devices: ${this.devices.length}`);
-    
+
     if (!this.isConnected) {
       console.log('⚠️ CDH not connected, returning empty array (no fallback)');
       return [];
     }
-    
+
     // Filter to only return devices that have real ORBCOMM telemetry data
     const realOrbcommDevices = this.devices.filter(device => {
       // Check if device has real telemetry data (not fallback)
-      const hasRealData = device.rawEvent && 
-                         !device.rawEvent.fallback;
+      const hasRealData = device.rawEvent &&
+        !device.rawEvent.fallback;
       return hasRealData;
     });
-    
+
     console.log(`📱 Returning ${realOrbcommDevices.length} devices with real ORBCOMM telemetry data`);
     return realOrbcommDevices;
   }
@@ -920,16 +920,16 @@ class OrbcommAPIClient {
     try {
       const { storage } = await import('../storage');
       const containers = await storage.getAllContainers();
-      
+
       console.log(`📱 Creating devices from ${containers.length} database containers...`);
-      
+
       const fallbackDevices: OrbcommDevice[] = [];
-      
+
       for (const container of containers) {
         // Use containerCode as the ORBCOMM device ID (typical ORBCOMM setup)
         // Also check if there's an explicit orbcommDeviceId
         const deviceId = container.orbcommDeviceId || container.containerCode;
-        
+
         if (deviceId) {
           const device: OrbcommDevice = {
             deviceId,
@@ -937,11 +937,11 @@ class OrbcommAPIClient {
             status: container.status === 'active' ? 'active' : 'inactive',
             lastSeen: container.lastSyncTime || new Date().toISOString(),
           };
-          
+
           fallbackDevices.push(device);
         }
       }
-      
+
       this.devices = fallbackDevices;
       console.log(`📱 Created ${this.devices.length} fallback devices from database containers`);
     } catch (error) {
@@ -965,15 +965,15 @@ class OrbcommAPIClient {
     }
   }
 
-// Get device data (read-only) - returns ONLY data for devices with real ORBCOMM telemetry
+  // Get device data (read-only) - returns ONLY data for devices with real ORBCOMM telemetry
   async getDeviceData(deviceId: string): Promise<OrbcommDeviceData | null> {
     console.log(`📱 getDeviceData called for device: ${deviceId}`);
-    
+
     if (!this.isConnected) {
       console.log('⚠️ CDH not connected, returning null');
       return null;
     }
-    
+
     // Return cached data if available and has real telemetry
     if (this.deviceData[deviceId]) {
       const data = this.deviceData[deviceId];
@@ -983,7 +983,7 @@ class OrbcommAPIClient {
         return data;
       }
     }
-    
+
     // Try to find device in the devices array and create data from it
     const device = this.devices.find(d => d.deviceId === deviceId);
     if (device && device.rawEvent && !device.rawEvent.fallback) {
@@ -1000,26 +1000,26 @@ class OrbcommAPIClient {
         errorCodes: (device as any).errorCodes || [],
         rawData: (device as any).rawEvent || (device as any).rawData
       };
-      
+
       // Cache the data for future requests
       this.deviceData[deviceId] = deviceData;
       return deviceData;
     }
-    
+
     console.log(`⚠️ No real ORBCOMM data found for device: ${deviceId}`);
     return null;
   }
 
   private requestDeviceData(deviceId: string): void {
     if (!this.ws || !this.isConnected) return;
-    
+
     const requestMessage = {
       type: 'get_device_data',
       deviceId: deviceId,
       timestamp: new Date().toISOString(),
       requestId: `req_${Date.now()}`
     };
-    
+
     console.log(`📊 Requesting data for device ${deviceId}...`);
     this.ws.send(JSON.stringify(requestMessage));
   }
@@ -1033,7 +1033,7 @@ class OrbcommAPIClient {
         hours: hours,
         timestamp: new Date().toISOString()
       });
-      
+
       return response.history || [];
     } catch (error) {
       console.error(`❌ Error fetching location history for device ${deviceId}:`, error);
@@ -1049,7 +1049,7 @@ class OrbcommAPIClient {
         deviceId: deviceId,
         timestamp: new Date().toISOString()
       });
-      
+
       return response.alerts || [];
     } catch (error) {
       console.error(`❌ Error fetching alerts for device ${deviceId}:`, error);
@@ -1114,22 +1114,20 @@ let orbcommClient: OrbcommAPIClient | null = null;
 
 export function getOrbcommClient(): OrbcommAPIClient {
   if (!orbcommClient) {
-    // Try multiple CDH endpoints based on test results
+    // Prioritize Production URL
     const possibleUrls = [
       process.env.ORBCOMM_URL,
-      'wss://integ.tms-orbcomm.com:44355/cdh', // Integration server
       'wss://wamc.wamcentral.net:44355/cdh',   // Production server
-      'wss://integ.tms-orbcomm.com:44355',     // Without /cdh path
-      'wss://wamc.wamcentral.net:44355'        // Without /cdh path
+      'wss://integ.tms-orbcomm.com:44355/cdh', // Integration server (fallback)
     ].filter(Boolean);
-    
-    const url = possibleUrls[0] || 'wss://integ.tms-orbcomm.com:44355/cdh';
+
+    const url = possibleUrls[0] || 'wss://wamc.wamcentral.net:44355/cdh';
     const username = process.env.ORBCOMM_USERNAME || 'cdhQuadre';
-    const password = process.env.ORBCOMM_PASSWORD || 'P4cD#QA@!D@re'; // Exact password from ORBCOMM support
+    const password = process.env.ORBCOMM_PASSWORD || 'P4pD#QU@!D@re'; // Production password
 
     console.log(`🔧 Using CDH URL: ${url}`);
     console.log(`🔧 Using username: ${username}`);
-    
+
     orbcommClient = new OrbcommAPIClient(url, username, password);
   }
   return orbcommClient;
@@ -1139,32 +1137,30 @@ export function getOrbcommClient(): OrbcommAPIClient {
 export async function initializeOrbcommConnection(): Promise<void> {
   const possibleUrls = [
     process.env.ORBCOMM_URL,
-    'wss://integ.tms-orbcomm.com:44355/cdh', // Integration server
     'wss://wamc.wamcentral.net:44355/cdh',   // Production server
-    'wss://integ.tms-orbcomm.com:44355',     // Without /cdh path
-    'wss://wamc.wamcentral.net:44355'        // Without /cdh path
+    'wss://integ.tms-orbcomm.com:44355/cdh', // Integration server
   ].filter(Boolean);
-  
+
   const username = process.env.ORBCOMM_USERNAME || 'cdhQuadre';
   const password = process.env.ORBCOMM_PASSWORD || 'P4pD#QU@!D@re';
-  
+
   for (const url of possibleUrls) {
     try {
       console.log(`🔌 Attempting CDH connection to: ${url}`);
       const client = new OrbcommAPIClient(url!, username, password);
       await client.connect();
-      
+
       // Update the singleton instance
       orbcommClient = client;
       console.log(`🚀 CDH API initialized successfully with ${url}`);
       return;
-      
+
     } catch (error) {
       console.error(`❌ Failed to connect to ${url}:`, (error as any).message);
       continue;
     }
   }
-  
+
   console.error('❌ Failed to initialize CDH API with any URL. Continuing with mock data.');
   // Don't throw error, continue with mock data
 }
@@ -1264,7 +1260,7 @@ export async function populateOrbcommDevices(): Promise<void> {
               containerCode = assetId; // AssetID/LastAssetID is the containerCode
               orbcommDeviceId = device.deviceId; // DeviceID is the orbcommDeviceId
             }
-          } catch {}
+          } catch { }
         }
 
         // Check if container already exists
@@ -1325,16 +1321,16 @@ export async function populateOrbcommDevices(): Promise<void> {
 export async function testCDHConnection(): Promise<void> {
   try {
     console.log('🧪 Testing CDH connection...');
-    
+
     const url = process.env.ORBCOMM_URL || 'wss://wamc.wamcentral.net:44355/cdh';
     const username = process.env.ORBCOMM_USERNAME || 'cdhQuadre';
     const password = process.env.ORBCOMM_PASSWORD || 'P4cD#QA@!D@re'; // Exact password from ORBCOMM support
-    
+
     console.log('📋 Connection parameters:');
     console.log(`  URL: ${url}`);
     console.log(`  Username: ${username}`);
     console.log(`  Password: ${password ? '***' : 'NOT SET'}`);
-    
+
     // Test basic connectivity
     const WebSocket = require('ws');
     const testWs = new WebSocket(url, {
@@ -1346,12 +1342,12 @@ export async function testCDHConnection(): Promise<void> {
       perMessageDeflate: false,
       rejectUnauthorized: false
     });
-    
+
     testWs.on('open', () => {
       console.log('✅ Test connection successful!');
       testWs.close();
     });
-    
+
     testWs.on('error', (error: any) => {
       console.error('❌ Test connection failed:', error);
       console.error('❌ This might indicate:');
@@ -1360,11 +1356,11 @@ export async function testCDHConnection(): Promise<void> {
       console.error('  - Network connectivity issues');
       console.error('  - Server not accepting connections');
     });
-    
+
     testWs.on('close', (code: number, reason: string) => {
       console.log(`🔌 Test connection closed. Code: ${code}, Reason: ${reason}`);
     });
-    
+
   } catch (error) {
     console.error('❌ Error during CDH connection test:', error);
   }

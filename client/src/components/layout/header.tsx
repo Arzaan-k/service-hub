@@ -1,48 +1,68 @@
 import { useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { cn } from "@/lib/utils";
 
 export default function Header({ title }: { title: string }) {
   const [searchQuery, setSearchQuery] = useState("");
 
   return (
-    <header className="navbar h-16 backdrop-blur bg-[#FFF9F7] border-b border-[#E0E0E0] shadow-soft flex items-center justify-between px-6 sticky top-0 z-10">
-      <div className="flex items-center gap-4">
-        <h2 className="text-xl font-semibold text-foreground">{title}</h2>
-        <span className="text-sm text-muted-foreground">Last updated: 2 min ago</span>
-        <div className="w-2 h-2 rounded-full pulse-indicator" style={{ backgroundColor: '#FFCBA4' }}></div>
+    <header className="navbar h-20 bg-navbar-bg/60 backdrop-blur-2xl border-b border-white/10 flex items-center justify-between px-4 lg:px-8 sticky top-0 z-40 transition-all duration-500">
+      <div className="flex items-center gap-4 lg:gap-6">
+        {/* Mobile Menu Toggle */}
+        <button
+          className="lg:hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all active:scale-95"
+          onClick={() => document.getElementById("sidebar")?.classList.toggle("hidden")}
+        >
+          <i className="fas fa-bars"></i>
+        </button>
+
+        <div>
+          <h2 className="text-xl lg:text-2xl font-bold text-foreground tracking-tight">{title}</h2>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
+            <span className="text-xs text-muted-foreground font-medium">System Operational</span>
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Search Bar */}
-        <div className="relative">
+      <div className="flex items-center gap-3 lg:gap-6">
+        {/* Search Bar - Hidden on mobile */}
+        <div className="hidden md:block relative group">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <i className="fas fa-search text-muted-foreground group-focus-within:text-primary transition-colors"></i>
+          </div>
           <input
             type="text"
             placeholder="Search containers, alerts..."
-            className="w-80 pl-10 pr-4 py-2 input-soft rounded-md text-sm placeholder:text-[#8C8C8C]"
+            className="w-64 lg:w-96 pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:bg-white/10 transition-all duration-300"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             data-testid="input-search"
           />
-          <i className="fas fa-search text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"></i>
         </div>
 
-        {/* Notification Bell */}
-        <button className="relative p-2 rounded-md transition-smooth hover:bg-[#FFF6F9]" style={{ backgroundColor: '#FFE0D4', border: '1px solid #E0E0E0' }} data-testid="button-notifications">
-          <i className="fas fa-bell text-muted-foreground"></i>
-          <span className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ backgroundColor: '#FF6F61' }}></span>
-        </button>
+        <div className="flex items-center gap-2 lg:gap-3">
+          {/* Notification Bell */}
+          <button
+            className="relative w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/20 transition-all duration-300 active:scale-95"
+            data-testid="button-notifications"
+          >
+            <i className="fas fa-bell"></i>
+            <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-background animate-pulse"></span>
+          </button>
 
-        {/* Theme Toggle */}
-        <ThemeToggle />
+          {/* Theme Toggle */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-1">
+            <ThemeToggle />
+          </div>
 
-        {/* WhatsApp Status */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md" style={{ background: 'rgba(207, 239, 219, 0.6)', border: '1px solid rgba(207, 239, 219, 0.8)' }}>
-          <i className="fab fa-whatsapp" style={{ color: '#5A9E7A' }}></i>
-          <span className="text-xs font-medium" style={{ color: '#5A9E7A' }}>Connected</span>
+          {/* WhatsApp Status - Hidden on mobile */}
+          <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400">
+            <i className="fab fa-whatsapp"></i>
+            <span className="text-xs font-bold">Connected</span>
+          </div>
         </div>
       </div>
-
-      
     </header>
   );
 }

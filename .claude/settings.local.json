@@ -5,7 +5,10 @@
       "Bash(npm install)",
       "Bash(npm run build:*)",
       "Bash(npx tsx check-container-data.ts)",
-      "Bash(node import-reefer-master-csv.js:*)"
+      "Bash(node import-reefer-master-csv.js:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(timeout 15 sleep:*)"
     ],
     "deny": [],
     "ask": []

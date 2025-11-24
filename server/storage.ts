@@ -377,26 +377,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateContainer(id: string, container: any): Promise<any> {
-    // Split known typed fields (best-effort) and dynamic fields
-    const dynamicSets: string[] = [];
-    const params: any[] = [];
+    // Use Drizzle's update method which handles dynamic fields properly
+    const updateData: any = {
+      ...container,
+      updatedAt: new Date(),
+    };
 
-    for (const [key, value] of Object.entries(container || {})) {
-      // Always allow dynamic columns; underlying DB will reject if column doesn't exist
-      dynamicSets.push(`${sql.raw(key)} = $${params.length + 1}`);
-      params.push(value);
-    }
-    // Always update updated_at
-    dynamicSets.push(`updated_at = NOW()`);
+    const [updated] = await db
+      .update(containers)
+      .set(updateData)
+      .where(eq(containers.id, id))
+      .returning();
 
-    if (dynamicSets.length > 0) {
-      const q = `UPDATE containers SET ${dynamicSets.join(', ')} WHERE id = $${params.length + 1} RETURNING *`;
-      params.push(id);
-      const res: any = await db.execute(sql.raw(q), params as any);
-      const row = res?.rows?.[0] || (Array.isArray(res) ? res[0] : undefined);
-      return row ? this.parseContainerData(row as any) : undefined;
-    }
-    return this.getContainer(id);
+    return updated ? this.parseContainerData(updated) : undefined;
   }
 
   async getContainerByOrbcommId(orbcommDeviceId: string): Promise<Container | undefined> {

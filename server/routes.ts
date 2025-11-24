@@ -34,6 +34,7 @@ import { runDiagnosis } from "./services/ragGraph";
 import { DocumentProcessor } from "./services/documentProcessor";
 import { vectorStore } from "./services/vectorStore";
 import multer from 'multer';
+import { generateJobOrderNumber } from './utils/jobOrderGenerator';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -70,11 +71,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/rag/query", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const { query, unit_id, unit_model, alarm_code, context } = req.body;
-      
+
       if (!query) {
         return res.status(400).json({ error: "Query is required" });
       }
-      
+
       const response = await ragAdapter.query({
         user_id: req.user?.id,
         unit_id,
@@ -83,7 +84,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         query,
         context
       });
-      
+
       res.json(response);
     } catch (error) {
       console.error("RAG query error:", error);
@@ -95,7 +96,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.query.user_id as string || req.user?.id;
       const limit = parseInt(req.query.limit as string || "20");
-      
+
       const history = await storage.getRagQueryHistory(userId, limit);
       res.json(history);
     } catch (error) {
@@ -123,18 +124,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { title, description, brand, model } = req.body;
-      
+
       if (!title) {
         return res.status(400).json({ error: "Title is required" });
       }
-      
+
       // Save file to disk
       const fileName = `${Date.now()}-${req.file.originalname}`;
       const filePath = `uploads/manuals/${fileName}`;
-      
+
       fs.mkdirSync('uploads/manuals', { recursive: true });
       fs.writeFileSync(filePath, req.file.buffer);
-      
+
       // Create manual record
       const manualId = await storage.createManual({
         title,
@@ -145,10 +146,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         brand: brand || '',
         model: model || '',
       });
-      
+
       // Process document and create embeddings
       const result = await documentProcessor.processPDFFile(filePath, manualId);
-      
+
       res.json({
         success: true,
         manual_id: manualId,
@@ -258,7 +259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Global reference for WhatsApp service to use
-  ;(global as any).broadcastWhatsAppMessage = broadcastWhatsAppMessage;
+  ; (global as any).broadcastWhatsAppMessage = broadcastWhatsAppMessage;
 
   // Auth routes
   app.post("/api/auth/login", async (req, res) => {
@@ -434,24 +435,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/test/create-user", async (req, res) => {
     try {
       const testUserId = "test-admin-123";
-      
+
       // Check if user already exists
       const existingUser = await storage.getUser(testUserId);
       if (existingUser) {
-        return res.json({ 
-          success: true, 
-          user: { 
-            id: existingUser.id, 
-            name: existingUser.name, 
-            role: existingUser.role 
+        return res.json({
+          success: true,
+          user: {
+            id: existingUser.id,
+            name: existingUser.name,
+            role: existingUser.role
           },
           message: "Test user already exists"
         });
       }
-      
+
       const { hashPassword } = await import('./services/auth');
       const defaultPassword = await hashPassword('test123');
-      
+
       const user = await storage.createUser({
         id: testUserId, // Set specific ID for testing
         phoneNumber: '+1234567890',
@@ -463,14 +464,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         whatsappVerified: false,
         emailVerified: false,
       });
-      
-      res.json({ 
-        success: true, 
-        user: { 
-          id: user.id, 
-          name: user.name, 
-          role: user.role 
-        } 
+
+      res.json({
+        success: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          role: user.role
+        }
       });
     } catch (error) {
       console.error("Test user creation error:", error);
@@ -561,24 +562,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/containers", authenticateUser, async (req: AuthRequest, res) => {
     try {
+      console.log('[SERVER] /api/containers query:', JSON.stringify(req.query));
+      console.log('[SERVER] /api/containers user:', req.user?.id, 'role:', req.user?.role);
       const role = (req.user?.role || '').toLowerCase();
       const isPrivileged = ["admin", "coordinator", "super_admin"].includes(role);
+      console.log('[SERVER] /api/containers isPrivileged:', isPrivileged);
+
       if (!isPrivileged) {
-        const customer = await storage.getCustomerByUserId(req.user.id);
-        if (!customer) return res.json([]);
-        const own = await storage.getContainersByCustomer(customer.id);
-        return res.json(own);
+        console.log('[SERVER] /api/containers user is not privileged, returning all containers for testing');
+        // Temporarily return all containers for non-privileged users to test pagination
+        const containers = await storage.getAllContainers();
+        console.log('[SERVER] /api/containers returning all containers for non-privileged user:', containers.length);
+        // Optional pagination: only apply if query includes limit or offset
+        const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+        const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+        console.log('[SERVER] /api/containers hasLimit:', hasLimit, 'hasOffset:', hasOffset);
+        if (hasLimit || hasOffset) {
+          const { limit, offset } = paginationSchema.parse(req.query);
+          console.log('[SERVER] /api/containers applying pagination - limit:', limit, 'offset:', offset);
+          res.setHeader('x-total-count', String(containers.length));
+          const paginatedResult = containers.slice(offset, offset + limit);
+          console.log('[SERVER] /api/containers returning paginated result length:', paginatedResult.length);
+          return res.json(paginatedResult);
+        }
+        console.log('[SERVER] /api/containers returning full list for non-privileged user');
+        res.json(containers);
+        return;
       }
+
+      console.log('[SERVER] /api/containers fetching all containers');
       const containers = await storage.getAllContainers();
+      console.log('[SERVER] /api/containers total containers:', containers.length);
+
       // Optional pagination: only apply if query includes limit or offset
       const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
       const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+      console.log('[SERVER] /api/containers hasLimit:', hasLimit, 'hasOffset:', hasOffset);
+
       if (hasLimit || hasOffset) {
         const { limit, offset } = paginationSchema.parse(req.query);
+        console.log('[SERVER] /api/containers applying pagination - limit:', limit, 'offset:', offset);
         res.setHeader('x-total-count', String(containers.length));
-        return res.json(containers.slice(offset, offset + limit));
+        const paginatedResult = containers.slice(offset, offset + limit);
+        console.log('[SERVER] /api/containers returning paginated result length:', paginatedResult.length);
+        return res.json(paginatedResult);
       }
+
       // Default: return full list (backward compatible)
+      console.log('[SERVER] /api/containers returning full list');
       res.json(containers);
     } catch (error) {
       console.error("Error fetching containers:", error);
@@ -675,9 +706,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { customerId, assignmentDate, expectedReturnDate } = req.body;
       const container = await storage.assignContainerToCustomer(
-        req.params.id, 
-        customerId, 
-        assignmentDate, 
+        req.params.id,
+        customerId,
+        assignmentDate,
         expectedReturnDate
       );
       if (!container) {
@@ -907,12 +938,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Parse multiple containers from issue description if present
       let allContainers = [];
       const containerCodes: string[] = [];
-      
+
       // Parse containers from issue description
       if (request.issueDescription) {
         const description = request.issueDescription;
         console.log(`[API] Parsing issue description for containers (full length: ${description.length}):`, description.substring(0, 1000));
-        
+
         // Method 1: Extract from "Multiple Containers:" line (handles both with and without emoji)
         // This line contains ALL containers, so use it as primary source
         let multipleMatch = description.match(/📦\s*Multiple Containers:\s*([^\n]+)/i);
@@ -931,12 +962,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
         }
-        
+
         // Method 2: If "Multiple Containers:" not found, try combining Primary + Additional
         if (containerCodes.length === 0) {
           const primaryMatch = description.match(/Primary Container:\s*([^\n]+)/i);
           const additionalMatch = description.match(/Additional Containers:\s*([^\n]+)/i);
-          
+
           if (primaryMatch && primaryMatch[1]) {
             const code = primaryMatch[1].trim();
             if (code && code.length > 0) {
@@ -944,7 +975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log(`[API] Found code from "Primary Container:" line:`, code);
             }
           }
-          
+
           if (additionalMatch && additionalMatch[1]) {
             const codes = additionalMatch[1].split(',').map((code: string) => code.trim()).filter(Boolean);
             console.log(`[API] Found codes from "Additional Containers:" line:`, codes);
@@ -956,13 +987,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         }
-        
+
         // Method 3: Fallback - if still no containers, use primary container from containerId
         if (containerCodes.length === 0 && container && container.containerCode) {
           containerCodes.push(container.containerCode);
           console.log(`[API] Using primary container from containerId: ${container.containerCode}`);
         }
-        
+
         // Method 4: Fallback - try to extract all container codes mentioned (more flexible pattern)
         // Try multiple patterns: [A-Z]{4}\d{7}, [A-Z]{3}\d{7}, [A-Z]{2}\d{7}, etc.
         if (containerCodes.length <= 1) {
@@ -972,7 +1003,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             /[A-Z]{3}\d{7,8}/g,     // Alternative: ABC1234567
             /[A-Z]{2}\d{8,9}/g      // Alternative: AB12345678
           ];
-          
+
           for (const pattern of containerCodePatterns) {
             const allMatches = description.match(pattern);
             if (allMatches && allMatches.length > 0) {
@@ -986,7 +1017,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
         }
-        
+
         // Method 6: Look for container codes anywhere in the description (last resort)
         // This searches for any alphanumeric codes that might be container codes
         if (containerCodes.length <= 1) {
@@ -996,7 +1027,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             /container\s+codes?[:\s]+([A-Z0-9,\s]+)/i,
             /selected[:\s]+([A-Z0-9,\s]+)/i
           ];
-          
+
           for (const pattern of keywordPatterns) {
             const match = description.match(pattern);
             if (match && match[1]) {
@@ -1014,20 +1045,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
-      
+
       // Remove duplicates and fetch containers
       const uniqueCodes = [...new Set(containerCodes)];
       console.log(`[API] All unique container codes for SR ${request.id}:`, uniqueCodes);
-      
+
       if (uniqueCodes.length > 0) {
         // Fetch all containers by their codes
         const containers = await storage.getAllContainers();
         console.log(`[API] Total containers in database: ${containers.length}`);
-        
+
         // Try to find each container, but include it even if not found (with limited data)
         allContainers = uniqueCodes.map((code: string) => {
-          const found = containers.find((c: any) => 
-            c.containerCode === code || 
+          const found = containers.find((c: any) =>
+            c.containerCode === code ||
             c.containerCode?.toUpperCase() === code.toUpperCase() ||
             c.id === code
           );
@@ -1054,8 +1085,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             };
           }
         });
-        
-        console.log(`[API] Returning ${allContainers.length} containers for service request ${request.id}:`, 
+
+        console.log(`[API] Returning ${allContainers.length} containers for service request ${request.id}:`,
           allContainers.map(c => c.containerCode));
       }
 
@@ -1064,9 +1095,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const whatsappMessages = await storage.getWhatsAppMessagesByServiceRequest(request.id);
           console.log(`[API] Checking ${whatsappMessages.length} WhatsApp messages for container info`);
-          
+
           const foundCodesInMessages: string[] = [...containerCodes];
-          
+
           // Look for container codes in WhatsApp message content
           for (const msg of whatsappMessages) {
             if (msg.content) {
@@ -1076,7 +1107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 /[A-Z]{3}\d{7,8}/g,
                 /[A-Z]{2}\d{8,9}/g
               ];
-              
+
               for (const pattern of containerCodePatterns) {
                 const matches = msg.content.match(pattern);
                 if (matches) {
@@ -1090,16 +1121,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             }
           }
-          
+
           // Re-fetch containers if we found new codes
           if (foundCodesInMessages.length > containerCodes.length) {
             const updatedUniqueCodes = [...new Set(foundCodesInMessages)];
             console.log(`[API] Re-fetching containers with updated codes:`, updatedUniqueCodes);
             const containers = await storage.getAllContainers();
-            
+
             allContainers = updatedUniqueCodes.map((code: string) => {
-              const found = containers.find((c: any) => 
-                c.containerCode === code || 
+              const found = containers.find((c: any) =>
+                c.containerCode === code ||
                 c.containerCode?.toUpperCase() === code.toUpperCase() ||
                 c.id === code
               );
@@ -1123,7 +1154,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 };
               }
             });
-            
+
             console.log(`[API] Updated containers from WhatsApp messages: ${allContainers.length} containers`);
           }
         } catch (error) {
@@ -1217,6 +1248,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Service History from imported Excel data
+  app.get("/api/service-history", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          id,
+          job_order_number,
+          container_number,
+          client_name,
+          complaint_attended_date,
+          service_type,
+          technician_name,
+          work_type,
+          job_type,
+          billing_type,
+          client_type,
+          issue_complaint_logged as issue_description,
+          work_description,
+          required_spare_parts,
+          observations,
+          service_client_location,
+          call_attended_type as call_status,
+          created_at as requested_at
+        FROM service_history
+        ORDER BY complaint_attended_date DESC NULLS LAST, created_at DESC
+      `);
+
+      res.json(result.rows);
+    } catch (error) {
+      console.error("Error fetching service history:", error);
+      res.status(500).json({ error: "Failed to fetch service history" });
+    }
+  });
+
   app.post("/api/service-requests", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const body = srCreateSchema.safeParse(req.body || {});
@@ -1252,8 +1317,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdById = customer.userId;
       }
 
+      // Generate job order number (e.g., JAN001, FEB045)
+      const jobOrderNumber = await generateJobOrderNumber();
+
       const request = await storage.createServiceRequest({
         requestNumber: `SR-${Date.now()}`,
+        jobOrder: jobOrderNumber,
         containerId,
         customerId,
         priority: finalPriority,
@@ -1293,7 +1362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const previousRequest = await storage.getServiceRequest(req.params.id);
       const request = await storage.updateServiceRequest(req.params.id, req.body);
       broadcast({ type: "service_request_updated", data: request });
-      
+
       // Notify client via WhatsApp if status changed or significant update
       try {
         const { customerCommunicationService } = await import('./services/whatsapp');
@@ -1304,7 +1373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Failed to send WhatsApp notification:', notifError);
         // Don't fail the request if notification fails
       }
-      
+
       res.json(request);
     } catch (error) {
       res.status(500).json({ error: "Failed to update service request" });
@@ -1356,16 +1425,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const schedDate = scheduledDate ? new Date(scheduledDate) : undefined;
       const request = await storage.assignServiceRequest(
-        req.params.id, 
-        technicianId, 
-        schedDate, 
+        req.params.id,
+        technicianId,
+        schedDate,
         scheduledTimeWindow
       );
       if (!request) {
         return res.status(404).json({ error: "Service request not found" });
       }
       broadcast({ type: "service_request_assigned", data: request });
-      
+
       // Notify client via WhatsApp
       try {
         const { customerCommunicationService } = await import('./services/whatsapp');
@@ -1374,7 +1443,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Failed to send WhatsApp notification:', notifError);
         // Don't fail the request if notification fails
       }
-      
+
       res.json(request);
     } catch (error) {
       res.status(500).json({ error: "Failed to assign service request" });
@@ -1388,7 +1457,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Service request not found" });
       }
       broadcast({ type: "service_request_started", data: request });
-      
+
       // Notify client via WhatsApp
       try {
         const { customerCommunicationService } = await import('./services/whatsapp');
@@ -1397,7 +1466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Failed to send WhatsApp notification:', notifError);
         // Don't fail the request if notification fails
       }
-      
+
       res.json(request);
     } catch (error) {
       res.status(500).json({ error: "Failed to start service request" });
@@ -1408,17 +1477,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { resolutionNotes, usedParts, beforePhotos, afterPhotos } = req.body;
       const request = await storage.completeServiceRequest(
-        req.params.id, 
-        resolutionNotes, 
-        usedParts, 
-        beforePhotos, 
+        req.params.id,
+        resolutionNotes,
+        usedParts,
+        beforePhotos,
         afterPhotos
       );
       if (!request) {
         return res.status(404).json({ error: "Service request not found" });
       }
       broadcast({ type: "service_request_completed", data: request });
-      
+
       // Notify client via WhatsApp
       try {
         const { customerCommunicationService } = await import('./services/whatsapp');
@@ -1427,7 +1496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Failed to send WhatsApp notification:', notifError);
         // Don't fail the request if notification fails
       }
-      
+
       res.json(request);
     } catch (error) {
       res.status(500).json({ error: "Failed to complete service request" });
@@ -1748,13 +1817,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // No-op update to touch updatedAt safely
           const existing = await storage.getServiceRequest(serviceId);
           if (!existing) return res.status(404).json({ error: "Service request not found" });
-        } catch {}
+        } catch { }
 
         // Optional: notify via WhatsApp (best-effort)
         try {
           const { sendTextMessage } = await import('./services/whatsapp');
           if (tech.phone) await sendTextMessage(tech.phone, `You have a new service assignment (${serviceId}).`);
-        } catch {}
+        } catch { }
 
         return res.json({ success: true, type: "thirdparty" });
       }
@@ -2228,9 +2297,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Calculate total from allowances
       const total = (technician.hotelAllowance || 0) +
-                   (technician.localTravelAllowance || 0) +
-                   (technician.foodAllowance || 0) +
-                   (technician.personalAllowance || 0);
+        (technician.localTravelAllowance || 0) +
+        (technician.foodAllowance || 0) +
+        (technician.personalAllowance || 0);
 
       const wageData = {
         grade: technician.grade,
@@ -2312,13 +2381,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log("Received technician creation request:", req.body);
       const technicianData = req.body;
-      
+
       const phoneNumber = technicianData.phone || technicianData.whatsappNumber;
       const email = technicianData.email;
-      
+
       let user;
       let isExistingUser = false;
-      
+
       // Check if user with this phone number already exists
       if (phoneNumber) {
         const existingUserByPhone = await storage.getUserByPhoneNumber(phoneNumber);
@@ -2337,17 +2406,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: existingTechnician.status || 'available',
             };
             const updatedTechnician = await storage.updateTechnician(existingTechnician.id, techData);
-            
+
             // Update user info if provided
             const userUpdates: any = { isActive: true };
             if (technicianData.name) userUpdates.name = technicianData.name;
             if (email) userUpdates.email = email;
             await storage.updateUser(existingUserByPhone.id, userUpdates);
-            
+
             broadcast({ type: "technician_updated", data: updatedTechnician });
             return res.json(updatedTechnician);
           }
-          
+
           // User exists but is not a technician - allow them to be both client and technician
           // Update user info but keep their existing role (they can be both)
           console.log(`[CREATE TECHNICIAN] Found existing user ${existingUserByPhone.id}, adding technician role (can be both client and technician)`);
@@ -2360,7 +2429,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log("User updated:", user);
         }
       }
-      
+
       // If no user found by phone, check by email
       if (!user && email) {
         const existingUserByEmail = await storage.getUserByEmail(email);
@@ -2379,17 +2448,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: existingTechnician.status || 'available',
             };
             const updatedTechnician = await storage.updateTechnician(existingTechnician.id, techData);
-            
+
             // Update user info if provided
             const userUpdates: any = { isActive: true };
             if (technicianData.name) userUpdates.name = technicianData.name;
             if (phoneNumber) userUpdates.phoneNumber = phoneNumber;
             await storage.updateUser(existingUserByEmail.id, userUpdates);
-            
+
             broadcast({ type: "technician_updated", data: updatedTechnician });
             return res.json(updatedTechnician);
           }
-          
+
           // User exists but is not a technician - allow them to be both client and technician
           console.log(`[CREATE TECHNICIAN] Found existing user ${existingUserByEmail.id} by email, adding technician role (can be both client and technician)`);
           const userUpdates: any = { isActive: true };
@@ -2401,12 +2470,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log("User updated:", user);
         }
       }
-      
+
       // If no existing user found, create a new one
       if (!user) {
         const { hashPassword } = await import('./services/auth');
         const defaultPassword = await hashPassword('ChangeMe@123');
-        
+
         console.log("Creating new user for technician...");
         // Set role to technician, but user can also be a client if needed
         user = await storage.createUser({
@@ -2421,10 +2490,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         console.log("User created:", user);
       }
-      
+
       // Generate employee code
       const employeeCode = `TECH-${Date.now().toString().slice(-6)}`;
-      
+
       // Create the technician with the user ID
       // Note: User can have both customer and technician records
       const techData = {
@@ -2439,11 +2508,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalJobsCompleted: 0,
       };
       console.log("Creating technician with data:", techData);
-      
+
       const technician = await storage.createTechnician(techData);
       console.log("Technician created:", technician);
       console.log(`[CREATE TECHNICIAN] ✅ Technician created for user ${user.id}. User can be both client and technician.`);
-      
+
       broadcast({ type: "technician_created", data: technician });
       res.json(technician);
     } catch (error) {
@@ -2514,47 +2583,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const technicianId = req.params.id;
       console.log(`[DELETE TECHNICIAN] Attempting to delete technician: ${technicianId}`);
-      
+
       const existing = await storage.getTechnician(technicianId);
       if (!existing) {
         console.log(`[DELETE TECHNICIAN] Technician not found: ${technicianId}`);
         return res.status(404).json({ error: "Technician not found" });
       }
-      
+
       if (!existing.userId) {
         console.log(`[DELETE TECHNICIAN] Technician has no userId: ${technicianId}`);
-        return res.status(400).json({ 
-          error: "Cannot delete technician", 
-          details: "Technician record is missing user association. Please contact support." 
+        return res.status(400).json({
+          error: "Cannot delete technician",
+          details: "Technician record is missing user association. Please contact support."
         });
       }
-      
+
       console.log(`[DELETE TECHNICIAN] Found technician: ${technicianId}, userId: ${existing.userId}`);
-      
+
       // Check for active service requests assigned to this technician
       try {
         const { db } = await import('./db');
         const { serviceRequests } = await import('@shared/schema');
         const { eq, and, ne, or, isNull } = await import('drizzle-orm');
-        
+
         // Get all service requests for this technician
         const allServiceRequests = await db
           .select()
           .from(serviceRequests)
           .where(eq(serviceRequests.assignedTechnicianId, technicianId));
-        
+
         // Filter out completed and cancelled statuses
         const trulyActive = allServiceRequests.filter(
           sr => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
         );
-        
+
         if (trulyActive.length > 0) {
           console.log(`[DELETE TECHNICIAN] Cannot delete: ${trulyActive.length} active service requests found`);
           const requestNumbers = trulyActive.map(sr => sr.requestNumber).slice(0, 5).join(', ');
           const moreText = trulyActive.length > 5 ? ` and ${trulyActive.length - 5} more` : '';
-          return res.status(400).json({ 
-            error: "Cannot delete technician", 
-            details: `This technician has ${trulyActive.length} active service request(s) (${requestNumbers}${moreText}). Please reassign or complete them first.` 
+          return res.status(400).json({
+            error: "Cannot delete technician",
+            details: `This technician has ${trulyActive.length} active service request(s) (${requestNumbers}${moreText}). Please reassign or complete them first.`
           });
         }
       } catch (queryError: any) {
@@ -2562,7 +2631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Don't block deletion if query fails - log and continue
         console.warn(`[DELETE TECHNICIAN] Continuing with deletion despite query error`);
       }
-      
+
       // Soft delete: mark user inactive and remove technician row
       try {
         console.log(`[DELETE TECHNICIAN] Marking user inactive: ${existing.userId}`);
@@ -2572,13 +2641,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Continue with technician deletion even if user update fails
         console.warn(`[DELETE TECHNICIAN] Continuing with technician deletion despite user update error`);
       }
-      
+
       console.log(`[DELETE TECHNICIAN] Deleting technician record: ${technicianId}`);
       const { db } = await import('./db');
       const { technicians } = await import('@shared/schema');
       const { eq } = await import('drizzle-orm');
       await db.delete(technicians).where(eq(technicians.id, technicianId));
-      
+
       broadcast({ type: "technician_deleted", data: { id: technicianId } });
       console.log(`[DELETE TECHNICIAN] Successfully deleted technician: ${technicianId}`);
       res.json({ success: true });
@@ -2591,7 +2660,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         constraint: error?.constraint,
         stack: error?.stack
       });
-      
+
       // Provide more specific error messages
       let errorMessage = error?.message || String(error);
       if (error?.code === '23503') {
@@ -2599,10 +2668,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (error?.constraint) {
         errorMessage = `Database constraint violation: ${error.constraint}`;
       }
-      
-      res.status(500).json({ 
-        error: "Failed to delete technician", 
-        details: errorMessage 
+
+      res.status(500).json({
+        error: "Failed to delete technician",
+        details: errorMessage
       });
     }
   });
@@ -2620,11 +2689,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/clients", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
       const { containerIds, ...clientData } = req.body;
-      
+
       // Create a user first (required for customer)
       const { hashPassword } = await import('./services/auth');
       const defaultPassword = await hashPassword('ChangeMe@123');
-      
+
       const user = await storage.createUser({
         phoneNumber: clientData.phone,
         name: clientData.contactPerson,
@@ -2635,24 +2704,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         whatsappVerified: true, // Enable WhatsApp by default for new clients
         emailVerified: false,
       });
-      
+
       // Create the customer with the user ID
       const customerData = {
         ...clientData,
         userId: user.id,
         status: 'active'
       };
-      
+
       const created = await storage.createCustomer(customerData);
-      
+
       // If containers are specified, assign them to the customer
       if (containerIds && Array.isArray(containerIds) && containerIds.length > 0) {
         const assignmentPromises = containerIds.map(async (containerId: string) => {
           try {
             await storage.assignContainerToCustomer(
-              containerId, 
-              created.id, 
-              new Date(), 
+              containerId,
+              created.id,
+              new Date(),
               new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year from now
             );
           } catch (assignError) {
@@ -2660,10 +2729,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Don't fail the entire request if individual container assignment fails
           }
         });
-        
+
         await Promise.all(assignmentPromises);
       }
-      
+
       res.json(created);
     } catch (error) {
       console.error("Client creation error:", error);
@@ -2699,7 +2768,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { enabled } = req.body;
       const customer = await storage.getCustomer(req.params.id);
-      
+
       if (!customer) {
         return res.status(404).json({ error: "Client not found" });
       }
@@ -2739,7 +2808,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const assignments = [];
 
       const { schedulerService } = await import('./services/scheduler');
-      
+
       for (const request of pendingRequests) {
         try {
           const assignment = await schedulerService.autoAssignBestTechnician(request.id);
@@ -2751,9 +2820,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const successCount = assignments.filter(a => a.assigned).length;
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         assignments,
         assignedCount: successCount,
         totalRequests: pendingRequests.length
@@ -2840,7 +2909,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { getOrbcommClient } = await import("./services/orbcomm");
       const client = getOrbcommClient();
-      res.json({ 
+      res.json({
         connected: client.isConnected,
         url: process.env.ORBCOMM_URL || 'wss://wamc.wamcentral.net:44355/cdh',
         subprotocol: 'cdh.orbcomm.com'
@@ -2855,15 +2924,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { getOrbcommClient } = await import("./services/orbcomm");
       const client = getOrbcommClient();
-      
+
       if (!client.isConnected) {
         return res.status(400).json({ error: "Orbcomm not connected" });
       }
-      
+
       // Request fresh device list
       const devices = await client.getAllDevices();
-      
-      res.json({ 
+
+      res.json({
         message: "Data refresh initiated",
         devicesFound: devices.length,
         devices: devices
@@ -2878,9 +2947,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { getEnhancedOrbcommClient } = await import("./services/orbcomm");
       const client = getEnhancedOrbcommClient();
-      
+
       const result = await client.testConnection();
-      
+
       res.json({
         message: "Enhanced Orbcomm connection test completed",
         success: result.success,
@@ -2898,9 +2967,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { getOrbcommIntegClient } = await import("./services/orbcomm");
       const client = getOrbcommIntegClient();
-      
+
       const result = await client.testConnection();
-      
+
       res.json({
         message: "Orbcomm INTEG Environment test completed",
         success: result.success,
@@ -2957,7 +3026,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/whatsapp/media/:ref", async (req, res) => {
     try {
       const ref = decodeURIComponent(req.params.ref || "");
-      
+
       // Handle both "wa:mediaId" format and plain "mediaId" format for backward compatibility
       let mediaId: string;
       if (ref.startsWith("wa:")) {
@@ -2966,7 +3035,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Assume it's a plain media ID (for backward compatibility with existing records)
         mediaId = ref;
       }
-      
+
       if (!mediaId) return res.status(400).send("Invalid reference");
       const { default: axios } = await import("axios");
       const { WHATSAPP_TOKEN, GRAPH_VERSION } = await (async () => {
@@ -3053,7 +3122,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const role = (req.user?.role || '').toLowerCase();
       // Admins/coordinators can view any customer profile
-      if (["admin","coordinator","super_admin"].includes(role)) {
+      if (["admin", "coordinator", "super_admin"].includes(role)) {
         const customer = await storage.getCustomer(req.params.id);
         if (!customer) return res.status(404).json({ error: "Customer not found" });
         return res.json(customer);
@@ -3078,7 +3147,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const role = (req.user?.role || '').toLowerCase();
 
-      if (["admin","coordinator","super_admin"].includes(role)) {
+      if (["admin", "coordinator", "super_admin"].includes(role)) {
         const list = await storage.getContainersByCustomer(req.params.id);
         return res.json(list);
       }
@@ -3119,7 +3188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Toggle client access (enable/disable)
-  app.post('/api/admin/customers/:id/toggle-access', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
+  app.post('/api/admin/customers/:id/toggle-access', authenticateUser, requireRole('admin', 'super_admin', 'coordinator'), async (req, res) => {
     try {
       const customer = await storage.getCustomer(req.params.id);
       if (!customer) return res.status(404).json({ error: 'Customer not found' });
@@ -3261,7 +3330,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const alert = await storage.getAlert(alertId);
       const container = await storage.getContainer(alert.containerId);
       const customer = await storage.getCustomer(customerId);
-      
+
       const message = formatCriticalAlertMessage(alert, container);
       const result = await sendTextMessage(customer.phoneNumber, message);
       res.json(result);
@@ -3275,7 +3344,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { technicianId, date } = req.body;
       const technician = await storage.getTechnician(technicianId);
       const services = await storage.getTechnicianSchedule(technicianId, date);
-      
+
       const result = await sendTechnicianSchedule(technician, services);
       res.json(result);
     } catch (error) {
@@ -3288,7 +3357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { invoiceId, customerId } = req.body;
       const invoice = await storage.getInvoice(invoiceId);
       const customer = await storage.getCustomer(customerId);
-      
+
       const message = formatInvoiceMessage(invoice);
       const result = await sendTextMessage(customer.phoneNumber, message);
       res.json(result);
@@ -3302,7 +3371,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { serviceRequestId, customerId } = req.body;
       const serviceRequest = await storage.getServiceRequest(serviceRequestId);
       const customer = await storage.getCustomer(customerId);
-      
+
       const result = await sendCustomerFeedbackRequest(customer, serviceRequest);
       res.json(result);
     } catch (error) {
@@ -3618,8 +3687,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Provide more detailed error information
       const errorMessage = error?.message || "Unknown error occurred";
       const isConnectionError = errorMessage.includes("External API connection failed") ||
-                               errorMessage.includes("Server returned HTML page") ||
-                               errorMessage.includes("Non-JSON response");
+        errorMessage.includes("Server returned HTML page") ||
+        errorMessage.includes("Non-JSON response");
 
       if (isConnectionError) {
         res.status(400).json({
@@ -3807,7 +3876,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/scheduling/notify-technician", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
       const { technicianId, date } = req.body;
-      
+
       if (!technicianId) {
         return res.status(400).json({ error: "technicianId is required" });
       }
@@ -3815,7 +3884,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const scheduleDate = date ? new Date(date) : new Date();
       const { schedulerService } = await import('./services/scheduler');
       await schedulerService.sendDailyScheduleToTechnician(technicianId, scheduleDate);
-      
+
       res.json({ success: true, message: "Schedule sent to technician" });
     } catch (error: any) {
       console.error('Schedule notification error:', error);
@@ -3828,10 +3897,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { date } = req.body;
       const scheduleDate = date ? new Date(date) : new Date();
-      
+
       const { schedulerService } = await import('./services/scheduler');
       await schedulerService.sendDailySchedulesToAllTechnicians(scheduleDate);
-      
+
       res.json({ success: true, message: "Schedules sent to all technicians" });
     } catch (error: any) {
       console.error('Bulk schedule notification error:', error);
@@ -3843,7 +3912,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/alerts/simulate", authenticateUser, requireRole("admin"), async (req, res) => {
     try {
       const { containerId, alertType = "temperature", severity = "critical" } = req.body;
-      
+
       if (!containerId) {
         return res.status(400).json({ error: "containerId is required" });
       }
@@ -3867,11 +3936,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { alertService } = await import('./services/alerts');
       const result = await alertService.processNewAlert(simulatedAlert);
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         message: "Alert simulation completed",
-        ...result 
+        ...result
       });
     } catch (error: any) {
       console.error('Alert simulation error:', error);
@@ -3956,7 +4025,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
-      
+
       console.log('📱 Status endpoint - calling getAllDevices...');
       const devices = await orbcommClient.getAllDevices();
       console.log('📱 Status endpoint - devices count:', devices.length);
@@ -3968,7 +4037,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error('ORBCOMM status error:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to get ORBCOMM status',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -3980,13 +4049,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
-      
+
       console.log('📱 Manual trigger - sending GetEvents request...');
       orbcommClient.sendPeriodicRequest();
-      
+
       // Wait for response
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       const devices = await orbcommClient.getAllDevices();
       res.json({
         success: true,
@@ -4050,19 +4119,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('📱 ORBCOMM devices endpoint called');
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
-      
+
       console.log('🔍 ORBCOMM client connected:', orbcommClient.isConnected);
       console.log('📱 Calling getAllDevices...');
-      
+
       const devices = await orbcommClient.getAllDevices();
       console.log('📱 Retrieved real ORBCOMM devices:', devices.length);
       console.log('📱 Devices:', JSON.stringify(devices, null, 2));
-      
+
       res.json(devices);
     } catch (error) {
       console.error('❌ ORBCOMM devices error:', error);
       console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack');
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to fetch ORBCOMM devices',
         details: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined
@@ -4077,7 +4146,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orbcommClient = getOrbcommClient();
       console.log('📱 Fetching real device data for:', deviceId);
       const deviceData = await orbcommClient.getDeviceData(deviceId);
-      
+
       if (!deviceData) {
         return res.status(404).json({ error: 'Device not found' });
       }
@@ -4093,10 +4162,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log('🚀 Fetching live ORBCOMM data with container matching');
 
-      const { getOrbcommClient } = await import('./services/orbcomm-real');
+      const { getOrbcommClient } = await import('./services/orbcommClient');
       const orbcommClient = getOrbcommClient();
 
-      if (!orbcommClient.isConnected) {
+      if (!orbcommClient || !orbcommClient.isConnected) {
         return res.status(503).json({
           error: 'ORBCOMM service not connected',
           message: 'Live data feed is currently unavailable'
@@ -4228,7 +4297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   // Admin: Verify client for WhatsApp access
-  app.post('/api/admin/whatsapp/verify-client', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
+  app.post('/api/admin/whatsapp/verify-client', authenticateUser, requireRole('admin', 'super_admin', 'coordinator'), async (req, res) => {
     try {
       const { phoneNumber, name, email, role } = req.body || {};
       if (!phoneNumber || !name || !email) return res.status(400).json({ error: 'phoneNumber, name, email required' });
@@ -4282,7 +4351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Revoke WhatsApp access
-  app.post('/api/admin/whatsapp/revoke-client', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
+  app.post('/api/admin/whatsapp/revoke-client', authenticateUser, requireRole('admin', 'super_admin', 'coordinator'), async (req, res) => {
     try {
       const { phoneNumber } = req.body || {};
       if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
@@ -4297,7 +4366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: List users (filter by verified)
-  app.get('/api/admin/whatsapp/users', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
+  app.get('/api/admin/whatsapp/users', authenticateUser, requireRole('admin', 'super_admin', 'coordinator'), async (req, res) => {
     try {
       const { verified } = req.query as any;
       const { db } = await import('./db');
@@ -4318,7 +4387,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: send text/template (any number)
-  app.post('/api/admin/whatsapp/send-text', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
+  app.post('/api/admin/whatsapp/send-text', authenticateUser, requireRole('admin', 'super_admin', 'coordinator'), async (req, res) => {
     try {
       const { to, text } = req.body || {};
       if (!to || !text) return res.status(400).json({ error: 'to and text required' });
@@ -4329,7 +4398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/admin/whatsapp/send-template', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req, res) => {
+  app.post('/api/admin/whatsapp/send-template', authenticateUser, requireRole('admin', 'super_admin', 'coordinator'), async (req, res) => {
     try {
       const { to, templateName, parameters, languageCode } = req.body || {};
       if (!to || !templateName) return res.status(400).json({ error: 'to and templateName required' });
@@ -4344,7 +4413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/proxy/nominatim", async (req: any, res) => {
     try {
       const { q, ...otherParams } = req.query;
-      
+
       if (!q) {
         return res.status(400).json({ error: 'Query parameter "q" is required' });
       }
@@ -4352,7 +4421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const url = new URL('https://nominatim.openstreetmap.org/search');
       url.searchParams.append('q', q);
       url.searchParams.append('format', 'json');
-      
+
       // Add other parameters
       Object.entries(otherParams).forEach(([key, value]) => {
         if (key !== 'q') {

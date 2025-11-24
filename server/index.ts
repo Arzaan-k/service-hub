@@ -2,15 +2,22 @@ import { config } from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 
-// Load environment variables from .env.development file or .env file
-const envDevPath = path.join(process.cwd(), '.env.development');
+// Load environment variables from .env file first, then .env.development to override
 const envPath = path.join(process.cwd(), '.env');
+const envDevPath = path.join(process.cwd(), '.env.development');
 
-if (fs.existsSync(envDevPath)) {
-  config({ path: envDevPath });
-} else if (fs.existsSync(envPath)) {
+// Load .env first (base configuration)
+if (fs.existsSync(envPath)) {
   config({ path: envPath });
-} else {
+}
+
+// Then load .env.development to override in development mode
+if (fs.existsSync(envDevPath) && process.env.NODE_ENV === 'development') {
+  config({ path: envDevPath, override: true });
+  console.log('✅ Loaded .env.development with overrides');
+}
+
+if (!fs.existsSync(envPath) && !fs.existsSync(envDevPath)) {
   console.log('Warning: No .env or .env.development file found');
 }
 
@@ -19,6 +26,7 @@ import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeOrbcommConnection, populateOrbcommDevices } from "./services/orbcomm";
+import { startOrbcommIntegration } from "./services/orbcommIntegration";
 import { vectorStore } from "./services/vectorStore";
 import { db } from "./db";
 
@@ -162,20 +170,29 @@ app.use((req, res, next) => {
   console.log('[SERVER] ENABLE_ORBCOMM_DEV:', process.env.ENABLE_ORBCOMM_DEV);
 
   if (process.env.NODE_ENV !== 'development' || process.env.ENABLE_ORBCOMM_DEV === 'true' || process.env.FORCE_ORBCOMM_DEV === 'true') {
-    console.log('[SERVER] Initializing Orbcomm connection...');
-    try {
-      await initializeOrbcommConnection();
+    // console.log('[SERVER] Initializing Orbcomm connection...');
+    // try {
+    //   await initializeOrbcommConnection();
+    //
+    //   // Populate database with production devices
+    //   setTimeout(async () => {
+    //     try {
+    //       await populateOrbcommDevices();
+    //     } catch (error) {
+    //       console.error('❌ Error populating Orbcomm devices:', error);
+    //     }
+    //   }, 5000); // Wait 5 seconds after server start
+    // } catch (error) {
+    //   console.error('❌ Error initializing Orbcomm connection:', error);
+    // }
 
-      // Populate database with production devices
-      setTimeout(async () => {
-        try {
-          await populateOrbcommDevices();
-        } catch (error) {
-          console.error('❌ Error populating Orbcomm devices:', error);
-        }
-      }, 5000); // Wait 5 seconds after server start
+    // Initialize Orbcomm CDH WebSocket Integration
+    console.log('[SERVER] Initializing Orbcomm CDH WebSocket integration...');
+    try {
+      await startOrbcommIntegration();
+      console.log('✅ Orbcomm CDH integration started successfully');
     } catch (error) {
-      console.error('❌ Error initializing Orbcomm connection:', error);
+      console.error('❌ Error starting Orbcomm CDH integration:', error);
     }
   } else {
     console.log('⏭️ Skipping Orbcomm initialization in development mode');
