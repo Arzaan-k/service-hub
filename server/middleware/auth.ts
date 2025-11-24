@@ -3,6 +3,7 @@ import { storage } from "../storage";
 
 export interface AuthRequest extends Request {
   user?: any;
+  file?: Express.Multer.File;
 }
 
 export async function authenticateUser(req: AuthRequest, res: Response, next: NextFunction) {

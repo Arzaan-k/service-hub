@@ -13,6 +13,7 @@ import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock } from "lu
 import { useToast } from "@/hooks/use-toast";
 import WageBreakdown from "@/components/wage-breakdown";
 import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
+import { websocket } from "@/lib/websocket";
 
 function formatDate(d: string | Date) {
   const dt = typeof d === "string" ? new Date(d) : d;
@@ -97,6 +98,35 @@ export default function TechnicianProfile() {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ baseLocation: "" });
+
+  // WebSocket listeners for real-time updates
+  useEffect(() => {
+    const onServiceRequestAssigned = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", technicianId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "schedule"] });
+    };
+
+    const onServiceRequestStarted = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", technicianId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "schedule"] });
+    };
+
+    const onServiceRequestCompleted = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", technicianId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "performance"] });
+    };
+
+    websocket.on("service_request_assigned", onServiceRequestAssigned);
+    websocket.on("service_request_started", onServiceRequestStarted);
+    websocket.on("service_request_completed", onServiceRequestCompleted);
+
+    return () => {
+      websocket.off("service_request_assigned", onServiceRequestAssigned);
+      websocket.off("service_request_started", onServiceRequestStarted);
+      websocket.off("service_request_completed", onServiceRequestCompleted);
+    };
+  }, [queryClient, technicianId]);
 
   const updateTechnician = useMutation({
     mutationFn: async (data: any) => {

@@ -4252,24 +4252,35 @@ export class CustomerCommunicationService {
    */
   async notifyServiceRequestUpdate(serviceRequestId: string, updateType: 'assigned' | 'started' | 'completed' | 'status_changed' | 'updated', previousData?: any): Promise<void> {
     try {
+      console.log(`[WhatsApp] Starting notification for service request ${serviceRequestId}, type: ${updateType}`);
+      
       const serviceRequest = await this.storage.getServiceRequest(serviceRequestId);
       if (!serviceRequest) {
         console.log(`[WhatsApp] Service request ${serviceRequestId} not found, skipping notification`);
         return;
       }
+      console.log(`[WhatsApp] Service request found: ${serviceRequest.requestNumber}, customerId: ${serviceRequest.customerId}`);
 
+      // Get the WhatsApp number from the original service request conversation
+      // This ensures we send to the same number that created the request
+      const whatsappMessages = await this.storage.getWhatsAppMessagesByServiceRequest(serviceRequestId);
+      console.log(`[WhatsApp] Found ${whatsappMessages.length} WhatsApp messages for this service request`);
+      
+      // Find the first customer message (incoming message that created the request)
+      const customerMessage = whatsappMessages.find((msg: any) => 
+        msg.recipientType === 'customer' || msg.phoneNumber
+      );
+      
+      if (!customerMessage || !customerMessage.phoneNumber) {
+        console.log(`[WhatsApp] No customer WhatsApp number found in service request messages, skipping notification`);
+        return;
+      }
+      
+      const whatsappNumber = customerMessage.phoneNumber;
+      console.log(`[WhatsApp] Will send notification to original requester: ${whatsappNumber}`);
+
+      // Get customer for logging purposes
       const customer = await this.storage.getCustomer(serviceRequest.customerId);
-      if (!customer) {
-        console.log(`[WhatsApp] Customer not found for service request ${serviceRequestId}, skipping notification`);
-        return;
-      }
-
-      // Get customer's WhatsApp number
-      const whatsappNumber = customer.whatsappNumber || customer.phone;
-      if (!whatsappNumber) {
-        console.log(`[WhatsApp] Customer ${customer.id} has no WhatsApp number, skipping notification`);
-        return;
-      }
 
       // Get related data
       const container = await this.storage.getContainer(serviceRequest.containerId);
@@ -4291,38 +4302,73 @@ export class CustomerCommunicationService {
             `📋 Request Number: ${serviceRequest.requestNumber}\n` +
             `📦 Container: ${container?.containerCode || 'Unknown'}\n` +
             `👷 Technician: ${technicianName}\n` +
-            (serviceRequest.scheduledDate 
-              ? `📅 Scheduled: ${new Date(serviceRequest.scheduledDate).toLocaleDateString()}\n` +
-                (serviceRequest.scheduledTimeWindow ? `⏰ Time: ${serviceRequest.scheduledTimeWindow}\n` : '')
-              : '') +
             `\nYour service request has been assigned to a technician. You'll receive updates as the service progresses.`;
           break;
 
         case 'started':
+          const startedTime = serviceRequest.actualStartTime 
+            ? new Date(serviceRequest.actualStartTime).toLocaleString('en-IN', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: true 
+              })
+            : new Date().toLocaleString('en-IN', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: true 
+              });
           message = `🔔 *Service Request Update*\n\n` +
             `🚀 *Service Started*\n\n` +
             `📋 Request Number: ${serviceRequest.requestNumber}\n` +
             `📦 Container: ${container?.containerCode || 'Unknown'}\n` +
             `👷 Technician: ${technicianName}\n` +
-            `⏰ Started: ${serviceRequest.actualStartTime ? new Date(serviceRequest.actualStartTime).toLocaleString() : 'Just now'}\n` +
+            `⏰ Started: ${startedTime}\n` +
             `\nThe technician has started working on your service request.`;
           break;
 
         case 'completed':
-          const duration = serviceRequest.serviceDuration 
-            ? `${serviceRequest.serviceDuration} minutes`
-            : serviceRequest.actualStartTime && serviceRequest.actualEndTime
-            ? `${Math.round((new Date(serviceRequest.actualEndTime).getTime() - new Date(serviceRequest.actualStartTime).getTime()) / 60000)} minutes`
-            : 'N/A';
+          const durationMinutes = serviceRequest.durationMinutes || serviceRequest.serviceDuration 
+            || (serviceRequest.actualStartTime && serviceRequest.actualEndTime
+            ? Math.round((new Date(serviceRequest.actualEndTime).getTime() - new Date(serviceRequest.actualStartTime).getTime()) / 60000)
+            : 0);
+          const duration = `${durationMinutes} minutes`;
+          
+          const completedTime = serviceRequest.actualEndTime 
+            ? new Date(serviceRequest.actualEndTime).toLocaleString('en-IN', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: true 
+              })
+            : new Date().toLocaleString('en-IN', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: true 
+              });
           
           message = `✅ *Service Completed!*\n\n` +
             `📋 Request Number: ${serviceRequest.requestNumber}\n` +
             `📦 Container: ${container?.containerCode || 'Unknown'}\n` +
             `👷 Technician: ${technicianName}\n` +
-            `⏰ Completed: ${serviceRequest.actualEndTime ? new Date(serviceRequest.actualEndTime).toLocaleString() : 'Just now'}\n` +
+            `⏰ Completed: ${completedTime}\n` +
             `⏱️ Duration: ${duration}\n` +
             (serviceRequest.resolutionNotes 
-              ? `\n📝 Notes: ${serviceRequest.resolutionNotes.substring(0, 200)}${serviceRequest.resolutionNotes.length > 200 ? '...' : ''}\n`
+              ? `\n📝 Notes: ${serviceRequest.resolutionNotes}\n`
               : '') +
             `\nThank you for using our service!`;
           break;
@@ -4363,34 +4409,40 @@ export class CustomerCommunicationService {
       }
 
       if (message) {
+        console.log(`[WhatsApp] Sending message to ${whatsappNumber}:`, message.substring(0, 100) + '...');
         await sendTextMessage(whatsappNumber, message);
+        console.log(`[WhatsApp] Message sent successfully`);
 
         // Log the communication
-        const customerUser = await this.storage.getUser(customer.userId);
-        if (customerUser) {
-          await this.storage.createWhatsappMessage({
-            recipientType: 'customer',
-            recipientId: customerUser.id,
-            phoneNumber: whatsappNumber,
-            messageType: messageType as any,
-            messageContent: { 
-              body: message,
-              serviceRequest: {
-                id: serviceRequest.id,
-                requestNumber: serviceRequest.requestNumber,
-                status: serviceRequest.status
+        if (customer) {
+          const customerUser = await this.storage.getUser(customer.userId);
+          if (customerUser) {
+            await this.storage.createWhatsappMessage({
+              recipientType: 'customer',
+              recipientId: customerUser.id,
+              phoneNumber: whatsappNumber,
+              messageType: messageType as any,
+              messageContent: { 
+                body: message,
+                serviceRequest: {
+                  id: serviceRequest.id,
+                  requestNumber: serviceRequest.requestNumber,
+                  status: serviceRequest.status
+                },
+                updateType
               },
-              updateType
-            },
-            whatsappMessageId: `sr_update_${serviceRequestId}_${Date.now()}`,
-            status: 'sent',
-            relatedEntityType: 'ServiceRequest',
-            relatedEntityId: serviceRequestId,
-            sentAt: new Date(),
-          });
+              whatsappMessageId: `sr_update_${serviceRequestId}_${Date.now()}`,
+              status: 'sent',
+              relatedEntityType: 'ServiceRequest',
+              relatedEntityId: serviceRequestId,
+              sentAt: new Date(),
+            });
+          }
         }
 
         console.log(`✅ WhatsApp notification sent for service request ${serviceRequestId} (${updateType})`);
+      } else {
+        console.log(`[WhatsApp] No message generated for update type: ${updateType}`);
       }
     } catch (error) {
       console.error(`[WhatsApp] Error sending service request update notification:`, error);
