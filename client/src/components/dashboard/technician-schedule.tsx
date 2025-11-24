@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { CalendarIcon, ChevronLeft, ChevronRight, MapPin, Clock, User, AlertTriangle } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
+import { Link } from "wouter";
 
 interface TechnicianScheduleProps {
   technicians: any[];
@@ -37,8 +38,8 @@ export default function TechnicianSchedule({ technicians }: TechnicianSchedulePr
   });
 
   // Helper functions
-  const getTechnicianStatus = (schedule: any[]) => {
-    if (schedule.length === 0) return { status: "available", label: "Available" };
+const getTechnicianStatus = (schedule: any[]) => {
+  if (schedule.length === 0) return { status: "available", label: "Available" };
 
     const now = new Date();
     const hasActiveJobs = schedule.some(job =>
@@ -48,9 +49,14 @@ export default function TechnicianSchedule({ technicians }: TechnicianSchedulePr
 
     if (hasActiveJobs) return { status: "active", label: "On Route" };
 
-    const upcomingJobs = schedule.filter(job =>
-      job.scheduledDate && new Date(job.scheduledDate) > now
-    );
+  const upcomingJobs = schedule.filter(job =>
+    job.scheduledDate && new Date(job.scheduledDate) > now
+  );
+
+  const pendingOnly = schedule.filter(job => job.isPending);
+  if (pendingOnly.length > 0 && schedule.length === pendingOnly.length) {
+    return { status: "pending", label: "Pending Assignment" };
+  }
 
     if (upcomingJobs.length > 0) {
       const nextJob = upcomingJobs[0];
@@ -69,6 +75,7 @@ export default function TechnicianSchedule({ technicians }: TechnicianSchedulePr
       case "active": return "bg-success/20 text-success";
       case "starting": return "bg-warning/20 text-warning";
       case "scheduled": return "bg-blue-500/20 text-blue-400";
+    case "pending": return "bg-warning/20 text-warning";
       default: return "bg-muted/20 text-muted-foreground";
     }
   };
@@ -229,22 +236,26 @@ export default function TechnicianSchedule({ technicians }: TechnicianSchedulePr
                   <div className="border-t border-border/50 pt-3">
                     <TooltipProvider>
                       <div className="flex flex-wrap gap-2">
-                        {schedule.map((job: any) => (
-                          <Tooltip key={job.id}>
+                {schedule.map((job: any) => (
+                          <Tooltip key={`${job.id}-${job.isPending ? "pending" : "scheduled"}`}>
                             <TooltipTrigger asChild>
-                              <div
+                              <Link
+                                to={`/service-requests/${job.id}`}
                                 className={cn(
-                                  "px-3 py-2 border rounded-md cursor-pointer hover:shadow-sm transition-shadow flex-shrink-0 min-w-[100px] max-w-[140px]",
+                                  "px-3 py-2 border rounded-md cursor-pointer hover:shadow-sm transition-shadow flex-shrink-0 min-w-[120px] max-w-[140px] no-underline",
                                   getJobPriorityColor(job.priority)
                                 )}
                               >
-                                <p className="text-xs font-medium truncate">
-                                  {job.requestNumber || `SR-${job.id.slice(-4)}`}
+                                <p className="text-xs font-medium truncate text-foreground">
+                                  {job.requestNumber || `SR-${job.id?.slice?.(-4) || "N/A"}`}
                                 </p>
                                 <p className="text-xs text-muted-foreground truncate">
                                   {job.issueDescription || "Service"}
                                 </p>
-                              </div>
+                                {job.isPending && (
+                                  <span className="text-[10px] text-warning block mt-1">Pending scheduling</span>
+                                )}
+                              </Link>
                             </TooltipTrigger>
                             <TooltipContent side="top" className="max-w-xs p-4">
                               <div className="space-y-2">
@@ -297,6 +308,13 @@ export default function TechnicianSchedule({ technicians }: TechnicianSchedulePr
                                     <div className="flex items-start gap-2">
                                       <MapPin className="h-3 w-3 mt-0.5 text-muted-foreground" />
                                       <span>Container: {job.container.containerCode || job.containerId}</span>
+                                    </div>
+                                  )}
+
+                                  {job.isPending && (
+                                    <div className="flex items-start gap-2">
+                                      <Clock className="h-3 w-3 mt-0.5 text-warning" />
+                                      <span>Awaiting schedule assignment</span>
                                     </div>
                                   )}
 

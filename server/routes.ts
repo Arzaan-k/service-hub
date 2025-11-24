@@ -1574,19 +1574,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { date } = req.query;
       const targetDate = date ? new Date(date as string) : new Date();
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
 
-      // Get all technicians
       const technicians = await storage.getAllTechnicians();
       console.log(`Found ${technicians.length} technicians`);
 
-      // Get schedules for each technician
+      const activeStatuses = new Set(["pending", "approved", "scheduled", "in_progress"]);
+
       const schedules = await Promise.all(
         technicians.map(async (technician: any) => {
           try {
-            const schedule = await storage.getTechnicianSchedule(technician.id, targetDate.toISOString().split('T')[0]);
+            const requests = await storage.getServiceRequestsByTechnician(technician.id);
+
+            const scheduledJobs = requests
+              .filter((req: any) => {
+                if (!req.scheduledDate) return false;
+                const jobDate = new Date(req.scheduledDate);
+                if (isNaN(jobDate.getTime())) return false;
+                return jobDate >= startOfDay && jobDate <= endOfDay;
+              })
+              .sort((a: any, b: any) => {
+                const aDate = new Date(a.scheduledDate).getTime();
+                const bDate = new Date(b.scheduledDate).getTime();
+                return aDate - bDate;
+              })
+              .map((job: any) => ({ ...job, isPending: false }));
+
+            const pendingAssignments = requests
+              .filter((req: any) => {
+                const status = (req.status || "").toLowerCase();
+                return !req.scheduledDate && activeStatuses.has(status);
+              })
+              .sort((a: any, b: any) => {
+                const aDate = new Date(a.updatedAt || a.createdAt || Date.now()).getTime();
+                const bDate = new Date(b.updatedAt || b.createdAt || Date.now()).getTime();
+                return bDate - aDate;
+              })
+              .map((job: any) => ({ ...job, isPending: true }));
+
             return {
               technician,
-              schedule
+              schedule: [...scheduledJobs, ...pendingAssignments]
             };
           } catch (error) {
             console.error(`Error fetching schedule for technician ${technician.id}:`, error);
@@ -1599,7 +1630,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       console.log(`Returning ${schedules.length} technician schedules`);
-      console.log(`Sample: ${schedules[0]?.technician?.name || schedules[0]?.technician?.employeeCode} has ${schedules[0]?.schedule?.length || 0} jobs`);
+      console.log(`Sample: ${schedules[0]?.technician?.name || schedules[0]?.technician?.employeeCode} has ${schedules[0]?.schedule?.length || 0} jobs (including pending)`);
 
       res.json({
         date: targetDate.toISOString().split('T')[0],
