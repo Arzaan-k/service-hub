@@ -72,7 +72,7 @@ export default function ContainerFleetStats({ containers }: ContainerFleetStatsP
   };
 
   return (
-    <GlassCard className="h-full p-6">
+    <GlassCard className="h-full p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-purple-500/10 rounded-xl">

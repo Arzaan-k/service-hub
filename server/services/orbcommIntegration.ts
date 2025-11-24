@@ -262,15 +262,12 @@ class OrbcommIntegrationService {
         await this.updateContainerTelemetry(alert);
       }
 
-      // Store alert in database for critical alerts only (must be done before creating service request)
+      // Store alert in database for critical alerts only
       if (alert.severity === 'high' || alert.severity === 'critical' || alert.severity === 'medium') {
         await this.storeAlert(alert);
       }
 
-      // Create service request after alert is stored (foreign key dependency)
-      if (alert.containerId && this.shouldCreateServiceRequest(alert)) {
-        await this.createServiceRequestFromAlert(alert);
-      }
+      // Service requests are NOT automatically created - users will create them manually from alerts
 
     } catch (error) {
       console.error('❌ Error handling processed alert:', error);
@@ -304,7 +301,7 @@ class OrbcommIntegrationService {
   /**
    * Create service request from alert
    */
-  private async createServiceRequestFromAlert(alert: ProcessedAlert): Promise<void> {
+  private async createServiceRequestFromAlert(alert: ProcessedAlert, alertDatabaseId: string): Promise<void> {
     try {
       console.log(`📝 Creating service request from alert: ${alert.alertId}`);
 
@@ -321,13 +318,13 @@ class OrbcommIntegrationService {
         return;
       }
 
-      // Create service request
+      // Create service request with the database ID of the alert
       const serviceRequest = await storage.createServiceRequest({
         requestNumber: `SR-${Date.now()}`,
         jobOrder: `AUTO${Date.now().toString().slice(-6)}`, // Temporary job order
         containerId: alert.containerId!,
         customerId: customerId,
-        alertId: alert.alertId,
+        alertId: alertDatabaseId, // Use the database ID, not the alert code
         priority: alert.severity === 'critical' ? 'urgent' : 'high',
         status: 'pending',
         issueDescription: `Orbcomm Alert: ${alert.alertType}\n${alert.description}`,
@@ -435,11 +432,11 @@ class OrbcommIntegrationService {
   /**
    * Store alert in database
    */
-  private async storeAlert(alert: ProcessedAlert): Promise<void> {
+  private async storeAlert(alert: ProcessedAlert): Promise<any> {
     try {
       // Create alert record if container is found
       if (alert.containerId) {
-        await storage.createAlert({
+        const storedAlert = await storage.createAlert({
           alertCode: alert.alertId,
           containerId: alert.containerId,
           alertType: this.mapAlertType(alert.alertType),
@@ -457,10 +454,14 @@ class OrbcommIntegrationService {
         });
 
         console.log(`✅ Stored alert in database: ${alert.alertId}`);
+        return storedAlert;
       }
+
+      return null;
 
     } catch (error) {
       console.error('❌ Error storing alert:', error);
+      return null;
     }
   }
 

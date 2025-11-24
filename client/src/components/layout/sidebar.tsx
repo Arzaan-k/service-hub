@@ -41,10 +41,10 @@ export default function Sidebar() {
   return (
     <aside
       id="sidebar"
-      className="sidebar hidden lg:flex w-72 bg-sidebar-bg/60 backdrop-blur-2xl border-r border-white/10 flex-col fixed lg:sticky top-0 h-screen z-50 transition-all duration-500"
+      className="sidebar hidden lg:flex w-72 bg-sidebar-bg/60 backdrop-blur-2xl border-r border-border flex-col fixed lg:sticky top-0 h-screen z-50 transition-all duration-500"
     >
       {/* Logo */}
-      <div className="p-8 border-b border-white/5">
+      <div className="p-8 border-b border-border">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center shadow-lg shadow-primary/20">
             <i className="fas fa-ship text-white text-xl"></i>
@@ -67,8 +67,8 @@ export default function Sidebar() {
               className={cn(
                 "flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 group relative overflow-hidden",
                 isActive
-                  ? "bg-white/10 text-primary font-bold shadow-sm backdrop-blur-md"
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                  ? "bg-primary/10 text-primary font-bold shadow-sm backdrop-blur-md"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
               data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
             >
@@ -90,7 +90,7 @@ export default function Sidebar() {
                     "ml-auto text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm",
                     isActive
                       ? "bg-primary text-white"
-                      : "bg-white/5 text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+                      : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
                   )}
                 >
                   {item.badge}
@@ -107,10 +107,10 @@ export default function Sidebar() {
           );
         })}
 
-        <div className="mt-8 pt-6 border-t border-white/5 space-y-2">
+        <div className="mt-8 pt-6 border-t border-border space-y-2">
           <Link
             href="/settings"
-            className="flex items-center gap-4 px-4 py-3.5 rounded-2xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-300"
+            className="flex items-center gap-4 px-4 py-3.5 rounded-2xl text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-300"
           >
             <i className="fas fa-cog w-6 text-center"></i>
             <span className="text-sm font-medium tracking-wide">Settings</span>
@@ -119,8 +119,8 @@ export default function Sidebar() {
       </nav>
 
       {/* User Profile */}
-      <div className="p-4 border-t border-white/5 bg-white/5 backdrop-blur-xl">
-        <div className="flex items-center gap-3 p-3 rounded-2xl hover:bg-white/10 cursor-pointer transition-all duration-300 group">
+      <div className="p-4 border-t border-border bg-card/30 backdrop-blur-xl">
+        <div className="flex items-center gap-3 p-3 rounded-2xl hover:bg-muted cursor-pointer transition-all duration-300 group">
           <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-white font-bold shadow-md group-hover:shadow-lg transition-all">
             {user?.name?.charAt(0) || "U"}
           </div>

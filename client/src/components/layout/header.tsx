@@ -6,11 +6,11 @@ export default function Header({ title }: { title: string }) {
   const [searchQuery, setSearchQuery] = useState("");
 
   return (
-    <header className="navbar h-20 bg-navbar-bg/60 backdrop-blur-2xl border-b border-white/10 flex items-center justify-between px-4 lg:px-8 sticky top-0 z-40 transition-all duration-500">
+    <header className="navbar h-20 bg-navbar-bg/60 backdrop-blur-2xl border-b border-border flex items-center justify-between px-4 lg:px-8 sticky top-0 z-40 transition-all duration-500">
       <div className="flex items-center gap-4 lg:gap-6">
         {/* Mobile Menu Toggle */}
         <button
-          className="lg:hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all active:scale-95"
+          className="lg:hidden w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-all active:scale-95"
           onClick={() => document.getElementById("sidebar")?.classList.toggle("hidden")}
         >
           <i className="fas fa-bars"></i>
@@ -34,7 +34,7 @@ export default function Header({ title }: { title: string }) {
           <input
             type="text"
             placeholder="Search containers, alerts..."
-            className="w-64 lg:w-96 pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:bg-white/10 transition-all duration-300"
+            className="w-64 lg:w-96 pl-10 pr-4 py-2.5 bg-input border border-input rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:bg-input/80 transition-all duration-300"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             data-testid="input-search"
@@ -44,7 +44,7 @@ export default function Header({ title }: { title: string }) {
         <div className="flex items-center gap-2 lg:gap-3">
           {/* Notification Bell */}
           <button
-            className="relative w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/20 transition-all duration-300 active:scale-95"
+            className="relative w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/20 transition-all duration-300 active:scale-95"
             data-testid="button-notifications"
           >
             <i className="fas fa-bell"></i>
@@ -52,7 +52,7 @@ export default function Header({ title }: { title: string }) {
           </button>
 
           {/* Theme Toggle */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-1">
+          <div className="bg-card border border-border rounded-xl p-1">
             <ThemeToggle />
           </div>
 

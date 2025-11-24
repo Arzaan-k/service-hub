@@ -451,11 +451,11 @@ export default function Containers() {
                   placeholder="Search containers..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 bg-white/5 border-white/10 focus:bg-white/10 transition-all"
+                  className="pl-10 bg-input border-input focus:bg-input/80 transition-all"
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="bg-white/5 border-white/10">
+                <SelectTrigger className="bg-input border-input">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -467,7 +467,7 @@ export default function Containers() {
                 </SelectContent>
               </Select>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="bg-white/5 border-white/10">
+                <SelectTrigger className="bg-input border-input">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -477,7 +477,7 @@ export default function Containers() {
                 </SelectContent>
               </Select>
               <Select value={gradeFilter} onValueChange={setGradeFilter}>
-                <SelectTrigger className="bg-white/5 border-white/10">
+                <SelectTrigger className="bg-input border-input">
                   <SelectValue placeholder="Grade" />
                 </SelectTrigger>
                 <SelectContent>
@@ -489,7 +489,7 @@ export default function Containers() {
                 </SelectContent>
               </Select>
               <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="bg-white/5 border-white/10">
+                <SelectTrigger className="bg-input border-input">
                   <SelectValue placeholder="Sort By" />
                 </SelectTrigger>
                 <SelectContent>
@@ -500,7 +500,7 @@ export default function Containers() {
                   <SelectItem value="yom">Year of Manufacture</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" className="bg-white/5 border-white/10 hover:bg-white/10 hover:text-primary transition-all flex items-center gap-2">
+              <Button variant="outline" className="bg-input border-input hover:bg-accent hover:text-accent-foreground transition-all flex items-center gap-2">
                 <Download className="h-4 w-4" />
                 Export
               </Button>
@@ -509,13 +509,13 @@ export default function Containers() {
 
           {/* Container Table */}
           <GlassCard className="overflow-hidden p-0">
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
               <h3 className="text-lg font-semibold text-foreground">Container Master Sheet <span className="text-muted-foreground text-sm font-normal ml-2">({totalItems} containers)</span></h3>
             </div>
             <div className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-white/5 text-xs uppercase text-muted-foreground font-semibold">
+                  <thead className="bg-muted/50 text-xs uppercase text-muted-foreground font-semibold">
                     <tr>
                       {/* Match DB field name for primary identifier */}
                       <th className="text-left py-4 px-4">container_id</th>
@@ -555,10 +555,10 @@ export default function Containers() {
                         return (
                           <tr
                             key={container.id}
-                            className="border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer group"
+                            className="border-b border-border hover:bg-muted/50 transition-colors cursor-pointer group"
                             onClick={() => setLocation(`/containers/${container.id}`)}
                           >
-                            <td className="py-4 px-4 font-mono text-xs font-medium text-primary group-hover:text-primary-light transition-colors">
+                            <td className="py-4 px-4 font-mono text-xs font-medium text-primary group-hover:text-primary-dark transition-colors">
                               {containerNumber || "—"}
                             </td>
                             <td className="py-4 px-4 text-xs text-foreground/80">
@@ -573,7 +573,7 @@ export default function Containers() {
                             </td>
                             <td className="py-4 px-4 text-xs text-foreground/80">
                               {(container as any).sizeType ||
-                                (container as any).size_type ||
+                                (container as any).sizeType ||
                                 metadata.sizeType ||
                                 "N/A"}
                             </td>

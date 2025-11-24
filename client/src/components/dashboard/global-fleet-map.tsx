@@ -698,90 +698,287 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         if (coords) {
           processed.currentLocation = {
             lat: coords.lat,
-            lng: coords.lng,
-            address: coords.name
-          };
-        }
-        processedContainers.push(processed);
-      });
-
-      setContainersWithLocations(processedContainers);
-      setIsLoading(false);
-
-      // Continue geocoding the rest in background if needed
-      if (keys.length > FAST_LIMIT) {
-        for (let i = FAST_LIMIT; i < keys.length; i += GEOCODE_BATCH) {
-          const batchKeys = keys.slice(i, i + GEOCODE_BATCH);
-          for (let j = 0; j < batchKeys.length; j++) {
-            const key = batchKeys[j];
-            const { location, depot } = uniqueKeyToLoc.get(key)!;
-            const coords = await getLocationCoordinates(location, depot);
-            resolved.set(key, coords);
-            if (!HAS_GOOGLE) { await new Promise(r => setTimeout(r, 600)); }
-          }
-          if (HAS_GOOGLE) { await new Promise(r => setTimeout(r, 80)); }
-
-          // Update containers with newly resolved coordinates
-          setContainersWithLocations(containers.map(container => {
-            const processed = { ...container };
-            if (container.currentLocation?.lat && container.currentLocation?.lng) {
-              return processed;
-            }
-            const location = container.excelMetadata?.location || 'Unknown';
-            const depot = container.excelMetadata?.depot || 'Unknown';
-            const key = `${location}|${depot}`.toLowerCase();
-            const coords = resolved.get(key);
-            if (coords) {
-              processed.currentLocation = {
-                lat: coords.lat,
-                lng: coords.lng,
-                address: coords.name
-              };
-            }
-            return processed;
-          }));
+            const response = await fetch(url);
+            const data = await response.json();
+            if(data && data.status === 'OK' && data.results && data.results.length > 0) {
+        const best = data.results[0];
+        const coords = {
+          lat: best.geometry.location.lat,
+          lng: best.geometry.location.lng,
+          name: best.formatted_address || best.place_id,
+          country: (best.address_components?.find((c: any) => c.types?.includes('country'))?.long_name) || 'Unknown'
+        };
+        // Enforce preference consistency
+        if (indiaPreferred && coords.country !== 'India') {
+          // discard this result and continue to fallback below
+        } else if (nonIndiaPreferred && coords.country === 'India') {
+          // discard India result if explicit non-India detected
+        } else {
+          resolvedCacheRef.current.set(cacheKey, coords);
+          persistCache();
+          return coords;
         }
       }
-      processContainers();
-    }, [containers, region]);
+    } catch { }
+  }
 
-  // Initialize Map
-  useEffect(() => {
-    if (!mapRef.current || !window.L) return;
+    // Free alternative: OpenStreetMap Nominatim (no key required)
+    // Used when Google key is absent or result discarded by preferences
+    try {
+    const query = `${depot} ${location}`.trim();
+    // Helper to call Nominatim with optional India bias and bounding box
+    const callNominatim = async (biasIndia: boolean) => {
+      const params = new URLSearchParams({
+        format: 'json',
+        q: query,
+        limit: '1',
+        addressdetails: '1',
+      });
+      if (biasIndia) {
+        // Prefer India by restricting country and adding India viewbox
+        params.append('countrycodes', 'IN');
+        // India approximate bbox (lon,lat pairs): left,top,right,bottom
+        params.append('viewbox', '68.1766451354,37.0902398031,97.4025614766,8.088306932');
+        params.append('bounded', '1');
+      }
+      // Use our proxy endpoint to avoid CORS issues
+      const proxyUrl = `/api/proxy/nominatim?${params.toString()}`;
+      const response = await fetch(proxyUrl);
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const best = data[0];
+        return {
+          lat: parseFloat(best.lat),
+          lng: parseFloat(best.lon),
+          name: best.display_name || query,
+          country: best.address?.country || 'Unknown',
+        } as { lat: number; lng: number; name: string; country: string };
+      }
+      return null;
+    };
 
-    if (!mapInstanceRef.current) {
-      const L = window.L;
-      const map = L.map(mapRef.current).setView([20.5937, 78.9629], 5); // Default to India
-
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }).addTo(map);
-
-      mapInstanceRef.current = map;
+    // Phase 1: If India is likely, try India-biased first
+    if (indiaPreferred) {
+      const result = await callNominatim(true);
+      if (result && result.country === 'India') {
+        resolvedCacheRef.current.set(cacheKey, result);
+        persistCache();
+        return result;
+      }
+      // If we got a non-India result, fall through to global retry
     }
 
-    // Update markers
-    const map = mapInstanceRef.current;
+    // Phase 2: Global retry (no bias) or for explicit non-India
+    const result = await callNominatim(false);
+    if (result) {
+      // If the token set contains strong India cities (vizag/visakhapatnam, baramati), override to India coordinates
+      const strongIndiaTokens = ['visakhapatnam', 'vizag', 'baramati', 'bengaluru', 'bangalore', 'chennai', 'mumbai', 'pune'];
+      const tokenStr = `${locationKey} ${depotKey}`;
+      const containsStrongIndia = strongIndiaTokens.some(t => tokenStr.includes(t));
+      if (containsStrongIndia && result.country !== 'India') {
+        // Override by returning dictionary coordinates for those cities
+        const overrideKey = tokenStr.includes('vizag') || tokenStr.includes('visakhapatnam') ? 'visakhapatnam'
+          : tokenStr.includes('baramati') ? 'baramati'
+            : '';
+        if (overrideKey && LOCATION_MAPPING[overrideKey]) {
+          const coords = LOCATION_MAPPING[overrideKey];
+          resolvedCacheRef.current.set(cacheKey, coords);
+          persistCache();
+          return coords;
+        }
+      }
+      if (indiaPreferred && result.country !== 'India') {
+        // Reject clearly wrong country when India was strongly indicated
+      } else if (nonIndiaPreferred && result.country === 'India') {
+        // Reject India if non-India was explicit
+      } else {
+        resolvedCacheRef.current.set(cacheKey, result);
+        persistCache();
+        return result;
+      }
+    }
+  } catch { }
+
+  // If all else fails, use a default location based on depot or India preference
+  if ((region === 'india' && indiaPreferred) || depotKey.includes('india') || depotKey.includes('chennai')) {
+    return {
+      lat: 13.0827,
+      lng: 80.2707,
+      name: `${location} (${depot})`,
+      country: 'India'
+    };
+  }
+
+  // Default fallback - use neutral global centroid to avoid misleading placement
+  const coords = {
+    lat: 20.0,
+    lng: 0.0,
+    name: `${location} (${depot})`,
+    country: 'Unknown'
+  };
+  resolvedCacheRef.current.set(cacheKey, coords);
+  persistCache();
+  return coords;
+};
+
+// Process containers and assign coordinates
+const [containersWithLocations, setContainersWithLocations] = useState<Container[]>([]);
+
+useEffect(() => {
+  const processContainers = async () => {
+    if (!containers || containers.length === 0) return;
+
+    setIsLoading(true);
+    const processedContainers: Container[] = [];
+
+    // 1) Build unique location+depot keys only for containers lacking DB coordinates
+    const uniqueKeyToLoc: Map<string, { location: string; depot: string }> = new Map();
+    containers.forEach(c => {
+      const location = c.excelMetadata?.location || 'Unknown';
+      const depot = c.excelMetadata?.depot || 'Unknown';
+      const key = `${location}|${depot}`.toLowerCase();
+      const hasDbCoords = !!(c.currentLocation && typeof c.currentLocation.lat === 'number' && typeof c.currentLocation.lng === 'number');
+      if (!hasDbCoords) {
+        if (!uniqueKeyToLoc.has(key)) uniqueKeyToLoc.set(key, { location, depot });
+      }
+    });
+
+    // 2) Resolve coordinates for unique keys; prioritize quick first paint
+    // We'll resolve up to FAST_LIMIT synchronously, render, then geocode the rest in background
+    const GEOCODE_BATCH = HAS_GOOGLE ? 10 : 2;
+    const FAST_LIMIT = HAS_GOOGLE ? 80 : 40;
+    const keys = Array.from(uniqueKeyToLoc.keys());
+    const resolved: Map<string, { lat: number; lng: number; name: string; country: string }> = new Map();
+
+    for (let i = 0; i < Math.min(keys.length, FAST_LIMIT); i += GEOCODE_BATCH) {
+      const batchKeys = keys.slice(i, i + GEOCODE_BATCH);
+      for (let j = 0; j < batchKeys.length; j++) {
+        const key = batchKeys[j];
+        const { location, depot } = uniqueKeyToLoc.get(key)!;
+        const coords = await getLocationCoordinates(location, depot);
+        resolved.set(key, coords);
+        if (!HAS_GOOGLE) { await new Promise(r => setTimeout(r, 600)); }
+      }
+      if (HAS_GOOGLE && i + GEOCODE_BATCH < keys.length) { await new Promise(r => setTimeout(r, 80)); }
+    }
+
+    // Assign quick approximations for the rest to render immediately
+    if (keys.length > FAST_LIMIT) {
+      for (let i = FAST_LIMIT; i < keys.length; i++) {
+        const key = keys[i];
+        const { location, depot } = uniqueKeyToLoc.get(key)!;
+        // Use a default approximation until geocoded
+        resolved.set(key, {
+          lat: region === 'india' ? 20.5937 : 0,
+          lng: region === 'india' ? 78.9629 : 0,
+          name: `${location} (${depot})`,
+          country: region === 'india' ? 'India' : 'Unknown'
+        });
+      }
+    }
+
+    // Apply coordinates to containers
+    containers.forEach(container => {
+      const processed = { ...container };
+      if (container.currentLocation?.lat && container.currentLocation?.lng) {
+        processedContainers.push(processed);
+        return;
+      }
+
+      const location = container.excelMetadata?.location || 'Unknown';
+      const depot = container.excelMetadata?.depot || 'Unknown';
+      const key = `${location}|${depot}`.toLowerCase();
+      const coords = resolved.get(key);
+
+      if (coords) {
+        processed.currentLocation = {
+          lat: coords.lat,
+          lng: coords.lng,
+          address: coords.name
+        };
+      }
+      processedContainers.push(processed);
+    });
+
+    setContainersWithLocations(processedContainers);
+    setIsLoading(false);
+
+    // Continue geocoding the rest in background if needed
+    if (keys.length > FAST_LIMIT) {
+      for (let i = FAST_LIMIT; i < keys.length; i += GEOCODE_BATCH) {
+        const batchKeys = keys.slice(i, i + GEOCODE_BATCH);
+        for (let j = 0; j < batchKeys.length; j++) {
+          const key = batchKeys[j];
+          const { location, depot } = uniqueKeyToLoc.get(key)!;
+          const coords = await getLocationCoordinates(location, depot);
+          resolved.set(key, coords);
+          if (!HAS_GOOGLE) { await new Promise(r => setTimeout(r, 600)); }
+        }
+        if (HAS_GOOGLE) { await new Promise(r => setTimeout(r, 80)); }
+
+        // Update containers with newly resolved coordinates
+        setContainersWithLocations(containers.map(container => {
+          const processed = { ...container };
+          if (container.currentLocation?.lat && container.currentLocation?.lng) {
+            return processed;
+          }
+          const location = container.excelMetadata?.location || 'Unknown';
+          const depot = container.excelMetadata?.depot || 'Unknown';
+          const key = `${location}|${depot}`.toLowerCase();
+          const coords = resolved.get(key);
+          if (coords) {
+            processed.currentLocation = {
+              lat: coords.lat,
+              lng: coords.lng,
+              address: coords.name
+            };
+          }
+          return processed;
+        }));
+      }
+    }
+  };
+
+  processContainers();
+}, [containers, region]);
+
+// Initialize Map
+useEffect(() => {
+  if (!mapRef.current || !window.L) return;
+
+  if (!mapInstanceRef.current) {
     const L = window.L;
+    const map = L.map(mapRef.current).setView([20.5937, 78.9629], 5); // Default to India
 
-    // Clear existing markers
-    markersRef.current.forEach(marker => map.removeLayer(marker));
-    markersRef.current = [];
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
 
-    // Add new markers
-    const markers = L.markerClusterGroup ? L.markerClusterGroup() : L.layerGroup();
+    mapInstanceRef.current = map;
+  }
 
-    containersWithLocations.forEach(container => {
-      if (!container.currentLocation) return;
+  // Update markers
+  const map = mapInstanceRef.current;
+  const L = window.L;
 
-      // Filter logic
-      if (filterStatus !== "all" && container.status?.toLowerCase() !== filterStatus) return;
-      if (filterDepot !== "all" && container.excelMetadata?.depot?.toLowerCase() !== filterDepot) return;
+  // Clear existing markers
+  markersRef.current.forEach(marker => map.removeLayer(marker));
+  markersRef.current = [];
 
-      const { lat, lng, address } = container.currentLocation;
+  // Add new markers
+  const markers = L.markerClusterGroup ? L.markerClusterGroup() : L.layerGroup();
 
-      const markerColor = container.hasIot ? "blue" : "gray";
-      const markerHtml = `
+  containersWithLocations.forEach(container => {
+    if (!container.currentLocation) return;
+
+    // Filter logic
+    if (filterStatus !== "all" && container.status?.toLowerCase() !== filterStatus) return;
+    if (filterDepot !== "all" && container.excelMetadata?.depot?.toLowerCase() !== filterDepot) return;
+
+    const { lat, lng, address } = container.currentLocation;
+
+    const markerColor = container.hasIot ? "blue" : "gray";
+    const markerHtml = `
         <div style="
           background-color: ${markerColor === 'blue' ? '#3B82F6' : '#6B7280'};
           width: 12px;
@@ -792,16 +989,16 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         "></div>
       `;
 
-      const icon = L.divIcon({
-        className: "custom-marker",
-        html: markerHtml,
-        iconSize: [12, 12],
-        iconAnchor: [6, 6]
-      });
+    const icon = L.divIcon({
+      className: "custom-marker",
+      html: markerHtml,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6]
+    });
 
-      const marker = L.marker([lat, lng], { icon });
+    const marker = L.marker([lat, lng], { icon });
 
-      marker.bindPopup(`
+    marker.bindPopup(`
         <div class="p-2 min-w-[200px]">
           <h3 class="font-bold text-sm mb-1">${container.containerCode}</h3>
           <div class="text-xs space-y-1">
@@ -813,72 +1010,72 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
         </div>
       `);
 
-      markers.addLayer(marker);
-      markersRef.current.push(marker);
-    });
+    markers.addLayer(marker);
+    markersRef.current.push(marker);
+  });
 
-    map.addLayer(markers);
+  map.addLayer(markers);
 
-    // Fit bounds if markers exist
-    if (markers.getBounds().isValid()) {
-      map.fitBounds(markers.getBounds(), { padding: [50, 50] });
-    }
+  // Fit bounds if markers exist
+  if (markers.getBounds().isValid()) {
+    map.fitBounds(markers.getBounds(), { padding: [50, 50] });
+  }
 
-  }, [containersWithLocations, filterStatus, filterDepot]);
+}, [containersWithLocations, filterStatus, filterDepot]);
 
-  return (
-    <GlassCard className="h-[600px] p-0 overflow-hidden flex flex-col relative">
-      <div className="absolute top-4 right-4 z-[400] flex gap-2">
-        <div className="bg-white/90 backdrop-blur shadow-sm rounded-lg p-1 flex gap-1">
-          <Button
-            variant={region === 'india' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setRegion('india')}
-            className="h-8 text-xs"
-          >
-            India
-          </Button>
-          <Button
-            variant={region === 'global' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setRegion('global')}
-            className="h-8 text-xs"
-          >
-            Global
-          </Button>
-        </div>
-
-        <div className="bg-white/90 backdrop-blur shadow-sm rounded-lg p-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => {
-              if (mapInstanceRef.current) {
-                mapInstanceRef.current.setView([20.5937, 78.9629], 5);
-              }
-            }}
-          >
-            <Globe className="h-4 w-4" />
-          </Button>
-        </div>
+return (
+  <GlassCard className="h-[600px] p-0 overflow-hidden flex flex-col relative">
+    <div className="absolute top-4 right-4 z-[400] flex gap-2">
+      <div className="bg-white/90 backdrop-blur shadow-sm rounded-lg p-1 flex gap-1">
+        <Button
+          variant={region === 'india' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => setRegion('india')}
+          className="h-8 text-xs"
+        >
+          India
+        </Button>
+        <Button
+          variant={region === 'global' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => setRegion('global')}
+          className="h-8 text-xs"
+        >
+          Global
+        </Button>
       </div>
 
-      <div className="p-4 border-b border-border/50 flex items-center justify-between bg-white/50 backdrop-blur-sm">
-        <div className="flex items-center gap-2">
-          <MapPin className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold text-foreground">Global Fleet Map</h3>
-          {isLoading && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground ml-2" />}
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground mr-4">
-            <span className="w-2 h-2 rounded-full bg-blue-500"></span> IoT
-            <span className="w-2 h-2 rounded-full bg-gray-500 ml-2"></span> Manual
-          </div>
+      <div className="bg-white/90 backdrop-blur shadow-sm rounded-lg p-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => {
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.setView([20.5937, 78.9629], 5);
+            }
+          }}
+        >
+          <Globe className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+
+    <div className="p-4 border-b border-border/50 flex items-center justify-between bg-white/50 backdrop-blur-sm">
+      <div className="flex items-center gap-2">
+        <MapPin className="h-5 w-5 text-primary" />
+        <h3 className="font-semibold text-foreground">Global Fleet Map</h3>
+        {isLoading && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground ml-2" />}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground mr-4">
+          <span className="w-2 h-2 rounded-full bg-blue-500"></span> IoT
+          <span className="w-2 h-2 rounded-full bg-gray-500 ml-2"></span> Manual
         </div>
       </div>
+    </div>
 
-      <div ref={mapRef} className="flex-1 w-full bg-muted/20" />
-    </GlassCard>
-  );
+    <div ref={mapRef} className="flex-1 w-full bg-muted/20" />
+  </GlassCard>
+);
 }
