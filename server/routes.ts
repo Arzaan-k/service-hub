@@ -3922,9 +3922,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Container not found" });
       }
 
+      // Check for duplicate alerts - prevent spamming
+      const existingAlerts = await storage.getAlertsByContainer(containerId);
+      const recentAlert = existingAlerts.find(a =>
+        a.alertType === alertType &&
+        a.status === 'open' &&
+        // Check if alert was created in the last 2 minutes
+        new Date(a.detectedAt).getTime() > (Date.now() - 2 * 60 * 1000)
+      );
+
+      if (recentAlert) {
+        return res.status(409).json({
+          error: "Duplicate alert detected",
+          message: `A similar ${alertType} alert already exists for this container (created ${Math.floor((Date.now() - new Date(recentAlert.detectedAt).getTime()) / 1000)}s ago). Please wait before creating another alert.`,
+          existingAlertId: recentAlert.id
+        });
+      }
+
       const simulatedAlert = {
         containerId,
-        alertCode: `SIM_${Date.now()}`,
+        alertCode: `SIM_${alertType.toUpperCase()}_${Date.now()}`,
         alertType: alertType,
         severity,
         source: "simulation",

@@ -14,26 +14,20 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       colors: {
-        peach: {
-          50: "#FFF5F3",
-          100: "#FFE1D9",
-          200: "#FFC9B8",
-          300: "#FFB89E",
-        },
-        // Global theme overrides
-        lightBg: "#FFF9F7",
-        lightCard: "#FFE9E0",
-        darkText: "#1F1F1F",
-        accentPeach: "#FFD4E3",
-        accentOrange: "#FFB899",
-        accentHover: "#FFC6A3",
-        // Named palette tokens
-        babyPink: "#FFD4E3",
-        peach: "#FFE5B4",
-        warmOrange: "#FFA07A",
-        softWhite: "#FFFDFB",
-        borderPeach: "#FFE0D6",
-        coral: "#FF6F61",
+        // Global theme overrides - Mapped to CSS variables for consistency
+        lightBg: "hsl(var(--background))",
+        lightCard: "hsl(var(--card))",
+        darkText: "hsl(var(--foreground))",
+        accentPeach: "hsl(var(--accent))",
+        accentOrange: "hsl(var(--primary))",
+        accentHover: "hsl(var(--primary-dark))",
+        // Named palette tokens - Mapped to new theme
+        babyPink: "hsl(var(--secondary))",
+        peach: "hsl(var(--primary-light))",
+        warmOrange: "hsl(var(--primary))",
+        softWhite: "hsl(var(--background))",
+        borderPeach: "hsl(var(--border))",
+        coral: "hsl(var(--destructive))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

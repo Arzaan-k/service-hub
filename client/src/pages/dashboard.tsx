@@ -4,7 +4,6 @@ import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import KPICards from "@/components/dashboard/kpi-cards";
 import MapMyIndiaFleetMap from "@/components/dashboard/mapmyindia-fleet-map";
-import AlertPanel from "@/components/dashboard/alert-panel";
 import ServiceRequestsPanel from "@/components/dashboard/service-requests-panel";
 import WhatsAppHubPanel from "@/components/dashboard/whatsapp-hub-panel";
 import TechnicianSchedule from "@/components/dashboard/technician-schedule";
@@ -82,6 +81,18 @@ export default function Dashboard() {
         alertType: selectedAlertType,
         severity: "critical"
       });
+
+      // Handle 409 Conflict (duplicate alert) as a special case
+      if (response.status === 409) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Duplicate alert detected");
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to simulate alert");
+      }
+
       return await response.json();
     },
     onSuccess: () => {
@@ -90,6 +101,7 @@ export default function Dashboard() {
     },
     onError: (err: any) => {
       console.error("Alert simulation failed:", err);
+      // User will see the error message in the UI
     }
   });
 
@@ -237,30 +249,33 @@ export default function Dashboard() {
                 {simulateAlert.isPending ? "Simulating..." : "🚨 Simulate Alert"}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              This will create a test alert to verify the dashboard alert grouping and scrolling.
-            </p>
+            {simulateAlert.isError && (
+              <p className="text-xs text-red-500 mt-2 font-medium">
+                ⚠️ {simulateAlert.error?.message || "Failed to simulate alert"}
+              </p>
+            )}
+            {simulateAlert.isSuccess && (
+              <p className="text-xs text-green-500 mt-2 font-medium">
+                ✅ Alert simulated successfully!
+              </p>
+            )}
+            {!simulateAlert.isError && !simulateAlert.isSuccess && (
+              <p className="text-xs text-muted-foreground mt-2">
+                This will create a test alert to verify the dashboard alert grouping and scrolling.
+              </p>
+            )}
           </div>
 
           {/* Map & Alerts & Fleet Stats */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ height: '600px', minHeight: '600px', maxHeight: '600px', overflow: 'visible' }}>
+            <div className="lg:col-span-2" style={{ height: '600px' }}>
               <ErrorBoundary>
-                <div style={{ height: '600px', width: '100%' }}>
-                  <MapMyIndiaFleetMap containers={containers || []} />
-                </div>
+                <MapMyIndiaFleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
-            <div className="space-y-4">
+            <div style={{ height: '600px' }}>
               <ErrorBoundary>
-                <div style={{ height: '400px', overflow: 'hidden' }}>
-                  <AlertPanel alerts={alerts || []} containers={containers || []} />
-                </div>
-              </ErrorBoundary>
-              <ErrorBoundary>
-                <div style={{ height: '200px', overflow: 'hidden' }}>
-                  <ContainerFleetStats containers={containers || []} />
-                </div>
+                <ContainerFleetStats containers={containers || []} />
               </ErrorBoundary>
             </div>
           </div>

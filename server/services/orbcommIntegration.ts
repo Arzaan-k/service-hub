@@ -436,15 +436,51 @@ class OrbcommIntegrationService {
     try {
       // Create alert record if container is found
       if (alert.containerId) {
+        // Check for duplicate alerts - prevent spamming dashboard
+        const existingAlerts = await storage.getAlertsByContainer(alert.containerId);
+        const mappedAlertType = this.mapAlertType(alert.alertType);
+
+        const recentDuplicate = existingAlerts.find(a =>
+          a.alertType === mappedAlertType &&
+          a.status === 'open' &&
+          // Check if alert was created in the last 5 minutes (configurable threshold)
+          new Date(a.detectedAt).getTime() > (Date.now() - 5 * 60 * 1000)
+        );
+
+        if (recentDuplicate) {
+          // For temperature alerts, check if the change is significant enough (threshold-based)
+          if (mappedAlertType === 'temperature') {
+            const currentTemp = this.extractTemperatureFromAlert(alert);
+            const previousTemp = this.extractTemperatureFromDescription(recentDuplicate.description);
+
+            if (currentTemp !== null && previousTemp !== null) {
+              const tempDifference = Math.abs(currentTemp - previousTemp);
+              const TEMPERATURE_THRESHOLD = 2.0; // Only create new alert if temp changed by ±2°C
+
+              if (tempDifference < TEMPERATURE_THRESHOLD) {
+                console.log(`⏭️  Skipping temperature alert - change of ${tempDifference.toFixed(1)}°C is below threshold of ${TEMPERATURE_THRESHOLD}°C (current: ${currentTemp}°C, previous: ${previousTemp}°C)`);
+                return recentDuplicate;
+              } else {
+                console.log(`✅ Temperature changed significantly by ${tempDifference.toFixed(1)}°C (${previousTemp}°C → ${currentTemp}°C) - creating new alert`);
+              }
+            }
+          } else {
+            // For non-temperature alerts, use standard time-based deduplication
+            console.log(`⏭️  Skipping duplicate ${mappedAlertType} alert for container ${alert.containerId} (last alert ${Math.floor((Date.now() - new Date(recentDuplicate.detectedAt).getTime()) / 1000)}s ago)`);
+            return recentDuplicate;
+          }
+        }
+
         const storedAlert = await storage.createAlert({
           alertCode: alert.alertId,
           containerId: alert.containerId,
-          alertType: this.mapAlertType(alert.alertType),
+          alertType: mappedAlertType,
           severity: this.mapSeverity(alert.severity),
           source: 'orbcomm',
           title: alert.alertType,
           description: alert.description,
           detectedAt: alert.timestamp,
+          status: 'open',
           metadata: {
             deviceId: alert.deviceId,
             latitude: alert.latitude,
@@ -454,6 +490,15 @@ class OrbcommIntegrationService {
         });
 
         console.log(`✅ Stored alert in database: ${alert.alertId}`);
+
+        // Broadcast alert creation to connected clients
+        if ((global as any).broadcast) {
+          (global as any).broadcast({
+            type: 'alert_created',
+            data: storedAlert,
+          });
+        }
+
         return storedAlert;
       }
 
@@ -461,6 +506,39 @@ class OrbcommIntegrationService {
 
     } catch (error) {
       console.error('❌ Error storing alert:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract temperature from ProcessedAlert
+   */
+  private extractTemperatureFromAlert(alert: ProcessedAlert): number | null {
+    try {
+      const eventData = alert.rawData?.Event || alert.rawData;
+      const deviceData = eventData?.DeviceData || {};
+      const reeferData = eventData?.ReeferData || {};
+
+      const temp = reeferData.TAmb || deviceData.DeviceTemp || eventData?.Temperature;
+      return temp !== undefined ? parseFloat(temp) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Extract temperature from alert description string
+   * Example: "Temperature out of range: 35.2°C" → 35.2
+   */
+  private extractTemperatureFromDescription(description: string): number | null {
+    try {
+      // Match patterns like "35.2°C" or "35°C" or "-10.5°C"
+      const tempMatch = description.match(/(-?\d+(?:\.\d+)?)\s*°C/);
+      if (tempMatch && tempMatch[1]) {
+        return parseFloat(tempMatch[1]);
+      }
+      return null;
+    } catch {
       return null;
     }
   }
