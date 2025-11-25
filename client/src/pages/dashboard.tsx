@@ -11,12 +11,13 @@ import TechnicianSchedule from "@/components/dashboard/technician-schedule";
 import ContainerLookup from "@/components/dashboard/container-lookup";
 import ErrorBoundary from "@/components/error-boundary";
 import { websocket } from "@/lib/websocket";
-import { getAuthToken } from "@/lib/auth";
+import { getAuthToken, useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const authToken = getAuthToken();
+  const { user } = useAuth();
 
   const { data: stats = {} } = useQuery<any>({ 
     queryKey: ["/api/dashboard/stats"],
@@ -28,10 +29,14 @@ export default function Dashboard() {
     refetchInterval: 60000, // 1 minute
   });
 
+  // Determine API endpoints based on user role
+  const isClient = user?.role === 'client';
+  const containersEndpoint = isClient ? "/api/customers/me/containers" : "/api/containers";
+
   const { data: containers = [] } = useQuery<any[]>({
-    queryKey: ["/api/containers"],
+    queryKey: [containersEndpoint],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/containers");
+      const response = await apiRequest("GET", containersEndpoint);
       const data = await response.json();
       return Array.isArray(data) ? data : [];
     },

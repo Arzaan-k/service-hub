@@ -420,6 +420,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin user management endpoints
+  app.get("/api/admin/users", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      // Remove sensitive data like passwords
+      const safeUsers = users.map(user => ({
+        ...user,
+        password: undefined
+      }));
+      res.json(safeUsers);
+    } catch (error) {
+      console.error("Get users error:", error);
+      res.status(500).json({ error: "Failed to get users" });
+    }
+  });
+
+  app.put("/api/admin/users/:userId/credentials", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { email, password } = req.body;
+
+      if (!email && !password) {
+        return res.status(400).json({ error: "Either email or password must be provided" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Check if email is already taken by another user
+      if (email && email !== user.email) {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser && existingUser.id !== userId) {
+          return res.status(400).json({ error: "Email already in use by another user" });
+        }
+      }
+
+      const updates: any = {};
+
+      if (email) {
+        updates.email = email;
+        updates.emailVerified = false; // Reset verification when email changes
+      }
+
+      if (password) {
+        const { hashPassword } = await import('./services/auth');
+        updates.password = await hashPassword(password);
+      }
+
+      const updatedUser = await storage.updateUser(userId, updates);
+
+      // Send verification email if email was changed
+      if (email && email !== user.email) {
+        try {
+          const { createAndSendEmailOTP } = await import('./services/auth');
+          await createAndSendEmailOTP(updatedUser);
+        } catch (emailError) {
+          console.error("Failed to send verification email:", emailError);
+        }
+      }
+
+      res.json({
+        user: { ...updatedUser, password: undefined },
+        message: "User credentials updated successfully"
+      });
+    } catch (error) {
+      console.error("Update user credentials error:", error);
+      res.status(500).json({ error: "Failed to update user credentials" });
+    }
+  });
+
   // Test endpoint to get all users (for development only)
   app.get("/api/test/users", async (req, res) => {
     try {

@@ -912,8 +912,8 @@ export default function ContainerDetail() {
                           <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
                             <div
                               className={`h-2 rounded-full ${container.lastTelemetry.batteryLevel > 50 ? 'bg-green-500' :
-                                  container.lastTelemetry.batteryLevel > 20 ? 'bg-yellow-500' :
-                                    'bg-red-500'
+                                container.lastTelemetry.batteryLevel > 20 ? 'bg-yellow-500' :
+                                  'bg-red-500'
                                 }`}
                               style={{ width: `${container.lastTelemetry.batteryLevel}%` }}
                             />
@@ -1169,7 +1169,7 @@ export default function ContainerDetail() {
                       return (
                         <div
                           key={section}
-                          className="rounded-xl border border-[#FFE0D6] bg-[#FFF6F9] p-4 h-full flex flex-col gap-3"
+                          className="rounded-xl border border-border bg-muted/40 dark:bg-muted/20 p-4 h-full flex flex-col gap-3"
                         >
                           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             {section}

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAuthToken } from "@/lib/auth";
+import { getAuthToken, useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,7 @@ export default function Containers() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const authToken = getAuthToken();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -73,7 +74,11 @@ export default function Containers() {
   // Determine if we should use pagination or fetch all data for filtering
   const hasActiveFilters = searchTerm !== "" || statusFilter !== "all" || typeFilter !== "all" || gradeFilter !== "all";
 
-  // Query for summary statistics (always fetch all containers)
+  // Determine API endpoints based on user role
+  const isClient = user?.role === 'client';
+  const containersEndpoint = isClient ? "/api/customers/me/containers" : "/api/containers";
+
+  // Query for summary statistics (always fetch all containers for stats)
   const { data: allContainers = [] } = useQuery({
     queryKey: ["/api/containers", "stats"],
     queryFn: async () => {
@@ -83,16 +88,17 @@ export default function Containers() {
     },
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
+    enabled: !isClient, // Only fetch all containers for non-clients (for stats)
   });
 
   const { data: containersData, isLoading, error } = useQuery({
     queryKey: hasActiveFilters
-      ? ["/api/containers", "all"] // Fetch all for filtering
-      : ["/api/containers", "paginated", currentPage, itemsPerPage], // Use pagination
+      ? [containersEndpoint, "all"] // Fetch all for filtering
+      : [containersEndpoint, "paginated", currentPage, itemsPerPage], // Use pagination
     queryFn: async () => {
       if (hasActiveFilters) {
         // Fetch all containers for client-side filtering
-        const response = await apiRequest("GET", "/api/containers");
+        const response = await apiRequest("GET", containersEndpoint);
         const data = await response.json();
         return {
           containers: Array.isArray(data) ? data : [],
@@ -100,16 +106,27 @@ export default function Containers() {
           isPaginated: false
         };
       } else {
-        // Use server-side pagination
-        const offset = (currentPage - 1) * itemsPerPage;
-        const url = `/api/containers?limit=${itemsPerPage}&offset=${offset}`;
-        const response = await apiRequest("GET", url);
-        const data = await response.json();
-        const totalCount = parseInt(response.headers.get('x-total-count') || '0');
+        // Use server-side pagination (only for non-clients)
+        if (isClient) {
+          // For clients, fetch all containers (they likely have fewer containers)
+          const response = await apiRequest("GET", containersEndpoint);
+          const data = await response.json();
+          return {
+            containers: Array.isArray(data) ? data : [],
+            totalCount: Array.isArray(data) ? data.length : 0,
+            isPaginated: false
+          };
+        } else {
+          // For admins/coordinators/technicians, use pagination
+          const offset = (currentPage - 1) * itemsPerPage;
+          const url = `/api/containers?limit=${itemsPerPage}&offset=${offset}`;
+          const response = await apiRequest("GET", url);
+          const data = await response.json();
+          const totalCount = parseInt(response.headers.get('x-total-count') || '0');
 
-        return {
-          containers: Array.isArray(data) ? data : [],
-          totalCount,
+          return {
+            containers: Array.isArray(data) ? data : [],
+            totalCount,
           isPaginated: true
         };
       }
@@ -265,7 +282,6 @@ export default function Containers() {
       <div className="flex min-h-screen bg-background text-foreground">
         <Sidebar />
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1574621100236-d25b64cfd647?q=80&w=2833&auto=format&fit=crop')] bg-cover bg-center opacity-[0.02] pointer-events-none" />
           <Header title="Container Master Sheet" />
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -282,7 +298,6 @@ export default function Containers() {
     <div className="flex min-h-screen bg-background">
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-hidden bg-background relative">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1574621100236-d25b64cfd647?q=80&w=2833&auto=format&fit=crop')] bg-cover bg-center opacity-[0.02] pointer-events-none" />
         <Header title="Container Master Sheet" />
         <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8 relative z-10 scrollbar-thin">
           {/* Summary Cards */}

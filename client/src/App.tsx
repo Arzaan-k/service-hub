@@ -24,6 +24,7 @@ import Inventory from "@/pages/inventory";
 import Analytics from "@/pages/analytics";
 import ClientProfile from "@/pages/client-profile";
 import AdminWhatsApp from "@/pages/admin-whatsapp";
+import AdminUserManagement from "@/pages/admin-user-management";
 import OrbcommLiveData from "@/pages/orbcomm-live-data";
 import RagChat from "@/pages/rag-chat";
 import TechnicianMyProfile from "@/pages/technician-my-profile";
@@ -116,6 +117,9 @@ function Router() {
       </Route>
       <Route path="/admin/whatsapp">
         {() => <ProtectedRoute component={AdminWhatsApp} roles={["admin", "coordinator", "super_admin"]} />}
+      </Route>
+      <Route path="/admin/user-management">
+        {() => <ProtectedRoute component={AdminUserManagement} roles={["admin", "super_admin"]} />}
       </Route>
       <Route path="/rag-chat">
         {() => <ProtectedRoute component={RagChat} />}
