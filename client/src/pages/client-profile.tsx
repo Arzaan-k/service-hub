@@ -115,6 +115,7 @@ export default function ClientProfile() {
     },
   });
 
+
   const sendCredentialsMutation = useMutation({
     mutationFn: async (userId: string) => {
       const response = await fetch(`/api/admin/users/${userId}/send-credentials`, {
@@ -141,6 +142,12 @@ export default function ClientProfile() {
       });
     },
   });
+
+  const handleSendCredentials = () => {
+    if (!cust?.userId) return;
+    // Send credentials to the customer's user account
+    sendCredentialsMutation.mutate(cust.userId);
+  };
 
   const resetEditForm = () => {
     setEditFormData({
@@ -243,13 +250,6 @@ export default function ClientProfile() {
   const handleUpdate = () => {
     if (!cust) return;
     updateCustomer.mutate({ id: cust.id, data: editFormData });
-  };
-
-  const handleSendCredentials = () => {
-    if (!params?.id) return;
-    // We need to get the user ID from the customer data
-    // For now, we'll assume the customer ID is the user ID (this might need adjustment)
-    sendCredentialsMutation.mutate(params.id);
   };
 
   const excelHeaders = useMemo(() => [

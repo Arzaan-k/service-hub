@@ -475,3 +475,26 @@
 .section-dashboard {
   @apply border-l-4 border-[hsl(var(--dashboard))];
 }
+
+/* Leaflet Map Styles */
+.map-container {
+  height: 100%;
+  width: 100%;
+  min-height: 300px;
+}
+
+/* Ensure Leaflet controls are visible */
+.leaflet-control-container {
+  font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.leaflet-popup-content {
+  margin: 8px 12px;
+  font-size: 14px;
+  line-height: 1.4;
+}

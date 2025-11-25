@@ -3258,7 +3258,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
       const customers = await storage.getAllCustomers();
-      res.json(customers);
+
+      // Add container count for each customer
+      const customersWithCounts = await Promise.all(
+        customers.map(async (customer: any) => {
+          try {
+            const containers = await storage.getContainersByCustomer(customer.id);
+            return {
+              ...customer,
+              containerCount: containers.length
+            };
+          } catch (error) {
+            console.error(`Failed to get container count for customer ${customer.id}:`, error);
+            return {
+              ...customer,
+              containerCount: 0
+            };
+          }
+        })
+      );
+
+      res.json(customersWithCounts);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch customers" });
     }
@@ -3346,10 +3366,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/customers/:id", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
-      const customer = await storage.updateCustomer(req.params.id, req.body);
-      if (!customer) {
+      // Get the current customer to check if email changed
+      const currentCustomer = await storage.getCustomer(req.params.id);
+      if (!currentCustomer) {
         return res.status(404).json({ error: "Customer not found" });
       }
+
+      const customer = await storage.updateCustomer(req.params.id, req.body);
+
+      // If email changed, update the associated user account
+      if (req.body.email && req.body.email !== currentCustomer.email && currentCustomer.userId) {
+        try {
+          await storage.updateUser(currentCustomer.userId, {
+            email: req.body.email,
+            emailVerified: false // Reset verification when email changes
+          });
+
+          // Send verification email for the new email address
+          const user = await storage.getUser(currentCustomer.userId);
+          if (user) {
+            const { createAndSendEmailOTP } = await import('./services/auth');
+            await createAndSendEmailOTP(user);
+          }
+        } catch (userUpdateError) {
+          console.error('Failed to update user account for customer:', userUpdateError);
+          // Don't fail the customer update if user update fails
+        }
+      }
+
       res.json(customer);
     } catch (error) {
       res.status(500).json({ error: "Failed to update customer" });

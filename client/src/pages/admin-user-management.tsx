@@ -10,7 +10,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Edit, Key, Mail, User, Users, Plus, Send } from 'lucide-react';
-import GlassCard from '@/components/ui/GlassCard';
+import { GlassCard } from '@/components/ui/animated-card';
+import Sidebar from "@/components/layout/sidebar";
+import Header from "@/components/layout/header";
 
 interface User {
   id: string;
@@ -213,251 +215,257 @@ export default function AdminUserManagement() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-500/10 rounded-xl">
-            <Users className="h-6 w-6 text-blue-500" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">User Management</h1>
-            <p className="text-muted-foreground">Manage user accounts and credentials</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={() => setIsCreateUserDialogOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Create User
-          </Button>
-          <Select value={filterRole} onValueChange={setFilterRole}>
-            <SelectTrigger className="w-40 bg-black/20 border-white/10">
-              <SelectValue placeholder="Filter by role" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Roles</SelectItem>
-              <SelectItem value="super_admin">Super Admin</SelectItem>
-              <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="coordinator">Coordinator</SelectItem>
-              <SelectItem value="technician">Technician</SelectItem>
-              <SelectItem value="client">Client</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredUsers.map((user: User) => (
-          <GlassCard key={user.id} className="p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-500/10 rounded-lg">
-                  <User className="h-4 w-4 text-gray-500" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">{user.name}</h3>
-                  <p className="text-sm text-muted-foreground">{user.phoneNumber}</p>
-                </div>
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <Header title="User Management" />
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-500/10 rounded-xl">
+                <Users className="h-6 w-6 text-blue-500" />
               </div>
-              <Badge variant={getRoleBadgeVariant(user.role)} className="text-xs">
-                {user.role.replace('_', ' ').toUpperCase()}
-              </Badge>
-            </div>
-
-            <div className="space-y-2 mb-4">
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-foreground">{user.email || 'No email set'}</span>
-                {user.emailVerified && (
-                  <Badge variant="outline" className="text-xs text-green-600 border-green-600">
-                    Verified
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                <span className="text-sm text-muted-foreground">
-                  {user.isActive ? 'Active' : 'Inactive'}
-                </span>
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">User Management</h1>
+                <p className="text-muted-foreground">Manage user accounts and credentials</p>
               </div>
             </div>
-
-            <div className="flex gap-2">
+            <div className="flex items-center gap-3">
               <Button
-                onClick={() => handleUpdateCredentials(user)}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                size="sm"
+                onClick={() => setIsCreateUserDialogOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
               >
-                <Key className="h-4 w-4 mr-2" />
-                Manage
+                <Plus className="h-4 w-4 mr-2" />
+                Create User
               </Button>
-              <Button
-                onClick={() => handleSendCredentials(user.id)}
-                variant="outline"
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
-                size="sm"
-                disabled={sendCredentialsMutation.isPending}
-              >
-                <Send className="h-4 w-4 mr-2" />
-                Send Login
-              </Button>
-            </div>
-          </GlassCard>
-        ))}
-      </div>
-
-      {filteredUsers.length === 0 && (
-        <div className="text-center py-12">
-          <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">No users found matching the selected filter</p>
-        </div>
-      )}
-
-      <Dialog open={isCredentialsDialogOpen} onOpenChange={setIsCredentialsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Update User Credentials</DialogTitle>
-            <DialogDescription>
-              Update email and/or password for {selectedUser?.name}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                value={credentialsForm.email}
-                onChange={(e) => setCredentialsForm(prev => ({ ...prev, email: e.target.value }))}
-                placeholder="Enter new email address"
-                className="bg-black/20 border-white/10"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="password">New Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={credentialsForm.password}
-                onChange={(e) => setCredentialsForm(prev => ({ ...prev, password: e.target.value }))}
-                placeholder="Enter new password"
-                className="bg-black/20 border-white/10"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={credentialsForm.confirmPassword}
-                onChange={(e) => setCredentialsForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                placeholder="Confirm new password"
-                className="bg-black/20 border-white/10"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 mt-6">
-            <Button
-              variant="outline"
-              onClick={() => setIsCredentialsDialogOpen(false)}
-              className="bg-white/5 border-white/10"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmitCredentials}
-              disabled={updateCredentialsMutation.isPending}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {updateCredentialsMutation.isPending ? 'Updating...' : 'Update Credentials'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isCreateUserDialogOpen} onOpenChange={setIsCreateUserDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create New User</DialogTitle>
-            <DialogDescription>
-              Create a new user account with auto-generated credentials that will be sent via email.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-                id="name"
-                value={createUserForm.name}
-                onChange={(e) => setCreateUserForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="Enter full name"
-                className="bg-black/20 border-white/10"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                value={createUserForm.email}
-                onChange={(e) => setCreateUserForm(prev => ({ ...prev, email: e.target.value }))}
-                placeholder="Enter email address"
-                className="bg-black/20 border-white/10"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input
-                id="phoneNumber"
-                value={createUserForm.phoneNumber}
-                onChange={(e) => setCreateUserForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
-                placeholder="Enter phone number"
-                className="bg-black/20 border-white/10"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="role">Role</Label>
-              <Select value={createUserForm.role} onValueChange={(value) => setCreateUserForm(prev => ({ ...prev, role: value }))}>
-                <SelectTrigger className="bg-black/20 border-white/10">
-                  <SelectValue placeholder="Select role" />
+              <Select value={filterRole} onValueChange={setFilterRole}>
+                <SelectTrigger className="w-40 bg-black/20 border-white/10">
+                  <SelectValue placeholder="Filter by role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="client">Client</SelectItem>
-                  <SelectItem value="technician">Technician</SelectItem>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="coordinator">Coordinator</SelectItem>
+                  <SelectItem value="technician">Technician</SelectItem>
+                  <SelectItem value="client">Client</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 mt-6">
-            <Button
-              variant="outline"
-              onClick={() => setIsCreateUserDialogOpen(false)}
-              className="bg-white/5 border-white/10"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateUser}
-              disabled={createUserMutation.isPending}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {createUserMutation.isPending ? 'Creating...' : 'Create User & Send Credentials'}
-            </Button>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredUsers.map((user: User) => (
+              <GlassCard key={user.id} className="p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gray-500/10 rounded-lg">
+                      <User className="h-4 w-4 text-gray-500" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">{user.name}</h3>
+                      <p className="text-sm text-muted-foreground">{user.phoneNumber}</p>
+                    </div>
+                  </div>
+                  <Badge variant={getRoleBadgeVariant(user.role)} className="text-xs">
+                    {user.role.replace('_', ' ').toUpperCase()}
+                  </Badge>
+                </div>
+
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-foreground">{user.email || 'No email set'}</span>
+                    {user.emailVerified && (
+                      <Badge variant="outline" className="text-xs text-green-600 border-green-600">
+                        Verified
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span className="text-sm text-muted-foreground">
+                      {user.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handleUpdateCredentials(user)}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                    size="sm"
+                  >
+                    <Key className="h-4 w-4 mr-2" />
+                    Manage
+                  </Button>
+                  <Button
+                    onClick={() => handleSendCredentials(user.id)}
+                    variant="outline"
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
+                    size="sm"
+                    disabled={sendCredentialsMutation.isPending}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send Login
+                  </Button>
+                </div>
+              </GlassCard>
+            ))}
           </div>
-        </DialogContent>
-      </Dialog>
+
+          {filteredUsers.length === 0 && (
+            <div className="text-center py-12">
+              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No users found matching the selected filter</p>
+            </div>
+          )}
+
+          <Dialog open={isCredentialsDialogOpen} onOpenChange={setIsCredentialsDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Update User Credentials</DialogTitle>
+                <DialogDescription>
+                  Update email and/or password for {selectedUser?.name}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={credentialsForm.email}
+                    onChange={(e) => setCredentialsForm(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="Enter new email address"
+                    className="bg-black/20 border-white/10"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="password">New Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={credentialsForm.password}
+                    onChange={(e) => setCredentialsForm(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder="Enter new password"
+                    className="bg-black/20 border-white/10"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={credentialsForm.confirmPassword}
+                    onChange={(e) => setCredentialsForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    placeholder="Confirm new password"
+                    className="bg-black/20 border-white/10"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsCredentialsDialogOpen(false)}
+                  className="bg-white/5 border-white/10"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSubmitCredentials}
+                  disabled={updateCredentialsMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {updateCredentialsMutation.isPending ? 'Updating...' : 'Update Credentials'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isCreateUserDialogOpen} onOpenChange={setIsCreateUserDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Create New User</DialogTitle>
+                <DialogDescription>
+                  Create a new user account with auto-generated credentials that will be sent via email.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input
+                    id="name"
+                    value={createUserForm.name}
+                    onChange={(e) => setCreateUserForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="Enter full name"
+                    className="bg-black/20 border-white/10"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={createUserForm.email}
+                    onChange={(e) => setCreateUserForm(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="Enter email address"
+                    className="bg-black/20 border-white/10"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="phoneNumber">Phone Number</Label>
+                  <Input
+                    id="phoneNumber"
+                    value={createUserForm.phoneNumber}
+                    onChange={(e) => setCreateUserForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                    placeholder="Enter phone number"
+                    className="bg-black/20 border-white/10"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="role">Role</Label>
+                  <Select value={createUserForm.role} onValueChange={(value) => setCreateUserForm(prev => ({ ...prev, role: value }))}>
+                    <SelectTrigger className="bg-black/20 border-white/10">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="client">Client</SelectItem>
+                      <SelectItem value="technician">Technician</SelectItem>
+                      <SelectItem value="coordinator">Coordinator</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsCreateUserDialogOpen(false)}
+                  className="bg-white/5 border-white/10"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateUser}
+                  disabled={createUserMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {createUserMutation.isPending ? 'Creating...' : 'Create User & Send Credentials'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </main>
     </div>
   );
 }

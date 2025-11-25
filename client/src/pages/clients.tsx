@@ -101,33 +101,8 @@ export default function Clients() {
       const res = await apiRequest("POST", "/api/clients", requestData);
       const created = await res.json();
 
-      // Create user account for the client
-      try {
-        const userResponse = await fetch('/api/admin/users', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${getCurrentUser()?.id || ''}`
-          },
-          body: JSON.stringify({
-            name: data.contactPerson,
-            email: data.email,
-            phoneNumber: data.phone,
-            role: 'client'
-          }),
-        });
-
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          return { ...created, userCreated: true, user: userData.user };
-        } else {
-          console.warn('Failed to create user account:', await userResponse.text());
-          return { ...created, userCreated: false };
-        }
-      } catch (error) {
-        console.warn('Error creating user account:', error);
-        return { ...created, userCreated: false };
-      }
+      // The backend automatically creates a user account and sends credentials
+      return { ...created, userCreated: true };
     },
     onSuccess: async (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
@@ -328,9 +303,7 @@ export default function Clients() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {clients?.map((client: Customer) => {
-              const owned = (containers || []).filter((c: any) => c.currentCustomerId === client.id);
-              const sample = owned.slice(0, 5);
-              const remaining = Math.max(0, owned.length - sample.length);
+              const containerCount = client.containerCount || 0;
               return (
               <Card key={client.id} className="card-surface hover:shadow-soft transition-all">
                 <CardHeader className="pb-3">
@@ -372,20 +345,8 @@ export default function Clients() {
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Package className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{owned.length} containers</span>
+                    <span className="text-foreground">{containerCount} containers</span>
                   </div>
-                  {owned.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {sample.map((c: any) => (
-                        <Badge key={c.id} variant="outline" className="text-xs">
-                          {c.containerCode}
-                        </Badge>
-                      ))}
-                      {remaining > 0 && (
-                        <Badge variant="secondary" className="text-xs">+{remaining} more</Badge>
-                      )}
-                    </div>
-                  )}
                   <div className="flex gap-2 pt-2 border-t border-border">
                     <Link href={`/clients/${client.id}`}>
                       <Button size="sm" className="flex-1 btn-secondary">

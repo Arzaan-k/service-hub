@@ -105,32 +105,32 @@ export default function Containers() {
           totalCount: Array.isArray(data) ? data.length : 0,
           isPaginated: false
         };
-      } else {
-        // Use server-side pagination (only for non-clients)
-        if (isClient) {
-          // For clients, fetch all containers (they likely have fewer containers)
-          const response = await apiRequest("GET", containersEndpoint);
-          const data = await response.json();
-          return {
-            containers: Array.isArray(data) ? data : [],
-            totalCount: Array.isArray(data) ? data.length : 0,
-            isPaginated: false
-          };
-        } else {
-          // For admins/coordinators/technicians, use pagination
-          const offset = (currentPage - 1) * itemsPerPage;
-          const url = `/api/containers?limit=${itemsPerPage}&offset=${offset}`;
-          const response = await apiRequest("GET", url);
-          const data = await response.json();
-          const totalCount = parseInt(response.headers.get('x-total-count') || '0');
-
-          return {
-            containers: Array.isArray(data) ? data : [],
-            totalCount,
-            isPaginated: true
-          };
-        }
       }
+
+      // Use server-side pagination (only for non-clients)
+      if (isClient) {
+        // For clients, fetch all containers (they likely have fewer containers)
+        const response = await apiRequest("GET", containersEndpoint);
+        const data = await response.json();
+        return {
+          containers: Array.isArray(data) ? data : [],
+          totalCount: Array.isArray(data) ? data.length : 0,
+          isPaginated: false
+        };
+      }
+
+      // For admins/coordinators/technicians, use pagination
+      const offset = (currentPage - 1) * itemsPerPage;
+      const url = `/api/containers?limit=${itemsPerPage}&offset=${offset}`;
+      const response = await apiRequest("GET", url);
+      const data = await response.json();
+      const totalCount = parseInt(response.headers.get('x-total-count') || '0');
+
+      return {
+        containers: Array.isArray(data) ? data : [],
+        totalCount,
+        isPaginated: true
+      };
     },
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
@@ -282,12 +282,12 @@ export default function Containers() {
     return (
       <div className="flex min-h-screen bg-background text-foreground">
         <Sidebar />
-        <main className="flex-1 flex flex-col overflow-hidden relative">
+        <main className="flex-1 flex flex-col overflow-hidden relative" style={{ backgroundImage: 'none' }}>
           <Header title="Container Master Sheet" />
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-6"></div>
-              <p className="text-muted-foreground text-lg animate-pulse">Loading fleet data...</p>
+              <p className="text-muted-foreground text-lg animate-pulse">Loading container fleet...</p>
             </div>
           </div>
         </main>
@@ -298,7 +298,7 @@ export default function Containers() {
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden bg-background relative">
+      <main className="flex-1 flex flex-col overflow-hidden bg-background relative" style={{ backgroundImage: 'none' }}>
         <Header title="Container Master Sheet" />
         <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8 relative z-10 scrollbar-thin">
           {/* Summary Cards */}

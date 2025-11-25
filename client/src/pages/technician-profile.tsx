@@ -265,7 +265,7 @@ export default function TechnicianProfile() {
         <main className="flex-1 flex flex-col overflow-hidden">
           <Header title="Technician Profile" />
           <div className="p-6">
-            <Link href="/technicians"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2"/>Back</Button></Link>
+            <Link href="/technicians"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2" />Back</Button></Link>
             <div className="mt-6 text-destructive">Failed to load technician.</div>
           </div>
         </main>
@@ -280,7 +280,7 @@ export default function TechnicianProfile() {
         <Header title="Technician Profile" />
         <div className="p-6 space-y-6">
           <div className="flex items-center justify-between">
-            <Link href="/technicians"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2"/>Back</Button></Link>
+            <Link href="/technicians"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2" />Back</Button></Link>
           </div>
 
           <Card>
@@ -292,7 +292,7 @@ export default function TechnicianProfile() {
                 </div>
                 <div className="flex items-center gap-2">
                   {technician.type === "thirdparty" && (
-                    <Badge className="bg-pink-200 text-pink-800">Third-Party</Badge>
+                    <Badge variant="secondary" className="bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300">Third-Party</Badge>
                   )}
                   <Badge>{technician.status || "available"}</Badge>
                   <Button
@@ -310,14 +310,14 @@ export default function TechnicianProfile() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-2 text-sm">
-                <Phone className="h-4 w-4 text-muted-foreground"/>
+                <Phone className="h-4 w-4 text-muted-foreground" />
                 <span>{technician.phone || technician.whatsappNumber}</span>
               </div>
 
               {/* Location Section */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground"/>
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
                   <span>Location:</span>
                 </div>
                 {isEditing ? (
@@ -342,11 +342,11 @@ export default function TechnicianProfile() {
               </div>
 
               <div className="flex items-center gap-2 text-sm">
-                <Wrench className="h-4 w-4 text-muted-foreground"/>
+                <Wrench className="h-4 w-4 text-muted-foreground" />
                 <span>{Array.isArray(technician.skills) ? technician.skills.join(", ") : technician.specialization || "general"}</span>
               </div>
               <div className="flex items-center gap-1 text-sm pt-1">
-                <Star className="h-4 w-4 text-yellow-500 fill-yellow-500"/>
+                <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                 <span>{technician.averageRating ?? 0}/5</span>
               </div>
 
@@ -381,7 +381,8 @@ export default function TechnicianProfile() {
                 <CardTitle>{isThirdParty ? "Money Allowance" : "Wage Breakdown"}</CardTitle>
                 <div className="flex items-center gap-2">
                   <Button
-                    className="bg-orange-200 hover:bg-orange-300 text-black"
+                    variant="secondary"
+                    className="bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
                     onClick={() => {
                       if (!wageEditMode) return setWageEditMode(true);
                       return isThirdParty ? updateThirdParty.mutate() : updateWage.mutate();
@@ -403,7 +404,7 @@ export default function TechnicianProfile() {
             <CardContent>
               {isWageLoading && <div className="text-sm text-muted-foreground">Loading wage details…</div>}
               {!isWageLoading && (
-                <div className="p-4 rounded-xl" style={{ background: '#FFF9F7', border: '1px solid #FFE0D6' }}>
+                <div className="p-4 rounded-xl bg-muted/30 border border-border">
                   {isThirdParty ? (
                     <div className="grid grid-cols-1 gap-4 text-sm">
                       <div>
@@ -479,8 +480,8 @@ export default function TechnicianProfile() {
                           />
                         </div>
                       </div>
-                      <hr className="my-3 border-[#FFE0D6]" />
-                      <div className="font-semibold text-black">
+                      <hr className="my-3 border-border" />
+                      <div className="font-semibold text-foreground">
                         Total Daily Wage: ₹
                         {(Number(wageForm.hotelAllowance) || 0) +
                           (Number(wageForm.foodAllowance) || 0) +
@@ -543,11 +544,11 @@ export default function TechnicianProfile() {
                 <div className="text-sm text-muted-foreground">Loading services…</div>
               ) : (() => {
                 const source = (technician as any)?.type === 'thirdparty' ? tpRequests : requests;
-                const assigned = Array.isArray(source) 
+                const assigned = Array.isArray(source)
                   ? source.filter((r: any) => ['scheduled', 'in_progress', 'pending', 'assigned'].includes(r.status))
                   : [];
-                
-return assigned.length > 0 ? (
+
+                return assigned.length > 0 ? (
                   <div className="space-y-3">
                     {assigned.map((r: any) => (
                       <Link key={r.id} href={`/service-requests/${r.id}`}>
@@ -556,8 +557,8 @@ return assigned.length > 0 ? (
                             <div className="font-medium text-primary hover:underline">SR #{r.requestNumber}</div>
                             <Badge className={
                               r.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                              r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-gray-100 text-gray-800'
+                                r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-gray-100 text-gray-800'
                             }>
                               {r.status}
                             </Badge>
