@@ -274,16 +274,10 @@ export default function Dashboard() {
                 <MapMyIndiaFleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
-            <div style={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ height: '600px' }}>
               <ErrorBoundary>
-                <div style={{ height: '380px', flexShrink: 0 }}>
+                <div style={{ height: '100%' }}>
                   <AlertPanel alerts={alerts || []} containers={containers || []} />
-                </div>
-              </ErrorBoundary>
-              <div style={{ height: '16px', flexShrink: 0 }} />
-              <ErrorBoundary>
-                <div style={{ height: '204px', flexShrink: 0 }}>
-                  <ContainerFleetStats containers={containers || []} />
                 </div>
               </ErrorBoundary>
             </div>
