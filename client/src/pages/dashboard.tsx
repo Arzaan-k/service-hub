@@ -1,5 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import KPICards from "@/components/dashboard/kpi-cards";
@@ -9,19 +9,14 @@ import ServiceRequestsPanel from "@/components/dashboard/service-requests-panel"
 import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
 import TechnicianSchedule from "@/components/dashboard/technician-schedule";
 import ContainerLookup from "@/components/dashboard/container-lookup";
-import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
 import ErrorBoundary from "@/components/error-boundary";
 import { websocket } from "@/lib/websocket";
 import { getAuthToken } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const authToken = getAuthToken();
-  const [selectedContainer, setSelectedContainer] = useState<string>("");
-  const [selectedAlertType, setSelectedAlertType] = useState<string>("temperature");
 
   const { data: stats = {} } = useQuery<any>({ 
     queryKey: ["/api/dashboard/stats"],
@@ -74,37 +69,6 @@ export default function Dashboard() {
     refetchInterval: 60000, // 1 minute
   });
 
-  const simulateAlert = useMutation({
-    mutationFn: async () => {
-      if (!selectedContainer) throw new Error("Please select a container");
-      const response = await apiRequest("POST", "/api/alerts/simulate", {
-        containerId: selectedContainer,
-        alertType: selectedAlertType,
-        severity: "critical"
-      });
-
-      // Handle 409 Conflict (duplicate alert) as a special case
-      if (response.status === 409) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Duplicate alert detected");
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to simulate alert");
-      }
-
-      return await response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-    },
-    onError: (err: any) => {
-      console.error("Alert simulation failed:", err);
-      // User will see the error message in the UI
-    }
-  });
 
   // Initialize data on component mount
   useEffect(() => {
@@ -209,63 +173,6 @@ export default function Dashboard() {
             <KPICards stats={stats} />
           </div>
 
-          {/* Test Alert Simulation */}
-          <div className="bg-card border border-border rounded-lg p-4 shadow-soft">
-            <h3 className="text-lg font-semibold mb-4 text-foreground">🚨 Test Alert System</h3>
-            <div className="flex gap-4 items-end flex-wrap">
-              <div className="flex-1">
-                <label className="text-sm font-medium">Container</label>
-                <Select value={selectedContainer} onValueChange={setSelectedContainer}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select container to simulate alert" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {containers?.slice(0, 10).map((container: any) => (
-                      <SelectItem key={container.id} value={container.id}>
-                        {container.containerCode}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex-1">
-                <label className="text-sm font-medium">Alert Type</label>
-                <Select value={selectedAlertType} onValueChange={setSelectedAlertType}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="temperature">Temperature</SelectItem>
-                    <SelectItem value="power">Power</SelectItem>
-                    <SelectItem value="connectivity">Connectivity</SelectItem>
-                    <SelectItem value="door">Door</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                onClick={() => simulateAlert.mutate()}
-                disabled={simulateAlert.isPending || !selectedContainer}
-                className="btn-primary px-4 py-2 rounded-md text-sm"
-              >
-                {simulateAlert.isPending ? "Simulating..." : "🚨 Simulate Alert"}
-              </Button>
-            </div>
-            {simulateAlert.isError && (
-              <p className="text-xs text-red-500 mt-2 font-medium">
-                ⚠️ {simulateAlert.error?.message || "Failed to simulate alert"}
-              </p>
-            )}
-            {simulateAlert.isSuccess && (
-              <p className="text-xs text-green-500 mt-2 font-medium">
-                ✅ Alert simulated successfully!
-              </p>
-            )}
-            {!simulateAlert.isError && !simulateAlert.isSuccess && (
-              <p className="text-xs text-muted-foreground mt-2">
-                This will create a test alert to verify the dashboard alert grouping and scrolling.
-              </p>
-            )}
-          </div>
 
           {/* Map & Alerts & Fleet Stats */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ height: '600px', minHeight: '600px', maxHeight: '600px', overflow: 'visible' }}>
