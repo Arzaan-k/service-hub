@@ -33,7 +33,18 @@ function getTransport() {
   const pass = process.env.SMTP_PASS || '';
   const secure = String(process.env.SMTP_SECURE || 'false') === 'true';
 
-  return nodemailer.createTransport({ host, port, secure, auth: user && pass ? { user, pass } : undefined });
+  console.log('📧 Creating SMTP transport with config:', { host, port, secure, hasAuth: !!(user && pass) });
+
+  const transportConfig = { host, port, secure, auth: user && pass ? { user, pass } : undefined };
+
+  // Special handling for Gmail
+  if (host === 'smtp.gmail.com') {
+    transportConfig.secure = false; // Use TLS instead of SSL
+    transportConfig.port = 587;
+    console.log('📧 Using Gmail SMTP configuration');
+  }
+
+  return nodemailer.createTransport(transportConfig);
 }
 
 export async function createAndSendEmailOTP(user: any): Promise<{ success: boolean; code?: string; error?: string }> {
@@ -109,9 +120,13 @@ export async function createAndSendEmailOTP(user: any): Promise<{ success: boole
 }
 
 export async function sendUserCredentials(user: any, plainPassword: string): Promise<{ success: boolean; error?: string }> {
+  console.log('📧 Attempting to send credentials email to:', user.email);
+
   const transporter = getTransport();
   const from = process.env.EMAIL_FROM || 'no-reply@containergenie.local';
   const appName = 'ContainerGenie';
+
+  console.log('📧 SMTP Config - Host:', process.env.SMTP_HOST, 'User:', process.env.SMTP_USER, 'From:', from);
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;max-width:600px;margin:0 auto;">
@@ -149,7 +164,23 @@ export async function sendUserCredentials(user: any, plainPassword: string): Pro
     if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
       console.warn('⚠️  SMTP not configured. User credentials not sent via email.');
       console.warn('📧 User:', user.email, 'Password:', plainPassword);
+      console.warn('📧 Email content that would be sent:');
+      console.warn('📧 Subject:', `${appName} - Your Account Credentials`);
+      console.warn('📧 To:', user.email);
+      console.warn('📧 From:', from);
       return { success: false, error: 'Email not configured. Check server logs for credentials.' };
+    }
+
+    // In development mode, don't send actual emails but log what would be sent
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📧 [DEV MODE] Would send credentials email to:', user.email);
+      console.log('📧 [DEV MODE] Password:', plainPassword);
+      console.log('📧 [DEV MODE] Email preview:');
+      console.log('📧 [DEV MODE] Subject:', `${appName} - Your Account Credentials`);
+      console.log('📧 [DEV MODE] From:', from);
+      console.log('📧 [DEV MODE] To:', user.email);
+      console.log('📧 [DEV MODE] Login URL:', `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`);
+      return { success: true, devMode: true, message: 'Email logged in development mode' };
     }
 
     await transporter.sendMail({

@@ -375,6 +375,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test email sending
+  app.post('/api/test-email', authenticateUser, requireRole("admin"), async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Email required' });
+
+      const { sendUserCredentials } = await import('./services/auth');
+
+      // Create a test user object
+      const testUser = {
+        id: 'test-user-id',
+        name: 'Test User',
+        email: email
+      };
+
+      const result = await sendUserCredentials(testUser, 'TestPassword123!');
+      if (result.success) {
+        res.json({ message: 'Test email sent successfully' });
+      } else {
+        res.status(500).json({ error: 'Failed to send test email', details: result.error });
+      }
+    } catch (error) {
+      console.error('Test email error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // Email OTP verification
   app.post('/api/auth/verify-email', async (req, res) => {
     try {
@@ -2663,7 +2690,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Send credentials email to the new technician
         const emailResult = await sendUserCredentials(user, plainPassword);
         if (!emailResult.success) {
-          console.warn('Failed to send credentials email to new technician:', emailResult.error);
+          console.warn('⚠️ Failed to send credentials email to new technician:', emailResult.error);
+          console.warn('📧 Technician email:', user.email, 'Password:', plainPassword);
+        } else {
+          console.log('✅ Credentials email sent successfully to new technician:', user.email);
         }
       }
 
@@ -2885,7 +2915,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send credentials email to the new user
       const emailResult = await sendUserCredentials(user, plainPassword);
       if (!emailResult.success) {
-        console.warn('Failed to send credentials email to new client:', emailResult.error);
+        console.warn('⚠️ Failed to send credentials email to new client:', emailResult.error);
+        console.warn('📧 Client email:', user.email, 'Password:', plainPassword);
+      } else {
+        console.log('✅ Credentials email sent successfully to new client:', user.email);
       }
 
       // Create the customer with the user ID
