@@ -45,6 +45,9 @@ export default function AdminUserManagement() {
     role: 'client'
   });
 
+  const [isCredentialsConfirmOpen, setIsCredentialsConfirmOpen] = useState(false);
+  const [selectedUserForCredentials, setSelectedUserForCredentials] = useState<User | null>(null);
+
   const { data: users, isLoading, error } = useQuery({
     queryKey: ['admin-users'],
     queryFn: async () => {
@@ -164,8 +167,16 @@ export default function AdminUserManagement() {
     createUserMutation.mutate(createUserForm);
   };
 
-  const handleSendCredentials = (userId: string) => {
-    sendCredentialsMutation.mutate(userId);
+  const handleSendCredentials = (user: User) => {
+    setSelectedUserForCredentials(user);
+    setIsCredentialsConfirmOpen(true);
+  };
+
+  const handleConfirmSendCredentials = () => {
+    if (!selectedUserForCredentials) return;
+    sendCredentialsMutation.mutate(selectedUserForCredentials.id);
+    setIsCredentialsConfirmOpen(false);
+    setSelectedUserForCredentials(null);
   };
 
   const filteredUsers = users?.filter((user: User) => {
@@ -300,7 +311,7 @@ export default function AdminUserManagement() {
                     Manage
                   </Button>
                   <Button
-                    onClick={() => handleSendCredentials(user.id)}
+                    onClick={() => handleSendCredentials(user)}
                     variant="outline"
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
                     size="sm"
@@ -466,6 +477,80 @@ export default function AdminUserManagement() {
           </Dialog>
         </div>
       </main>
+
+      {/* Send Credentials Confirmation Dialog */}
+      <Dialog open={isCredentialsConfirmOpen} onOpenChange={setIsCredentialsConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <i className="fas fa-exclamation-triangle"></i>
+              Reset Password Warning
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              <div className="space-y-3">
+                <p className="font-medium">
+                  You are about to reset the password for <strong>{selectedUserForCredentials?.name}</strong>
+                  {selectedUserForCredentials?.role && (
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({selectedUserForCredentials.role})
+                    </span>
+                  )}.
+                </p>
+                <div className="bg-warning/10 border border-warning/20 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <i className="fas fa-shield-alt text-warning mt-0.5"></i>
+                    <div>
+                      <p className="text-sm font-medium text-warning-foreground mb-1">
+                        ⚠️ This action will:
+                      </p>
+                      <ul className="text-xs text-warning-foreground space-y-1 ml-4">
+                        <li>• Generate a new secure password</li>
+                        <li>• Send login credentials via email</li>
+                        <li>• Invalidate the current password</li>
+                        <li>• Require the user to change password after login</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  The user will receive an email with their new login credentials.
+                  For security, they should change their password after first login.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCredentialsConfirmOpen(false);
+                setSelectedUserForCredentials(null);
+              }}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmSendCredentials}
+              disabled={sendCredentialsMutation.isPending}
+              className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {sendCredentialsMutation.isPending ? (
+                <>
+                  <i className="fas fa-spinner fa-spin mr-2"></i>
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-key mr-2"></i>
+                  Reset & Send Password
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
