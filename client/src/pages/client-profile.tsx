@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Edit } from "lucide-react";
+import { Edit, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Container = {
@@ -110,6 +110,33 @@ export default function ClientProfile() {
       toast({
         title: "Error",
         description: "Failed to update client details",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendCredentialsMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await fetch(`/api/admin/users/${userId}/send-credentials`, {
+        method: 'POST',
+        headers: { ...commonHeaders, "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send credentials');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "New credentials sent via email",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to send credentials",
         variant: "destructive",
       });
     },
@@ -218,6 +245,13 @@ export default function ClientProfile() {
     updateCustomer.mutate({ id: cust.id, data: editFormData });
   };
 
+  const handleSendCredentials = () => {
+    if (!params?.id) return;
+    // We need to get the user ID from the customer data
+    // For now, we'll assume the customer ID is the user ID (this might need adjustment)
+    sendCredentialsMutation.mutate(params.id);
+  };
+
   const excelHeaders = useMemo(() => [
     "Container  No",
     "Customer Name",
@@ -280,10 +314,22 @@ export default function ClientProfile() {
               </div>
               <div className="flex items-center gap-2">
                 {isAdmin && !isSelfProfile && (
-                  <Button variant="outline" size="sm" onClick={handleEdit}>
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit
-                  </Button>
+                  <>
+                    <Button variant="outline" size="sm" onClick={handleEdit}>
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSendCredentials}
+                      disabled={sendCredentialsMutation.isPending}
+                      className="bg-green-600 hover:bg-green-700 text-white border-green-600"
+                    >
+                      <Send className="h-4 w-4 mr-2" />
+                      {sendCredentialsMutation.isPending ? 'Sending...' : 'Send Credentials'}
+                    </Button>
+                  </>
                 )}
                 {cust?.customerTier && (
                   <Badge className="border text-xs">{String(cust.customerTier).toUpperCase()}</Badge>

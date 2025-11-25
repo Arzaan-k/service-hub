@@ -492,6 +492,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin create user with auto-generated password
+  app.post("/api/admin/users", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
+    try {
+      const { name, email, phoneNumber, role } = req.body;
+
+      if (!email || !name || !phoneNumber || !role) {
+        return res.status(400).json({ error: "Name, email, phone and role are required" });
+      }
+
+      // Validate role
+      const validRoles = ['client', 'technician', 'coordinator'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: "Invalid role. Must be client, technician, or coordinator" });
+      }
+
+      const existingEmail = await storage.getUserByEmail(email);
+      if (existingEmail) return res.status(400).json({ error: "Email already registered" });
+
+      const existingPhone = await storage.getUserByPhoneNumber(phoneNumber);
+      if (existingPhone) return res.status(400).json({ error: "Phone already registered" });
+
+      const { hashPassword, generateSecurePassword, sendUserCredentials } = await import('./services/auth');
+
+      // Generate secure password
+      const plainPassword = generateSecurePassword();
+      const passwordHash = await hashPassword(plainPassword);
+
+      const user = await storage.createUser({
+        phoneNumber,
+        name,
+        email,
+        password: passwordHash,
+        role,
+        isActive: true,
+        whatsappVerified: false,
+        emailVerified: false,
+      });
+
+      // Send credentials via email
+      const emailResult = await sendUserCredentials(user, plainPassword);
+
+      const message = emailResult.success
+        ? 'User created and credentials sent via email'
+        : `User created. ${emailResult.error || 'Check server logs for credentials.'}`;
+
+      res.json({
+        user: { ...user, password: undefined },
+        message,
+        emailSent: emailResult.success,
+        plainPassword: plainPassword // Only for development/debugging
+      });
+    } catch (error) {
+      console.error("Create user error:", error);
+      res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  // Admin send credentials to existing user
+  app.post("/api/admin/users/:userId/send-credentials", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { generateSecurePassword, sendUserCredentials } = await import('./services/auth');
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Generate new secure password
+      const plainPassword = generateSecurePassword();
+      const { hashPassword } = await import('./services/auth');
+      const passwordHash = await hashPassword(plainPassword);
+
+      // Update user with new password
+      await storage.updateUser(userId, {
+        password: passwordHash,
+        emailVerified: false // Reset verification
+      });
+
+      // Send credentials via email
+      const emailResult = await sendUserCredentials(user, plainPassword);
+
+      const message = emailResult.success
+        ? 'New credentials sent via email'
+        : `${emailResult.error || 'Check server logs for credentials.'}`;
+
+      res.json({
+        message,
+        emailSent: emailResult.success,
+        plainPassword: plainPassword // Only for development/debugging
+      });
+    } catch (error) {
+      console.error("Send credentials error:", error);
+      res.status(500).json({ error: "Failed to send credentials" });
+    }
+  });
+
   // Test endpoint to get all users (for development only)
   app.get("/api/test/users", async (req, res) => {
     try {

@@ -127,8 +127,9 @@ export default function Containers() {
           return {
             containers: Array.isArray(data) ? data : [],
             totalCount,
-          isPaginated: true
-        };
+            isPaginated: true
+          };
+        }
       }
     },
     staleTime: 30000, // 30 seconds

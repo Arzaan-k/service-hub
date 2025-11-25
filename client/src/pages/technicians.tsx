@@ -101,24 +101,70 @@ export default function Technicians() {
         const errorData = await res.json();
         throw new Error(errorData.details || errorData.error || "Failed to create technician");
       }
-      const json = await res.json();
-      return {
-        ...json,
-        name: json.name ?? json.user?.name,
-        email: json.email ?? json.user?.email,
-        phone: json.phone ?? json.user?.phoneNumber,
-        specialization: Array.isArray(json.skills) ? json.skills[0] : json.specialization,
-        baseLocation: typeof json.baseLocation === 'object' ? json.baseLocation?.city : json.baseLocation,
-      };
+      const technicianData = await res.json();
+
+      // Create user account for the technician
+      try {
+        const userResponse = await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken || ''}`
+          },
+          body: JSON.stringify({
+            name: data.name,
+            email: data.email,
+            phoneNumber: data.phone,
+            role: 'technician'
+          }),
+        });
+
+        let userCreated = false;
+        let user = null;
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          userCreated = true;
+          user = userData.user;
+        } else {
+          console.warn('Failed to create user account:', await userResponse.text());
+        }
+
+        return {
+          ...technicianData,
+          userCreated,
+          user,
+          name: technicianData.name ?? technicianData.user?.name,
+          email: technicianData.email ?? technicianData.user?.email,
+          phone: technicianData.phone ?? technicianData.user?.phoneNumber,
+          specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
+          baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
+        };
+      } catch (error) {
+        console.warn('Error creating user account:', error);
+        return {
+          ...technicianData,
+          userCreated: false,
+          name: technicianData.name ?? technicianData.user?.name,
+          email: technicianData.email ?? technicianData.user?.email,
+          phone: technicianData.phone ?? technicianData.user?.phoneNumber,
+          specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
+          baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
+        };
+      }
     },
-    onSuccess: (data) => {
-      console.log("Technician created successfully:", data);
+    onSuccess: (result) => {
+      console.log("Technician created successfully:", result);
       queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
       setIsAddDialogOpen(false);
       resetForm();
+
+      const successMessage = result.userCreated
+        ? "Technician added and user account created. Credentials sent via email."
+        : "Technician added. User account creation failed.";
+
       toast({
         title: "Success",
-        description: "Technician added successfully",
+        description: successMessage,
       });
     },
     onError: (error: any) => {

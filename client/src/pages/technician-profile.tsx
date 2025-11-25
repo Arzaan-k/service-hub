@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
-import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock } from "lucide-react";
+import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
 
@@ -202,6 +202,33 @@ export default function TechnicianProfile() {
     },
   });
 
+  const sendCredentialsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/admin/users/${technicianId}/send-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send credentials');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "New credentials sent via email",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to send credentials",
+        variant: "destructive",
+      });
+    },
+  });
+
   useEffect(() => {
     if (technician && isEditing) {
       const locationValue = typeof technician.baseLocation === "string"
@@ -268,6 +295,16 @@ export default function TechnicianProfile() {
                     <Badge className="bg-pink-200 text-pink-800">Third-Party</Badge>
                   )}
                   <Badge>{technician.status || "available"}</Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => sendCredentialsMutation.mutate()}
+                    disabled={sendCredentialsMutation.isPending}
+                    className="bg-green-600 hover:bg-green-700 text-white border-green-600"
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {sendCredentialsMutation.isPending ? 'Sending...' : 'Send Credentials'}
+                  </Button>
                 </div>
               </div>
             </CardHeader>

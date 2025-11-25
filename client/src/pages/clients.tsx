@@ -99,18 +99,53 @@ export default function Clients() {
         containerIds: allocation.containerIds.length > 0 ? allocation.containerIds : undefined
       };
       const res = await apiRequest("POST", "/api/clients", requestData);
-      return await res.json();
+      const created = await res.json();
+
+      // Create user account for the client
+      try {
+        const userResponse = await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${getCurrentUser()?.id || ''}`
+          },
+          body: JSON.stringify({
+            name: data.contactPerson,
+            email: data.email,
+            phoneNumber: data.phone,
+            role: 'client'
+          }),
+        });
+
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          return { ...created, userCreated: true, user: userData.user };
+        } else {
+          console.warn('Failed to create user account:', await userResponse.text());
+          return { ...created, userCreated: false };
+        }
+      } catch (error) {
+        console.warn('Error creating user account:', error);
+        return { ...created, userCreated: false };
+      }
     },
-    onSuccess: async (created: any) => {
+    onSuccess: async (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
       setIsAddDialogOpen(false);
       resetForm();
+
+      const successMessage = result.userCreated
+        ? (allocation.containerIds.length > 0
+          ? `Client added, user account created, and ${allocation.containerIds.length} container(s) assigned. Credentials sent via email.`
+          : "Client added and user account created. Credentials sent via email.")
+        : (allocation.containerIds.length > 0
+          ? `Client added and ${allocation.containerIds.length} container(s) assigned. User account creation failed.`
+          : "Client added. User account creation failed.");
+
       toast({
         title: "Success",
-        description: allocation.containerIds.length > 0 
-          ? `Client added and ${allocation.containerIds.length} container(s) assigned` 
-          : "Client added successfully",
+        description: successMessage,
       });
     },
     onError: () => {

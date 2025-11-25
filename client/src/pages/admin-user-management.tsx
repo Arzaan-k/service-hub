@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Edit, Key, Mail, User, Users } from 'lucide-react';
+import { Edit, Key, Mail, User, Users, Plus, Send } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 
 interface User {
@@ -33,6 +33,14 @@ export default function AdminUserManagement() {
     email: '',
     password: '',
     confirmPassword: ''
+  });
+
+  const [isCreateUserDialogOpen, setIsCreateUserDialogOpen] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState({
+    name: '',
+    email: '',
+    phoneNumber: '',
+    role: 'client'
   });
 
   const { data: users, isLoading, error } = useQuery({
@@ -72,6 +80,50 @@ export default function AdminUserManagement() {
     },
   });
 
+  const createUserMutation = useMutation({
+    mutationFn: async (data: { name: string; email: string; phoneNumber: string; role: string }) => {
+      const response = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create user');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast.success('User created and credentials sent via email');
+      setIsCreateUserDialogOpen(false);
+      setCreateUserForm({ name: '', email: '', phoneNumber: '', role: 'client' });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const sendCredentialsMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await fetch(`/api/admin/users/${userId}/send-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send credentials');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success('New credentials sent via email');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const handleUpdateCredentials = (user: User) => {
     setSelectedUser(user);
     setCredentialsForm({
@@ -100,6 +152,18 @@ export default function AdminUserManagement() {
       email: credentialsForm.email !== selectedUser.email ? credentialsForm.email : undefined,
       password: credentialsForm.password || undefined,
     });
+  };
+
+  const handleCreateUser = () => {
+    if (!createUserForm.name || !createUserForm.email || !createUserForm.phoneNumber) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    createUserMutation.mutate(createUserForm);
+  };
+
+  const handleSendCredentials = (userId: string) => {
+    sendCredentialsMutation.mutate(userId);
   };
 
   const filteredUsers = users?.filter((user: User) => {
@@ -161,6 +225,13 @@ export default function AdminUserManagement() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            onClick={() => setIsCreateUserDialogOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create User
+          </Button>
           <Select value={filterRole} onValueChange={setFilterRole}>
             <SelectTrigger className="w-40 bg-black/20 border-white/10">
               <SelectValue placeholder="Filter by role" />
@@ -213,14 +284,26 @@ export default function AdminUserManagement() {
               </div>
             </div>
 
-            <Button
-              onClick={() => handleUpdateCredentials(user)}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-              size="sm"
-            >
-              <Key className="h-4 w-4 mr-2" />
-              Manage Credentials
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleUpdateCredentials(user)}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                size="sm"
+              >
+                <Key className="h-4 w-4 mr-2" />
+                Manage
+              </Button>
+              <Button
+                onClick={() => handleSendCredentials(user.id)}
+                variant="outline"
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
+                size="sm"
+                disabled={sendCredentialsMutation.isPending}
+              >
+                <Send className="h-4 w-4 mr-2" />
+                Send Login
+              </Button>
+            </div>
           </GlassCard>
         ))}
       </div>
@@ -293,6 +376,84 @@ export default function AdminUserManagement() {
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {updateCredentialsMutation.isPending ? 'Updating...' : 'Update Credentials'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCreateUserDialogOpen} onOpenChange={setIsCreateUserDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New User</DialogTitle>
+            <DialogDescription>
+              Create a new user account with auto-generated credentials that will be sent via email.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="name">Full Name</Label>
+              <Input
+                id="name"
+                value={createUserForm.name}
+                onChange={(e) => setCreateUserForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Enter full name"
+                className="bg-black/20 border-white/10"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="email">Email Address</Label>
+              <Input
+                id="email"
+                type="email"
+                value={createUserForm.email}
+                onChange={(e) => setCreateUserForm(prev => ({ ...prev, email: e.target.value }))}
+                placeholder="Enter email address"
+                className="bg-black/20 border-white/10"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="phoneNumber">Phone Number</Label>
+              <Input
+                id="phoneNumber"
+                value={createUserForm.phoneNumber}
+                onChange={(e) => setCreateUserForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                placeholder="Enter phone number"
+                className="bg-black/20 border-white/10"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="role">Role</Label>
+              <Select value={createUserForm.role} onValueChange={(value) => setCreateUserForm(prev => ({ ...prev, role: value }))}>
+                <SelectTrigger className="bg-black/20 border-white/10">
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client">Client</SelectItem>
+                  <SelectItem value="technician">Technician</SelectItem>
+                  <SelectItem value="coordinator">Coordinator</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setIsCreateUserDialogOpen(false)}
+              className="bg-white/5 border-white/10"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateUser}
+              disabled={createUserMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {createUserMutation.isPending ? 'Creating...' : 'Create User & Send Credentials'}
             </Button>
           </div>
         </DialogContent>
