@@ -2642,8 +2642,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // If no existing user found, create a new one
       if (!user) {
-        const { hashPassword } = await import('./services/auth');
-        const defaultPassword = await hashPassword('ChangeMe@123');
+        const { hashPassword, generateSecurePassword, sendUserCredentials } = await import('./services/auth');
+        const plainPassword = generateSecurePassword();
+        const hashedPassword = await hashPassword(plainPassword);
 
         console.log("Creating new user for technician...");
         // Set role to technician, but user can also be a client if needed
@@ -2651,13 +2652,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           phoneNumber: phoneNumber,
           name: technicianData.name,
           email: email,
-          password: defaultPassword,
+          password: hashedPassword,
           role: "technician", // Default to technician, but can be changed later
           isActive: true,
           whatsappVerified: false,
           emailVerified: false,
         });
         console.log("User created:", user);
+
+        // Send credentials email to the new technician
+        const emailResult = await sendUserCredentials(user, plainPassword);
+        if (!emailResult.success) {
+          console.warn('Failed to send credentials email to new technician:', emailResult.error);
+        }
       }
 
       // Generate employee code
@@ -2860,19 +2867,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { containerIds, ...clientData } = req.body;
 
       // Create a user first (required for customer)
-      const { hashPassword } = await import('./services/auth');
-      const defaultPassword = await hashPassword('ChangeMe@123');
+      const { hashPassword, generateSecurePassword, sendUserCredentials } = await import('./services/auth');
+      const plainPassword = generateSecurePassword();
+      const hashedPassword = await hashPassword(plainPassword);
 
       const user = await storage.createUser({
         phoneNumber: clientData.phone,
         name: clientData.contactPerson,
         email: clientData.email,
-        password: defaultPassword,
+        password: hashedPassword,
         role: "client",
         isActive: true,
         whatsappVerified: true, // Enable WhatsApp by default for new clients
         emailVerified: false,
       });
+
+      // Send credentials email to the new user
+      const emailResult = await sendUserCredentials(user, plainPassword);
+      if (!emailResult.success) {
+        console.warn('Failed to send credentials email to new client:', emailResult.error);
+      }
 
       // Create the customer with the user ID
       const customerData = {
