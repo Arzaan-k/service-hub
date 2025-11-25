@@ -35,6 +35,8 @@ import { DocumentProcessor } from "./services/documentProcessor";
 import { vectorStore } from "./services/vectorStore";
 import multer from 'multer';
 import { generateJobOrderNumber } from './utils/jobOrderGenerator';
+import { db } from './db';
+import { sql } from 'drizzle-orm';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -1613,6 +1615,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error raising indent from parts:", error);
       res.status(500).json({ error: "Failed to raise indent" });
+    }
+  });
+
+  // Request Indent - Create order in Inventory Management System
+  app.post("/api/service-requests/:id/request-indent", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const serviceRequest = await storage.getServiceRequest(req.params.id);
+      if (!serviceRequest) {
+        return res.status(404).json({ error: "Service request not found" });
+      }
+
+      // Check if order already exists (look in notes until migration is run)
+      if (serviceRequest.resolutionNotes && serviceRequest.resolutionNotes.includes('[Inventory Order]')) {
+        return res.status(400).json({ 
+          error: "Indent already requested for this service request. Check service notes for order details."
+        });
+      }
+
+      // Get required parts from service request
+      const requiredParts = serviceRequest.requiredParts || [];
+      if (requiredParts.length === 0) {
+        return res.status(400).json({ error: "No required parts found in service request" });
+      }
+
+      // Get customer details
+      const customer = await storage.getCustomer(serviceRequest.customerId);
+      if (!customer) {
+        return res.status(404).json({ error: "Customer not found" });
+      }
+
+      // Parse parts and prepare items for inventory system
+      const items = requiredParts.map((part: string) => {
+        // Parse format: "Part Name (quantity)"
+        const match = part.match(/^(.+?)\s*\((\d+)\)$/);
+        if (match) {
+          return {
+            productName: match[1].trim(),
+            quantity: parseInt(match[2], 10)
+          };
+        }
+        // Fallback: assume quantity 1 if no format match
+        return {
+          productName: part.trim(),
+          quantity: 1
+        };
+      });
+
+      // Import inventory service
+      const { inventoryService } = await import('./services/inventoryIntegration');
+
+      // Check if inventory integration is configured
+      if (!inventoryService.isConfigured()) {
+        return res.status(503).json({ 
+          error: "Inventory system integration not configured. Please add INVENTORY_API_URL, INVENTORY_API_KEY, and INVENTORY_API_SECRET to .env file" 
+        });
+      }
+
+      // Create order in inventory system
+      const orderResult = await inventoryService.createOrder({
+        customerName: customer.companyName,
+        customerEmail: customer.email,
+        customerPhone: customer.phone,
+        items: items,
+        serviceRequestNumber: serviceRequest.requestNumber,
+        notes: `Service Request: ${serviceRequest.requestNumber}\nIssue: ${serviceRequest.issueDescription}`
+      });
+
+      if (!orderResult.success) {
+        return res.status(500).json({ 
+          error: orderResult.error || "Failed to create order in Inventory System" 
+        });
+      }
+
+      // Store order info in service request notes (until database migration is run)
+      const orderInfo = `\n\n[Inventory Order]\nOrder ID: ${orderResult.orderId}\nOrder Number: ${orderResult.orderNumber}\nCreated: ${new Date().toISOString()}`;
+      const updatedNotes = (serviceRequest.resolutionNotes || '') + orderInfo;
+      
+      const updatedRequest = await storage.updateServiceRequest(req.params.id, {
+        resolutionNotes: updatedNotes
+      });
+
+      console.log(`[Inventory Integration] ✅ Order created successfully for SR ${serviceRequest.requestNumber}:`, {
+        orderId: orderResult.orderId,
+        orderNumber: orderResult.orderNumber
+      });
+
+      res.json({
+        success: true,
+        message: "Indent Requested Successfully — Order Created in Inventory System",
+        orderId: orderResult.orderId,
+        orderNumber: orderResult.orderNumber,
+        serviceRequest: updatedRequest
+      });
+    } catch (error: any) {
+      console.error("[Inventory Integration] Error requesting indent:", error);
+      res.status(500).json({ 
+        error: error.message || "Failed to request indent" 
+      });
     }
   });
 
