@@ -224,10 +224,11 @@ export default function ContainerDetail() {
 
     const handleContainerUpdate = (data: any) => {
       const updateData = data.data || data;
+      console.log('🔌 WebSocket received container_update:', updateData, 'Current Container ID:', container.id);
 
-      // Only update if this is our container
-      if (updateData.containerId === container.id) {
-        console.log('🔄 Real-time status update received for container:', container.containerCode, updateData);
+      // Only update if this is our container (allow string/number comparison)
+      if (updateData.containerId == container.id) {
+        console.log('🔄 Real-time status update MATCHED for container:', container.containerCode, updateData);
 
         // Update the query cache
         queryClient.setQueryData([`/api/containers/${id}`], (old: any) => {
@@ -323,10 +324,10 @@ export default function ContainerDetail() {
       "MAINTENANCE": { color: "bg-yellow-500/20 text-yellow-200 border-yellow-400/30", label: "Maintenance", icon: Settings },
       "STOCK": { color: "bg-gray-500/20 text-gray-200 border-gray-400/30", label: "In Stock", icon: Package },
     };
-    const statusInfo = statusMap[status as keyof typeof statusMap] || { 
-      color: "bg-gray-500/20 text-gray-200 border-gray-400/30", 
-      label: status, 
-      icon: Package 
+    const statusInfo = statusMap[status as keyof typeof statusMap] || {
+      color: "bg-gray-500/20 text-gray-200 border-gray-400/30",
+      label: status,
+      icon: Package
     };
     const IconComponent = statusInfo.icon;
     return (
@@ -344,9 +345,9 @@ export default function ContainerDetail() {
       "C": { color: "bg-red-500/20 text-red-200 border-red-400/30", label: "C - Fair" },
       "D": { color: "bg-red-500/20 text-red-200 border-red-400/30", label: "D - Poor" },
     };
-    const gradeInfo = gradeMap[grade as keyof typeof gradeMap] || { 
-      color: "bg-gray-500/20 text-gray-200 border-gray-400/30", 
-      label: grade 
+    const gradeInfo = gradeMap[grade as keyof typeof gradeMap] || {
+      color: "bg-gray-500/20 text-gray-200 border-gray-400/30",
+      label: grade
     };
     return <Badge className={`${gradeInfo.color} border`}>{gradeInfo.label}</Badge>;
   };
@@ -379,11 +380,11 @@ export default function ContainerDetail() {
   const handleExport = async () => {
     console.log('Export button clicked');
     if (!container) return;
-    
+
     setIsExporting(true);
     try {
       const metadata = container.excelMetadata || {};
-      
+
       // Create CSV content
       const csvContent = [
         "Container Number,Product Type,Size,Size Type,Group Name,GKU Product Name,Category,Location,Depot,YOM,Status,Current,Grade,Reefer Unit,Reefer Unit Model,Health Score",
@@ -518,9 +519,9 @@ export default function ContainerDetail() {
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-4">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setLocation('/containers')}
                   className="flex items-center gap-2"
                 >
@@ -533,8 +534,8 @@ export default function ContainerDetail() {
               </div>
               <div className="flex items-center gap-2">
                 {customer && !customerError && (
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     size="sm"
                     onClick={() => setLocation(`/clients/${customer.id}`)}
                   >
@@ -542,9 +543,9 @@ export default function ContainerDetail() {
                     View Client
                   </Button>
                 )}
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -555,9 +556,9 @@ export default function ContainerDetail() {
                   <Edit className="h-4 w-4 mr-2" />
                   Edit
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -568,9 +569,9 @@ export default function ContainerDetail() {
                   <Share2 className="h-4 w-4 mr-2" />
                   Share
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -786,8 +787,8 @@ export default function ContainerDetail() {
                         <div className="mt-1">
                           {getGradeBadge(
                             ((container as any).grade as string) ||
-                              metadata.grade ||
-                              "N/A"
+                            metadata.grade ||
+                            "N/A"
                           )}
                         </div>
                       </div>
@@ -910,11 +911,10 @@ export default function ContainerDetail() {
                         {container.lastTelemetry?.batteryLevel && (
                           <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
                             <div
-                              className={`h-2 rounded-full ${
-                                container.lastTelemetry.batteryLevel > 50 ? 'bg-green-500' :
-                                container.lastTelemetry.batteryLevel > 20 ? 'bg-yellow-500' :
-                                'bg-red-500'
-                              }`}
+                              className={`h-2 rounded-full ${container.lastTelemetry.batteryLevel > 50 ? 'bg-green-500' :
+                                  container.lastTelemetry.batteryLevel > 20 ? 'bg-yellow-500' :
+                                    'bg-red-500'
+                                }`}
                               style={{ width: `${container.lastTelemetry.batteryLevel}%` }}
                             />
                           </div>
@@ -926,8 +926,8 @@ export default function ContainerDetail() {
                           {container.lastUpdateTimestamp
                             ? new Date(container.lastUpdateTimestamp).toLocaleString()
                             : container.lastSyncedAt
-                            ? new Date(container.lastSyncedAt).toLocaleString()
-                            : 'Never'}
+                              ? new Date(container.lastSyncedAt).toLocaleString()
+                              : 'Never'}
                         </p>
                       </div>
                       <div>
@@ -1128,8 +1128,8 @@ export default function ContainerDetail() {
                     <CardContent className="space-y-4">
                       {(() => {
                         const knownKeys = new Set([
-                          'productType','size','sizeType','groupName','gkuProductName','category','location','depot',
-                          'yom','status','current','imageLinks','grade','reeferUnit','reeferUnitModel'
+                          'productType', 'size', 'sizeType', 'groupName', 'gkuProductName', 'category', 'location', 'depot',
+                          'yom', 'status', 'current', 'imageLinks', 'grade', 'reeferUnit', 'reeferUnitModel'
                         ]);
                         const entries = Object.entries(metadata || {}).filter(([k, v]) => !!v && !knownKeys.has(k));
                         if (entries.length === 0) {
@@ -1326,9 +1326,9 @@ export default function ContainerDetail() {
                                 )}
                                 <Badge className={
                                   service.status === 'completed' ? 'bg-green-500/20 text-green-200 border-green-400/30 border' :
-                                  service.status === 'in_progress' ? 'bg-blue-500/20 text-blue-200 border-blue-400/30 border' :
-                                  service.status === 'pending' ? 'bg-yellow-500/20 text-yellow-200 border-yellow-400/30 border' :
-                                  'bg-gray-500/20 text-gray-200 border-gray-400/30 border'
+                                    service.status === 'in_progress' ? 'bg-blue-500/20 text-blue-200 border-blue-400/30 border' :
+                                      service.status === 'pending' ? 'bg-yellow-500/20 text-yellow-200 border-yellow-400/30 border' :
+                                        'bg-gray-500/20 text-gray-200 border-gray-400/30 border'
                                 }>
                                   {service.status || 'N/A'}
                                 </Badge>
@@ -1445,7 +1445,7 @@ export default function ContainerDetail() {
                   </CardContent>
                 </Card>
 
-                <ContainerMap 
+                <ContainerMap
                   location={metadata.location}
                   depot={metadata.depot}
                   containerCode={container.containerCode}
@@ -1567,10 +1567,10 @@ export default function ContainerDetail() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="containerCode">Container Code</Label>
-                <Input 
-                  id="containerCode" 
-                  defaultValue={container?.containerCode} 
-                  disabled 
+                <Input
+                  id="containerCode"
+                  defaultValue={container?.containerCode}
+                  disabled
                 />
               </div>
               <div>
@@ -1591,23 +1591,23 @@ export default function ContainerDetail() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="location">Location</Label>
-                <Input 
-                  id="location" 
-                  defaultValue={metadata.location || 'Unknown'} 
+                <Input
+                  id="location"
+                  defaultValue={metadata.location || 'Unknown'}
                 />
               </div>
               <div>
                 <Label htmlFor="depot">Depot</Label>
-                <Input 
-                  id="depot" 
-                  defaultValue={metadata.depot || 'Unknown'} 
+                <Input
+                  id="depot"
+                  defaultValue={metadata.depot || 'Unknown'}
                 />
               </div>
             </div>
             <div>
               <Label htmlFor="notes">Notes</Label>
-              <Textarea 
-                id="notes" 
+              <Textarea
+                id="notes"
                 placeholder="Add any additional notes about this container..."
                 rows={3}
               />
@@ -1640,9 +1640,9 @@ export default function ContainerDetail() {
             <div>
               <Label>Share Link</Label>
               <div className="flex gap-2">
-                <Input 
-                  value={typeof window !== 'undefined' ? window.location.href : ''} 
-                  readOnly 
+                <Input
+                  value={typeof window !== 'undefined' ? window.location.href : ''}
+                  readOnly
                   className="font-mono text-sm"
                 />
                 <Button variant="outline" size="sm" onClick={handleCopyLink}>

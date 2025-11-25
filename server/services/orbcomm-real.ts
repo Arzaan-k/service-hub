@@ -3,6 +3,7 @@ import WebSocket from 'ws';
 
 export interface OrbcommDeviceData {
   deviceId: string;
+  assetId?: string;
   timestamp: string;
   location?: {
     latitude: number;
@@ -25,6 +26,14 @@ export interface OrbcommDevice {
     latitude: number;
     longitude: number;
   };
+  temperature?: number;
+  doorStatus?: string;
+  powerStatus?: string;
+  batteryLevel?: number;
+  errorCodes?: string[];
+  rawEvent?: any;
+  deviceData?: any;
+  reeferData?: any;
 }
 
 class OrbcommAPIClient {
@@ -637,7 +646,7 @@ class OrbcommAPIClient {
                   const alertCode = `ORBCOMM-${anomalies.join('-')}`;
                   const hasRecentAlert = existingAlerts.some(a =>
                     a.alertCode === alertCode &&
-                    a.status === 'open' &&
+                    (a as any).status === 'open' &&
                     new Date(a.detectedAt).getTime() > (Date.now() - 10 * 60 * 1000) // 10 minutes deduplication window
                   );
 
@@ -759,13 +768,27 @@ class OrbcommAPIClient {
             }
           }
 
+          // Construct normalized telemetry object for frontend display
+          const telemetryData = {
+            temperature: device.temperature,
+            doorStatus: device.doorStatus,
+            powerStatus: device.powerStatus,
+            batteryLevel: device.batteryLevel,
+            location: device.location,
+            latitude: device.location?.latitude,
+            longitude: device.location?.longitude,
+            timestamp: device.lastSeen || new Date().toISOString(),
+            errorCodes: device.errorCodes,
+            rawEvent: (device as any).rawEvent // Keep raw event nested if needed
+          };
+
           // Update container with telemetry data using enhanced method
           await storage.updateContainerTelemetry(container.id, {
             lastAssetId: lastAssetId,
             timestamp: device.lastSeen || new Date().toISOString(),
             latitude: device.location?.latitude,
             longitude: device.location?.longitude,
-            rawData: (device as any).rawEvent || device // Store raw Orbcomm data
+            rawData: telemetryData // Store normalized data as lastTelemetry
           });
 
           console.log(`📍 Updated telemetry for container ${container.containerCode} from device ${device.deviceId} (AssetID: ${lastAssetId})`);
@@ -794,6 +817,23 @@ class OrbcommAPIClient {
                 }
               });
             }
+
+            // Broadcast full telemetry update for real-time status on frontend
+            (global as any).broadcast?.({
+              type: 'container_update',
+              data: {
+                containerId: container.id,
+                temperature: device.temperature,
+                doorStatus: device.doorStatus,
+                powerStatus: device.powerStatus,
+                batteryLevel: device.batteryLevel,
+                latitude: device.location?.latitude,
+                longitude: device.location?.longitude,
+                timestamp: device.lastSeen || new Date().toISOString(),
+                deviceId: device.deviceId,
+                source: 'orbcomm'
+              }
+            });
           } catch { }
         } else {
           console.log(`⚠️ No container found with exact container ID ${lastAssetId} for Orbcomm device ${device.deviceId}`);
@@ -991,7 +1031,7 @@ class OrbcommAPIClient {
       const deviceData: OrbcommDeviceData = {
         deviceId: device.deviceId,
         assetId: (device as any).assetId || device.deviceId,
-        lastUpdate: (device as any).lastUpdate || new Date().toISOString(),
+        timestamp: (device as any).lastUpdate || new Date().toISOString(),
         location: (device as any).location,
         temperature: (device as any).temperature,
         doorStatus: (device as any).doorStatus,

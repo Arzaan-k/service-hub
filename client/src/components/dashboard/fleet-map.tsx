@@ -18,6 +18,13 @@ interface Container {
   usageCycles?: number;
   capacity?: string;
   orbcommDeviceId?: string;
+  hasIot?: boolean;
+  locationLat?: string;
+  locationLng?: string;
+  temperature?: number;
+  powerStatus?: string;
+  status?: string;
+  type?: string;
 }
 
 interface FleetMapProps {
@@ -27,6 +34,52 @@ interface FleetMapProps {
 export default function FleetMap({ containers }: FleetMapProps) {
   const mapRef = useRef<any>(null);
   const mapInstanceRef = useRef<any>(null);
+
+  // Calculate statistics for display
+  const stats = {
+    total: containers?.length || 0,
+    withGps: 0,
+    iotEnabled: 0,
+    active: 0,
+    maintenance: 0,
+    critical: 0,
+    offline: 0
+  };
+
+  // Count containers with GPS and their statuses
+  containers?.forEach(container => {
+    const hasGps = !!(
+      (container.currentLocation?.lat && container.currentLocation?.lng) ||
+      (container.locationLat && container.locationLng &&
+       parseFloat(container.locationLat) !== 0 && parseFloat(container.locationLng) !== 0)
+    );
+
+    if (hasGps) {
+      stats.withGps++;
+    }
+
+    const hasIot = !!container.orbcommDeviceId || container.hasIot;
+    if (hasIot) stats.iotEnabled++;
+
+    // Determine status
+    const healthScore = container.healthScore || 0;
+    const temperature = container.temperature;
+    const powerStatus = container.powerStatus;
+
+    if (temperature && temperature > 30) {
+      stats.critical++;
+    } else if (powerStatus === 'off' || powerStatus === 'offline') {
+      stats.offline++;
+    } else if (healthScore >= 80) {
+      stats.active++;
+    } else if (healthScore >= 60) {
+      stats.maintenance++;
+    } else if (healthScore > 0) {
+      stats.critical++;
+    } else {
+      stats.offline++;
+    }
+  });
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.L || !mapRef.current || !containers) return;
@@ -46,29 +99,65 @@ export default function FleetMap({ containers }: FleetMapProps) {
       }
     });
 
-    // Add container markers
+    // Add container markers - check for GPS coordinates in all possible formats
     containers.forEach((container) => {
-      if (container.currentLocation && container.currentLocation.lat && container.currentLocation.lng) {
-        // Determine status based on health score and other factors
+      // Check for GPS coordinates in multiple possible locations
+      let lat: number | null = null;
+      let lng: number | null = null;
+
+      // Priority order for GPS coordinates:
+      // 1. currentLocation.lat/lng (preferred)
+      if (container.currentLocation?.lat && container.currentLocation?.lng) {
+        lat = container.currentLocation.lat;
+        lng = container.currentLocation.lng;
+      }
+      // 2. locationLat/locationLng as strings
+      else if (container.locationLat && container.locationLng) {
+        lat = parseFloat(container.locationLat);
+        lng = parseFloat(container.locationLng);
+      }
+
+      // Only create marker if we have valid coordinates
+      if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        // Determine status and color based on multiple factors
         const healthScore = container.healthScore || 0;
-        const hasIot = !!container.orbcommDeviceId;
-        
-        let status = "unknown";
-        let color = "#ef4444"; // Default to red
-        
-        if (healthScore >= 80) {
+        const hasIot = !!container.orbcommDeviceId || container.hasIot;
+        const temperature = container.temperature;
+        const powerStatus = container.powerStatus;
+
+        let status = container.status || "unknown";
+        let color = "#6b7280"; // Default gray
+
+        // Priority for color coding:
+        // 1. Critical temperature (>30°C)
+        if (temperature && temperature > 30) {
+          status = "critical";
+          color = "#ef4444"; // Red
+        }
+        // 2. Power issues
+        else if (powerStatus === 'off' || powerStatus === 'offline') {
+          status = "power_issue";
+          color = "#f97316"; // Orange
+        }
+        // 3. IoT connectivity
+        else if (hasIot) {
+          status = "active";
+          color = "#10b981"; // Green
+        }
+        // 4. Health score
+        else if (healthScore >= 80) {
           status = "active";
           color = "#73C8D2"; // Light cyan
         } else if (healthScore >= 60) {
           status = "maintenance";
-          color = "#FF9013"; // Orange
-        } else {
+          color = "#f59e0b"; // Amber
+        } else if (healthScore > 0) {
           status = "critical";
           color = "#ef4444"; // Red
         }
 
         const marker = window.L.circleMarker(
-          [container.currentLocation.lat, container.currentLocation.lng],
+          [lat, lng],
           {
             radius: 8,
             fillColor: color,
@@ -80,23 +169,55 @@ export default function FleetMap({ containers }: FleetMapProps) {
         ).addTo(mapInstanceRef.current);
 
         const statusDisplay = status.charAt(0).toUpperCase() + status.slice(1);
-        const locationDisplay = container.currentLocation?.address || 
-          `Location: ${container.currentLocation?.lat?.toFixed(4)}, ${container.currentLocation?.lng?.toFixed(4)}`;
+        const locationDisplay = container.currentLocation?.address ||
+          `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+
+        const temperatureDisplay = temperature ? `${temperature}°C` : 'N/A';
+        const powerDisplay = powerStatus ? powerStatus.toUpperCase() : 'N/A';
 
         marker.bindPopup(`
-          <div class="p-2">
-            <p class="font-mono font-semibold text-sm">${container.containerCode || "Unknown"}</p>
-            <p class="text-xs text-gray-600">${locationDisplay}</p>
-            <p class="text-xs mt-1 font-medium" style="color: ${color}">
-              ${statusDisplay} (${healthScore}% health)
-            </p>
-            <p class="text-xs text-gray-500 mt-1">
-              ${container.capacity || "Unknown capacity"} • ${hasIot ? "IoT Enabled" : "Manual Tracking"}
-            </p>
+          <div class="p-3 min-w-[200px]">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-mono font-bold text-sm">${container.containerCode || "Unknown"}</h3>
+              <span class="text-xs px-2 py-1 rounded-full text-white font-medium" style="background-color: ${color}">
+                ${statusDisplay}
+              </span>
+            </div>
+            <div class="space-y-1 text-xs">
+              <p><span class="font-medium">Location:</span> ${locationDisplay}</p>
+              <p><span class="font-medium">Type:</span> ${container.type || "Unknown"}</p>
+              <p><span class="font-medium">Capacity:</span> ${container.capacity || "Unknown"}</p>
+              ${temperature ? `<p><span class="font-medium">Temperature:</span> ${temperatureDisplay}</p>` : ''}
+              ${powerStatus ? `<p><span class="font-medium">Power:</span> ${powerDisplay}</p>` : ''}
+              ${healthScore > 0 ? `<p><span class="font-medium">Health:</span> ${healthScore}%</p>` : ''}
+              <p class="mt-2"><span class="font-medium">Tracking:</span> ${hasIot ? "IoT Enabled" : "Manual"}</p>
+            </div>
           </div>
         `);
+
+        console.log(`📍 Added marker for ${container.containerCode} at [${lat}, ${lng}] - Status: ${status}`);
       }
     });
+
+    // Fit map to show all markers if there are any
+    const validContainers = containers.filter(container => {
+      const lat = container.currentLocation?.lat || (container.locationLat ? parseFloat(container.locationLat) : null);
+      const lng = container.currentLocation?.lng || (container.locationLng ? parseFloat(container.locationLng) : null);
+      return lat && lng && lat !== 0 && lng !== 0;
+    });
+
+    if (validContainers.length > 0) {
+      const bounds = window.L.latLngBounds(
+        validContainers.map(container => {
+          const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
+          const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
+          return [lat, lng];
+        })
+      );
+      mapInstanceRef.current.fitBounds(bounds, { padding: [20, 20] });
+    }
+
+    console.log(`🗺️ Map updated: ${validContainers.length} containers with GPS coordinates displayed`);
   }, [containers]);
 
   return (
@@ -109,15 +230,12 @@ export default function FleetMap({ containers }: FleetMapProps) {
           <h3 className="text-lg font-semibold text-foreground">Real-time Fleet Map</h3>
         </div>
         <div className="flex items-center gap-2">
+          <div className="text-xs text-muted-foreground">
+            {stats.withGps} of {stats.total} containers tracked
+          </div>
           <button className="px-3 py-1.5 text-xs font-medium bg-dashboard text-dashboard-foreground rounded-md hover:bg-dashboard/90 transition-smooth">
             Refresh Map
           </button>
-          <select className="px-3 py-1.5 text-xs border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring">
-            <option>All Containers</option>
-            <option>IoT Enabled</option>
-            <option>Manual Tracking</option>
-            <option>Active Alerts</option>
-          </select>
         </div>
       </div>
 
@@ -125,20 +243,28 @@ export default function FleetMap({ containers }: FleetMapProps) {
 
       <div className="mt-4 flex flex-wrap gap-4 text-xs">
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-success rounded-full"></div>
-          <span className="text-muted-foreground">Active (218)</span>
+          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+          <span className="text-muted-foreground">Active ({stats.active})</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-warning rounded-full"></div>
-          <span className="text-muted-foreground">Maintenance (20)</span>
+          <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
+          <span className="text-muted-foreground">Maintenance ({stats.maintenance})</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-destructive rounded-full"></div>
-          <span className="text-muted-foreground">Critical Alert (12)</span>
+          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+          <span className="text-muted-foreground">Critical ({stats.critical})</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-muted rounded-full"></div>
-          <span className="text-muted-foreground">Offline (0)</span>
+          <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+          <span className="text-muted-foreground">Offline ({stats.offline})</span>
+        </div>
+        <div className="flex items-center gap-2 ml-4">
+          <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+          <span className="text-muted-foreground">IoT Enabled ({stats.iotEnabled})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
+          <span className="text-muted-foreground">GPS Tracked ({stats.withGps})</span>
         </div>
       </div>
     </div>

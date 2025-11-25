@@ -381,14 +381,19 @@ class OrbcommIntegrationService {
       }
 
       // Update temperature if available
-      const temperature = reeferData.TAmb || deviceData.DeviceTemp;
+      const temperature = reeferData.TAmb || deviceData.DeviceTemp || eventData.Temperature;
       if (temperature !== undefined) {
         updates.temperature = temperature;
       }
 
       // Update power status
-      const powerStatus = deviceData.ExtPower !== undefined ?
+      let powerStatus = deviceData.ExtPower !== undefined ?
         (deviceData.ExtPower ? 'on' : 'off') : null;
+
+      if (!powerStatus && eventData.PowerStatus) {
+        powerStatus = eventData.PowerStatus.toLowerCase();
+      }
+
       if (powerStatus) {
         updates.powerStatus = powerStatus;
       }
@@ -397,10 +402,12 @@ class OrbcommIntegrationService {
       let batteryLevel: number | undefined;
       if (deviceData.BatteryVoltage !== undefined) {
         batteryLevel = Math.min(100, Math.max(0, (deviceData.BatteryVoltage / 8.1) * 100));
+      } else if (eventData.BatteryLevel !== undefined) {
+        batteryLevel = eventData.BatteryLevel;
       }
 
       // Extract door status
-      const doorStatus = deviceData.DoorState || reeferData.DoorState;
+      const doorStatus = deviceData.DoorState || reeferData.DoorState || eventData.DoorState;
 
       // Store complete telemetry in lastTelemetry JSONB field
       updates.lastTelemetry = {
@@ -457,18 +464,25 @@ class OrbcommIntegrationService {
         const deviceData = eventData?.DeviceData || {};
         const reeferData = eventData?.ReeferData || {};
 
-        const temperature = reeferData.TAmb || deviceData.DeviceTemp;
-        const powerStatus = deviceData.ExtPower !== undefined ?
+        const temperature = reeferData.TAmb || deviceData.DeviceTemp || eventData.Temperature;
+
+        let powerStatus = deviceData.ExtPower !== undefined ?
           (deviceData.ExtPower ? 'on' : 'off') : undefined;
+
+        if (!powerStatus && eventData.PowerStatus) {
+          powerStatus = eventData.PowerStatus.toLowerCase();
+        }
 
         // Extract battery level
         let batteryLevel: number | undefined;
         if (deviceData.BatteryVoltage !== undefined) {
           batteryLevel = Math.min(100, Math.max(0, (deviceData.BatteryVoltage / 8.1) * 100));
+        } else if (eventData.BatteryLevel !== undefined) {
+          batteryLevel = eventData.BatteryLevel;
         }
 
         // Extract door status
-        const doorStatus = deviceData.DoorState || reeferData.DoorState;
+        const doorStatus = deviceData.DoorState || reeferData.DoorState || eventData.DoorState;
 
         (global as any).broadcast({
           type: 'container_update',
