@@ -53,12 +53,36 @@ export async function createAndSendEmailOTP(user: any): Promise<{ success: boole
   const appName = 'ContainerGenie';
 
   const html = `
-  <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;">
-    <h2>${appName} - Email Verification</h2>
-    <p>Hello ${user.name || ''},</p>
-    <p>Your verification code is:</p>
-    <p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${code}</p>
-    <p>This code expires in 10 minutes.</p>
+  <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;max-width:600px;margin:0 auto;">
+    <div style="background:#f8f9fa;padding:20px;border-radius:8px;margin-bottom:20px;">
+      <h2 style="color:#2d3748;margin:0;">${appName} - Password Reset</h2>
+    </div>
+
+    <div style="background:white;padding:30px;border-radius:8px;border:1px solid #e2e8f0;">
+      <p style="margin-top:0;">Hello ${user.name || ''},</p>
+
+      <p>You have requested to reset your password. Here is your verification code:</p>
+
+      <div style="background:#f7fafc;padding:20px;border-radius:6px;margin:20px 0;border-left:4px solid #4299e1;text-align:center;">
+        <p style="margin:5px 0;font-size:18px;"><strong>Verification Code:</strong></p>
+        <p style="font-size:32px;font-weight:bold;letter-spacing:4px;color:#2d3748;margin:10px 0;">${code}</p>
+      </div>
+
+      <p style="color:#e53e3e;font-weight:bold;margin:20px 0;">⚠️ Important: Please change your password after first login for security.</p>
+
+      <p>This code expires in 10 minutes. If you didn't request this password reset, please ignore this email.</p>
+
+      <div style="margin:30px 0;text-align:center;">
+        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login"
+           style="background:#4299e1;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
+          Reset Your Password
+        </a>
+      </div>
+
+      <p style="color:#718096;font-size:12px;margin-top:30px;">
+        For security reasons, this code will expire in 10 minutes. Please use it promptly.
+      </p>
+    </div>
   </div>`;
 
   try {
