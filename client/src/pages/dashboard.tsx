@@ -4,8 +4,9 @@ import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import KPICards from "@/components/dashboard/kpi-cards";
 import MapMyIndiaFleetMap from "@/components/dashboard/mapmyindia-fleet-map";
+import AlertPanel from "@/components/dashboard/alert-panel";
 import ServiceRequestsPanel from "@/components/dashboard/service-requests-panel";
-import WhatsAppHubPanel from "@/components/dashboard/whatsapp-hub-panel";
+import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
 import TechnicianSchedule from "@/components/dashboard/technician-schedule";
 import ContainerLookup from "@/components/dashboard/container-lookup";
 import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
@@ -273,14 +274,22 @@ export default function Dashboard() {
                 <MapMyIndiaFleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
-            <div style={{ height: '600px' }}>
+            <div style={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
               <ErrorBoundary>
-                <ContainerFleetStats containers={containers || []} />
+                <div style={{ height: '380px', flexShrink: 0 }}>
+                  <AlertPanel alerts={alerts || []} containers={containers || []} />
+                </div>
+              </ErrorBoundary>
+              <div style={{ height: '16px', flexShrink: 0 }} />
+              <ErrorBoundary>
+                <div style={{ height: '204px', flexShrink: 0 }}>
+                  <ContainerFleetStats containers={containers || []} />
+                </div>
               </ErrorBoundary>
             </div>
           </div>
 
-          {/* Service Requests & WhatsApp */}
+          {/* Service Requests & Fleet Overview */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
             <ErrorBoundary>
               <div className="h-full min-w-0">
@@ -289,7 +298,7 @@ export default function Dashboard() {
             </ErrorBoundary>
             <ErrorBoundary>
               <div className="h-full min-w-0">
-                <WhatsAppHubPanel />
+                <ContainerFleetStats containers={containers || []} />
               </div>
             </ErrorBoundary>
           </div>

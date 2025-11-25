@@ -4,115 +4,108 @@
 
 @layer base {
   :root {
-    /* Base Colors - Slate 50/900 based */
-    --background: 210 40% 98%;
+    /* iOS/MacOS Light Mode Palette */
+    /* Background: Very subtle light gray for depth */
+    --background: 210 20% 98%;
     --foreground: 222 47% 11%;
 
-    /* Card - White */
+    /* Card: Pure White */
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
 
-    /* Popover - White */
+    /* Popover: Pure White */
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    /* Primary - Indigo 600 */
-    --primary: 243 75% 59%;
+    /* Primary: Apple Blue (#007AFF) */
+    --primary: 211 100% 50%;
     --primary-foreground: 210 40% 98%;
-    --primary-light: 243 75% 70%;
-    --primary-dark: 243 75% 49%;
+    --primary-light: 211 100% 65%;
+    --primary-dark: 211 100% 40%;
 
-    /* Secondary - Emerald 500 */
-    --secondary: 160 84% 39%;
-    --secondary-foreground: 210 40% 98%;
+    /* Secondary: Apple Gray/Silver */
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11%;
 
-    /* Muted - Slate 100 */
+    /* Muted: Subtle Gray */
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    /* Accent - Slate 100 */
+    /* Accent: Light Blue/Gray mix */
     --accent: 210 40% 96.1%;
     --accent-foreground: 222 47% 11%;
 
-    /* Destructive - Red 500 */
+    /* Destructive: System Red */
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    /* Success - Green 500 */
+    /* Success: System Green */
     --success: 142 76% 36%;
     --success-foreground: 355.7 100% 97.3%;
 
-    /* Warning - Amber 500 */
+    /* Warning: System Orange/Yellow */
     --warning: 38 92% 50%;
     --warning-foreground: 48 96% 89%;
 
-    /* Info - Blue 500 */
-    --info: 217 91% 60%;
+    /* Info: System Blue */
+    --info: 211 100% 50%;
     --info-foreground: 222 47% 11%;
 
     /* Borders & Inputs */
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 243 75% 59%;
-    --radius: 0.5rem;
+    --ring: 211 100% 50%;
 
-    /* Functional Areas - Light Mode */
+    /* Radius: Larger for that rounded iOS feel */
+    --radius: 1rem;
+
+    /* Functional Areas - Light Mode (Refined for pastel/iOS look) */
     --dashboard: 32 95% 44%;
-    /* Orange */
     --dashboard-foreground: 60 9.1% 97.8%;
     --dashboard-light: 32 95% 90%;
     --dashboard-dark: 32 95% 30%;
 
     --containers: 215 16% 47%;
-    /* Slate */
     --containers-foreground: 60 9.1% 97.8%;
     --containers-light: 215 16% 90%;
     --containers-dark: 215 16% 30%;
 
     --alerts: 0 84% 60%;
-    /* Red */
     --alerts-foreground: 60 9.1% 97.8%;
     --alerts-light: 0 84% 90%;
     --alerts-dark: 0 84% 30%;
 
     --service: 14 90% 55%;
-    /* Deep Orange */
     --service-foreground: 60 9.1% 97.8%;
     --service-light: 14 90% 90%;
     --service-dark: 14 90% 30%;
 
     --technicians: 262 83% 58%;
-    /* Purple */
     --technicians-foreground: 60 9.1% 97.8%;
     --technicians-light: 262 83% 90%;
     --technicians-dark: 262 83% 30%;
 
     --scheduling: 189 94% 43%;
-    /* Cyan */
     --scheduling-foreground: 60 9.1% 97.8%;
     --scheduling-light: 189 94% 90%;
     --scheduling-dark: 189 94% 30%;
 
     --clients: 330 81% 60%;
-    /* Pink */
     --clients-foreground: 60 9.1% 97.8%;
     --clients-light: 330 81% 90%;
     --clients-dark: 330 81% 30%;
 
     --whatsapp: 150 90% 35%;
-    /* Green */
     --whatsapp-foreground: 60 9.1% 97.8%;
     --whatsapp-light: 150 90% 90%;
     --whatsapp-dark: 150 90% 25%;
 
     --inventory: 24 95% 53%;
-    /* Orange */
     --inventory-foreground: 60 9.1% 97.8%;
     --inventory-light: 24 95% 90%;
     --inventory-dark: 24 95% 30%;
 
     --analytics: 199 89% 48%;
-    /* Light Blue */
     --analytics-foreground: 60 9.1% 97.8%;
     --analytics-light: 199 89% 90%;
     --analytics-dark: 199 89% 30%;
@@ -128,49 +121,51 @@
     --input-border: hsl(var(--border));
     --border-color: hsl(var(--border));
     --highlight: hsl(var(--primary));
-    --shadow: rgba(0, 0, 0, 0.1);
+    --shadow: rgba(0, 0, 0, 0.05);
+    /* Softer shadow */
     --gradient-accent: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
   }
 
   .dark {
-    /* Base Colors - Slate 950 based */
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
+    /* iOS/MacOS Dark Mode Palette */
+    /* Background: Deep rich black/gray */
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
 
-    /* Card - Slate 900 */
-    --card: 217 33% 17%;
-    --card-foreground: 210 40% 98%;
+    /* Card: Dark Gray with slight transparency feel */
+    --card: 240 10% 10%;
+    --card-foreground: 0 0% 98%;
 
-    /* Popover - Slate 900 */
-    --popover: 217 33% 17%;
-    --popover-foreground: 210 40% 98%;
+    /* Popover: Dark Gray */
+    --popover: 240 10% 10%;
+    --popover-foreground: 0 0% 98%;
 
-    /* Primary - Indigo 400 */
-    --primary: 244 94% 74%;
+    /* Primary: Lighter Apple Blue for dark mode */
+    --primary: 211 100% 60%;
     --primary-foreground: 222 47% 11%;
-    --primary-light: 244 94% 80%;
-    --primary-dark: 244 94% 60%;
+    --primary-light: 211 100% 70%;
+    --primary-dark: 211 100% 50%;
 
-    /* Secondary - Emerald 400 */
-    --secondary: 151 55% 41%;
-    --secondary-foreground: 210 40% 98%;
+    /* Secondary: Dark Gray */
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 98%;
 
-    /* Muted - Slate 800 */
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20.2% 65.1%;
+    /* Muted: Darker Gray */
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
 
-    /* Accent - Slate 800 */
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
+    /* Accent: Dark Gray */
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 98%;
 
-    /* Destructive - Red 900 */
+    /* Destructive: Red */
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 98%;
 
     /* Borders & Inputs */
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 244 94% 74%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 211 100% 60%;
 
     /* Functional Areas - Dark Mode */
     --dashboard: 32 95% 50%;
@@ -234,53 +229,68 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    /* Use system fonts for that native feel */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   }
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - MacOS style */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.5);
-  border-radius: 6px;
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 100vh;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary));
+  background: hsl(var(--muted-foreground) / 0.5);
 }
 
-/* Enhanced dropdown visibility */
+/* Enhanced dropdown visibility with Glassmorphism */
 [data-radix-select-content],
 [data-radix-popover-content],
 [data-radix-dropdown-menu-content],
 [data-radix-context-menu-content],
 [data-radix-menubar-content] {
-  @apply bg-popover border-border shadow-lg text-popover-foreground;
+  @apply bg-popover/80 backdrop-blur-xl border border-white/20 shadow-xl text-popover-foreground rounded-xl;
   opacity: 1 !important;
+  animation: scaleIn 0.1s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 [data-radix-select-item],
 [data-radix-dropdown-menu-item] {
-  @apply text-popover-foreground cursor-pointer;
+  @apply text-popover-foreground cursor-pointer rounded-lg mx-1 my-0.5 px-2 py-1.5 transition-colors;
 }
 
 [data-radix-select-item]:hover,
 [data-radix-dropdown-menu-item]:hover {
-  @apply bg-accent text-accent-foreground;
+  @apply bg-primary text-primary-foreground;
 }
 
-/* Glass Card Utilities */
+/* Glass Card Utilities - Premium Apple Style */
 .glass-card {
-  @apply bg-card/80 backdrop-blur-md border border-border/50 shadow-sm;
+  @apply bg-white/60 dark:bg-black/40 backdrop-blur-xl border border-white/40 dark:border-white/10 shadow-lg;
 }
 
 /* Animations */

@@ -11,7 +11,7 @@ interface AnimatedCardProps extends React.HTMLAttributes<HTMLDivElement> {
 export const AnimatedCard = ({
     children,
     className,
-    gradientColor = '#EA580C',
+    gradientColor = '#007AFF', // Default to Apple Blue
     ...props
 }: AnimatedCardProps) => {
     const mouseX = useMotionValue(0);
@@ -26,14 +26,14 @@ export const AnimatedCard = ({
     return (
         <div
             className={cn(
-                "group relative border border-border bg-card/50 overflow-hidden rounded-[2rem] backdrop-blur-xl transition-all duration-500 hover:border-primary/50 hover:shadow-lg",
+                "group relative border border-white/20 dark:border-white/10 bg-white/50 dark:bg-black/40 overflow-hidden rounded-3xl backdrop-blur-xl transition-all duration-500 hover:shadow-xl hover:scale-[1.01]",
                 className
             )}
             onMouseMove={handleMouseMove}
             {...props}
         >
             <motion.div
-                className="pointer-events-none absolute -inset-px rounded-[2rem] opacity-0 transition duration-500 group-hover:opacity-100"
+                className="pointer-events-none absolute -inset-px rounded-3xl opacity-0 transition duration-500 group-hover:opacity-100"
                 style={{
                     background: useMotionTemplate`
             radial-gradient(
@@ -55,12 +55,12 @@ export const GlassCard = ({ children, className, ...props }: React.HTMLAttribute
     return (
         <div
             className={cn(
-                "relative overflow-hidden rounded-[2rem] border border-border bg-card/40 backdrop-blur-2xl shadow-sm transition-all duration-500 hover:shadow-md hover:bg-card/60 p-6",
+                "glass-card relative overflow-hidden rounded-3xl transition-all duration-500 hover:shadow-xl p-6",
                 className
             )}
             {...props}
         >
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent opacity-40 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-br from-white/40 via-white/10 to-transparent opacity-50 pointer-events-none" />
             <div className="relative z-10 h-full">
                 {children}
             </div>
