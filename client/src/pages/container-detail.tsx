@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAuthToken } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
+import { websocket } from "@/lib/websocket";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
 import ContainerMap from "@/components/container-map";
@@ -10,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Collapse } from "@/components/ui/collapse";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -41,7 +41,9 @@ import {
   FileText,
   Users,
   Wrench,
-  Building
+  Building,
+  RefreshCw,
+  Activity
 } from "lucide-react";
 
 interface Container {
@@ -87,6 +89,19 @@ interface Container {
   usageCycles?: number;
   orbcommDeviceId?: string;
   hasIot: boolean;
+  // Telemetry/Status fields
+  locationLat?: string | number;
+  locationLng?: string | number;
+  temperature?: number;
+  powerStatus?: string;
+  lastUpdateTimestamp?: string;
+  lastSyncedAt?: string;
+  lastTelemetry?: {
+    temperature?: number;
+    doorStatus?: string;
+    powerStatus?: string;
+    batteryLevel?: number;
+  };
 }
 
 // CSV/import-driven fields from the containers table to display in Master Data
@@ -146,18 +161,123 @@ export default function ContainerDetail() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+  const [lastStatusUpdate, setLastStatusUpdate] = useState<Date | null>(null);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { data: container, isLoading, error } = useQuery({
+  const { data: container, isLoading, error, refetch } = useQuery({
     queryKey: [`/api/containers/${id}`],
     queryFn: async () => {
       const response = await apiRequest("GET", `/api/containers/${id}`);
       return response.json();
     },
     enabled: !!id,
-    staleTime: 30000, // 30 seconds
-    refetchInterval: 60000, // 1 minute
+    staleTime: 0, // Always consider data stale to allow real-time updates
+    refetchOnMount: false, // Don't refetch on mount
+    refetchOnWindowFocus: false, // Don't refetch on window focus
   });
+
+  // Manual refresh status function
+  const handleRefreshStatus = async () => {
+    setIsRefreshingStatus(true);
+    try {
+      await refetch();
+      setLastStatusUpdate(new Date());
+      toast({
+        title: "Status Refreshed",
+        description: "Container status has been updated successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Refresh Failed",
+        description: "Could not refresh container status. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefreshingStatus(false);
+    }
+  };
+
+  // Auto-refresh every 15 minutes
+  useEffect(() => {
+    if (!container) return;
+
+    // Set up 15-minute auto-refresh
+    autoRefreshTimerRef.current = setInterval(() => {
+      console.log('🔄 Auto-refreshing container status (15 min interval)');
+      refetch();
+      setLastStatusUpdate(new Date());
+    }, 15 * 60 * 1000); // 15 minutes
+
+    return () => {
+      if (autoRefreshTimerRef.current) {
+        clearInterval(autoRefreshTimerRef.current);
+      }
+    };
+  }, [container, refetch]);
+
+  // Real-time WebSocket updates
+  useEffect(() => {
+    if (!container) return;
+
+    const handleContainerUpdate = (data: any) => {
+      const updateData = data.data || data;
+
+      // Only update if this is our container
+      if (updateData.containerId === container.id) {
+        console.log('🔄 Real-time status update received for container:', container.containerCode, updateData);
+
+        // Update the query cache
+        queryClient.setQueryData([`/api/containers/${id}`], (old: any) => {
+          if (!old) return old;
+
+          const updated = {
+            ...old,
+            locationLat: updateData.latitude?.toString() || old.locationLat,
+            locationLng: updateData.longitude?.toString() || old.locationLng,
+            temperature: updateData.temperature !== undefined ? updateData.temperature : old.temperature,
+            powerStatus: updateData.powerStatus || old.powerStatus,
+            orbcommDeviceId: updateData.deviceId || old.orbcommDeviceId,
+            lastUpdateTimestamp: updateData.timestamp || new Date().toISOString(),
+            hasIot: true, // Update IoT status when receiving Orbcomm data
+            lastTelemetry: {
+              ...old.lastTelemetry,
+              temperature: updateData.temperature !== undefined ? updateData.temperature : old.lastTelemetry?.temperature,
+              powerStatus: updateData.powerStatus || old.lastTelemetry?.powerStatus,
+              batteryLevel: updateData.batteryLevel !== undefined ? updateData.batteryLevel : old.lastTelemetry?.batteryLevel,
+              doorStatus: updateData.doorStatus || old.lastTelemetry?.doorStatus,
+              latitude: updateData.latitude !== undefined ? updateData.latitude : old.lastTelemetry?.latitude,
+              longitude: updateData.longitude !== undefined ? updateData.longitude : old.lastTelemetry?.longitude,
+              timestamp: updateData.timestamp || new Date().toISOString(),
+            }
+          };
+
+          console.log('📊 Updated container data:', {
+            temperature: updated.temperature,
+            powerStatus: updated.powerStatus,
+            battery: updateData.batteryLevel,
+            door: updateData.doorStatus,
+            location: `${updated.locationLat}, ${updated.locationLng}`
+          });
+
+          return updated;
+        });
+
+        // Force invalidation to trigger re-render
+        queryClient.invalidateQueries({ queryKey: [`/api/containers/${id}`] });
+
+        setLastStatusUpdate(new Date());
+      }
+    };
+
+    websocket.on('container_update', handleContainerUpdate);
+
+    return () => {
+      websocket.off('container_update', handleContainerUpdate);
+    };
+  }, [container, id, queryClient]);
 
   // Fetch customer data if container has currentCustomerId
   const { data: customer, isLoading: customerLoading, error: customerError } = useQuery({
@@ -516,7 +636,10 @@ export default function ContainerDetail() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-8">
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="telemetry">Telemetry</TabsTrigger>
+              <TabsTrigger value="telemetry">
+                <Activity className="h-4 w-4 mr-1" />
+                Status
+              </TabsTrigger>
               <TabsTrigger value="specifications">Specifications</TabsTrigger>
               <TabsTrigger value="ownership">Ownership History</TabsTrigger>
               <TabsTrigger value="services">Service History</TabsTrigger>
@@ -712,56 +835,122 @@ export default function ContainerDetail() {
               )}
             </TabsContent>
 
-            {/* Telemetry Tab */}
+            {/* Status Tab (formerly Telemetry) */}
             <TabsContent value="telemetry" className="space-y-6">
+              {/* Status Header with Refresh Button */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Real-time Container Status</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Updates automatically every 15 minutes
+                    {lastStatusUpdate && (
+                      <span className="ml-2">• Last updated: {lastStatusUpdate.toLocaleTimeString()}</span>
+                    )}
+                  </p>
+                </div>
+                <Button
+                  onClick={handleRefreshStatus}
+                  disabled={isRefreshingStatus}
+                  variant="outline"
+                  size="sm"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshingStatus ? 'animate-spin' : ''}`} />
+                  {isRefreshingStatus ? 'Refreshing...' : 'Refresh Now'}
+                </Button>
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Current Telemetry Data */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Thermometer className="h-5 w-5" />
-                      Current Telemetry
+                      Live Telemetry Data
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Temperature</label>
-                        <p className="text-sm">
-                          {container.lastTelemetry?.temperature !== undefined
-                            ? `${container.lastTelemetry.temperature}°C`
+                        <p className="text-lg font-semibold">
+                          {container.temperature !== undefined || container.lastTelemetry?.temperature !== undefined
+                            ? `${container.temperature ?? container.lastTelemetry?.temperature}°C`
                             : 'N/A'
                           }
                         </p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">Door Status</label>
-                        <p className="text-sm">{container.lastTelemetry?.doorStatus || 'N/A'}</p>
+                        {container.temperature && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {container.temperature < -25 ? '⚠️ Below range' : container.temperature > 30 ? '⚠️ Above range' : '✓ Normal'}
+                          </p>
+                        )}
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Power Status</label>
-                        <p className="text-sm">{container.lastTelemetry?.powerStatus || 'N/A'}</p>
+                        <p className="text-lg font-semibold">
+                          {container.powerStatus || container.lastTelemetry?.powerStatus || 'N/A'}
+                        </p>
+                        {container.powerStatus && (
+                          <Badge variant={container.powerStatus === 'on' ? 'default' : 'destructive'} className="mt-1">
+                            {container.powerStatus === 'on' ? 'Online' : 'Offline'}
+                          </Badge>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Door Status</label>
+                        <p className="text-lg font-semibold">{container.lastTelemetry?.doorStatus || 'N/A'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Battery Level</label>
-                        <p className="text-sm">
+                        <p className="text-lg font-semibold">
                           {container.lastTelemetry?.batteryLevel !== undefined
                             ? `${container.lastTelemetry.batteryLevel}%`
                             : 'N/A'
                           }
                         </p>
+                        {container.lastTelemetry?.batteryLevel && (
+                          <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                            <div
+                              className={`h-2 rounded-full ${
+                                container.lastTelemetry.batteryLevel > 50 ? 'bg-green-500' :
+                                container.lastTelemetry.batteryLevel > 20 ? 'bg-yellow-500' :
+                                'bg-red-500'
+                              }`}
+                              style={{ width: `${container.lastTelemetry.batteryLevel}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">Last Update</label>
+                        <label className="text-sm font-medium text-muted-foreground">Last Telemetry Update</label>
                         <p className="text-sm">
-                          {container.lastSyncedAt ? new Date(container.lastSyncedAt).toLocaleString() : 'Never'}
+                          {container.lastUpdateTimestamp
+                            ? new Date(container.lastUpdateTimestamp).toLocaleString()
+                            : container.lastSyncedAt
+                            ? new Date(container.lastSyncedAt).toLocaleString()
+                            : 'Never'}
                         </p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">IoT Device</label>
+                        <label className="text-sm font-medium text-muted-foreground">IoT Device ID</label>
                         <p className="text-sm font-mono">{container.orbcommDeviceId || 'Not Connected'}</p>
+                        {container.orbcommDeviceId && (
+                          <Badge variant="outline" className="mt-1">
+                            <Wifi className="h-3 w-3 mr-1" />
+                            Connected
+                          </Badge>
+                        )}
                       </div>
                     </div>
+
+                    {/* Real-time update indicator */}
+                    {container.orbcommDeviceId && (
+                      <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+                          <Activity className="h-4 w-4 animate-pulse" />
+                          <span>Real-time updates enabled via Orbcomm</span>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 

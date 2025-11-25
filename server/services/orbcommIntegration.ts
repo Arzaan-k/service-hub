@@ -18,6 +18,7 @@ interface ProcessedAlert {
   longitude?: number;
   timestamp: Date;
   rawData: any;
+  shouldCreateAlert?: boolean; // Flag for smart alert filtering
 }
 
 class OrbcommIntegrationService {
@@ -147,31 +148,46 @@ class OrbcommIntegrationService {
       }
 
       // Determine alert type and severity based on telemetry
+      // SMART ALERTS: Only create alerts for actionable conditions, not routine telemetry
       let alertType = 'telemetry';
       let severity = 'low';
       let description = 'Routine telemetry update';
+      let shouldCreateAlert = false; // Only create alerts for critical conditions
 
       // Check for critical conditions
       if (errorCodes.length > 0) {
         alertType = 'error';
-        severity = 'high';
+        severity = 'critical';
         description = `Reefer alarms: ${errorCodes.join(', ')}`;
-      } else if (temperature && (temperature < -25 || temperature > 30)) {
+        shouldCreateAlert = true; // Critical: Equipment errors
+      } else if (temperature && (temperature < -30 || temperature > 35)) {
+        // Extreme temperature ranges only (previously -25 to 30)
         alertType = 'temperature';
         severity = 'high';
-        description = `Temperature out of range: ${temperature}°C`;
+        description = `Temperature critically out of range: ${temperature}°C`;
+        shouldCreateAlert = true; // High: Critical temperature
+      } else if (temperature && (temperature < -25 || temperature > 30)) {
+        // Warning range (don't create alert, just log)
+        alertType = 'temperature';
+        severity = 'medium';
+        description = `Temperature warning: ${temperature}°C`;
+        shouldCreateAlert = false; // Medium: Just monitor, don't alert
       } else if (doorStatus === 'Open') {
         alertType = 'door';
         severity = 'medium';
         description = 'Container door is open';
+        shouldCreateAlert = false; // Don't alert for door open - often intentional
       } else if (powerStatus === 'off') {
         alertType = 'power';
         severity = 'high';
         description = 'External power failure';
-      } else if (batteryLevel && batteryLevel < 20) {
+        shouldCreateAlert = true; // High: Power failure is critical
+      } else if (batteryLevel && batteryLevel < 10) {
+        // Only alert for critically low battery (previously <20)
         alertType = 'battery';
-        severity = 'medium';
-        description = `Low battery: ${Math.round(batteryLevel)}%`;
+        severity = 'high';
+        description = `Battery critically low: ${Math.round(batteryLevel)}%`;
+        shouldCreateAlert = true; // High: Battery almost dead
       }
 
       const processed: ProcessedAlert = {
@@ -184,6 +200,7 @@ class OrbcommIntegrationService {
         longitude,
         timestamp: messageData.EventDtm ? new Date(messageData.EventDtm) : new Date(),
         rawData: alert,
+        shouldCreateAlert, // Flag to determine if alert should be saved to database
       };
 
       // Log telemetry data for debugging (first 5 alerts only)
@@ -255,16 +272,18 @@ class OrbcommIntegrationService {
    */
   private async handleProcessedAlert(alert: ProcessedAlert): Promise<void> {
     try {
-      console.log(`🔧 Handling alert: ${alert.alertType} - ${alert.severity}`);
-
-      // Update container with complete telemetry data first
+      // Always update container telemetry (location, temperature, etc.)
       if (alert.containerId) {
         await this.updateContainerTelemetry(alert);
       }
 
-      // Store alert in database for critical alerts only
-      if (alert.severity === 'high' || alert.severity === 'critical' || alert.severity === 'medium') {
+      // SMART ALERTS: Only store alerts that meet criteria
+      if (alert.shouldCreateAlert) {
+        console.log(`🔧 Creating alert: ${alert.alertType} - ${alert.severity} (${alert.description})`);
         await this.storeAlert(alert);
+      } else {
+        // Just log routine telemetry without creating alerts
+        console.log(`📊 Telemetry update: ${alert.alertType} - ${alert.severity} (${alert.description})`);
       }
 
       // Service requests are NOT automatically created - users will create them manually from alerts
@@ -352,6 +371,7 @@ class OrbcommIntegrationService {
 
       const updates: any = {
         lastUpdateTimestamp: alert.timestamp,
+        hasIot: true, // Mark as IoT-enabled when receiving Orbcomm data
       };
 
       // Update location if available - store as separate lat/lng fields only
@@ -373,6 +393,28 @@ class OrbcommIntegrationService {
         updates.powerStatus = powerStatus;
       }
 
+      // Extract battery level
+      let batteryLevel: number | undefined;
+      if (deviceData.BatteryVoltage !== undefined) {
+        batteryLevel = Math.min(100, Math.max(0, (deviceData.BatteryVoltage / 8.1) * 100));
+      }
+
+      // Extract door status
+      const doorStatus = deviceData.DoorState || reeferData.DoorState;
+
+      // Store complete telemetry in lastTelemetry JSONB field
+      updates.lastTelemetry = {
+        temperature: temperature,
+        powerStatus: powerStatus,
+        batteryLevel: batteryLevel !== undefined ? Math.round(batteryLevel) : undefined,
+        doorStatus: doorStatus,
+        latitude: alert.latitude,
+        longitude: alert.longitude,
+        deviceId: alert.deviceId,
+        timestamp: alert.timestamp.toISOString(),
+        rawData: alert.rawData, // Store complete raw data for debugging
+      };
+
       // Update device association
       if (alert.deviceId && alert.containerId) {
         const container = await storage.getContainer(alert.containerId);
@@ -386,15 +428,14 @@ class OrbcommIntegrationService {
         return;
       }
 
-      // Log the updates object to debug SQL error
-      console.log('🔍 Container updates object:', JSON.stringify(updates, null, 2));
-
       await storage.updateContainer(alert.containerId, updates);
 
       console.log(`📊 Updated container telemetry: ${alert.containerId}`, {
         location: alert.latitude && alert.longitude ? `${alert.latitude}, ${alert.longitude}` : 'N/A',
         temperature: temperature !== undefined ? `${temperature}°C` : 'N/A',
         power: powerStatus || 'N/A',
+        battery: batteryLevel !== undefined ? `${Math.round(batteryLevel)}%` : 'N/A',
+        door: doorStatus || 'N/A',
       });
 
       // Broadcast realtime update to connected clients
@@ -411,6 +452,24 @@ class OrbcommIntegrationService {
   private broadcastContainerUpdate(alert: ProcessedAlert): void {
     try {
       if ((global as any).broadcast) {
+        // Extract additional telemetry data
+        const eventData = alert.rawData?.Event || alert.rawData;
+        const deviceData = eventData?.DeviceData || {};
+        const reeferData = eventData?.ReeferData || {};
+
+        const temperature = reeferData.TAmb || deviceData.DeviceTemp;
+        const powerStatus = deviceData.ExtPower !== undefined ?
+          (deviceData.ExtPower ? 'on' : 'off') : undefined;
+
+        // Extract battery level
+        let batteryLevel: number | undefined;
+        if (deviceData.BatteryVoltage !== undefined) {
+          batteryLevel = Math.min(100, Math.max(0, (deviceData.BatteryVoltage / 8.1) * 100));
+        }
+
+        // Extract door status
+        const doorStatus = deviceData.DoorState || reeferData.DoorState;
+
         (global as any).broadcast({
           type: 'container_update',
           data: {
@@ -418,10 +477,22 @@ class OrbcommIntegrationService {
             deviceId: alert.deviceId,
             latitude: alert.latitude,
             longitude: alert.longitude,
+            temperature: temperature,
+            powerStatus: powerStatus,
+            batteryLevel: batteryLevel !== undefined ? Math.round(batteryLevel) : undefined,
+            doorStatus: doorStatus,
             alertType: alert.alertType,
             severity: alert.severity,
             timestamp: alert.timestamp.toISOString(),
           },
+        });
+
+        console.log(`📡 Broadcasted container update: ${alert.containerId}`, {
+          location: `${alert.latitude}, ${alert.longitude}`,
+          temperature: temperature !== undefined ? `${temperature}°C` : 'N/A',
+          power: powerStatus || 'N/A',
+          battery: batteryLevel !== undefined ? `${Math.round(batteryLevel)}%` : 'N/A',
+          door: doorStatus || 'N/A',
         });
       }
     } catch (error) {

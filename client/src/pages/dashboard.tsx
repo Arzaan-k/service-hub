@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import KPICards from "@/components/dashboard/kpi-cards";
-import MapMyIndiaFleetMap from "@/components/dashboard/mapmyindia-fleet-map";
+import FleetMap from "@/components/dashboard/fleet-map";
 import AlertPanel from "@/components/dashboard/alert-panel";
 import ServiceRequestsPanel from "@/components/dashboard/service-requests-panel";
 import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
@@ -178,7 +178,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ height: '600px', minHeight: '600px', maxHeight: '600px', overflow: 'visible' }}>
             <div className="lg:col-span-2" style={{ height: '600px' }}>
               <ErrorBoundary>
-                <MapMyIndiaFleetMap containers={containers || []} />
+                  <FleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
             <div style={{ height: '600px' }}>

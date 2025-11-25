@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GlassCard } from "@/components/ui/animated-card";
 import { Button } from "@/components/ui/button";
 import { MapPin, RefreshCw, Eye, EyeOff, Filter, Globe } from "lucide-react";
+import { websocket } from "@/lib/websocket";
 
 declare global {
   interface Window {
@@ -628,6 +629,40 @@ export default function GlobalFleetMap({ containers }: GlobalFleetMapProps) {
 
   // Process containers and assign coordinates
   const [containersWithLocations, setContainersWithLocations] = useState<Container[]>([]);
+
+  // Listen for real-time container updates
+  useEffect(() => {
+    const handleContainerUpdate = (data: any) => {
+      console.log('🔄 Received container update on global map:', data);
+      setContainersWithLocations(prev => prev.map(container => {
+        if (container.id === data.data?.containerId || container.id === data.containerId) {
+          const updateData = data.data || data;
+          return {
+            ...container,
+            currentLocation: updateData.latitude && updateData.longitude ? {
+              lat: parseFloat(updateData.latitude),
+              lng: parseFloat(updateData.longitude),
+              address: container.currentLocation?.address
+            } : container.currentLocation,
+            lastUpdateTimestamp: updateData.timestamp || new Date().toISOString()
+          };
+        }
+        return container;
+      }));
+    };
+
+    const handleAlertCreated = (data: any) => {
+      console.log('🚨 Received alert on global map:', data);
+    };
+
+    websocket.on('container_update', handleContainerUpdate);
+    websocket.on('alert_created', handleAlertCreated);
+
+    return () => {
+      websocket.off('container_update', handleContainerUpdate);
+      websocket.off('alert_created', handleAlertCreated);
+    };
+  }, []);
 
   useEffect(() => {
     const processContainers = async () => {
