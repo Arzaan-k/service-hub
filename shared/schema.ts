@@ -232,7 +232,7 @@ export const serviceRequests = pgTable("service_requests", {
   clientApprovalRequired: boolean("client_approval_required"),
   clientApprovedAt: timestamp("client_approved_at"),
   // New columns for technician WhatsApp flow
-  // startTime: timestamp("start_time"), // When technician actually started (WhatsApp flow)
+  startTime: timestamp("start_time"), // When technician actually started (WhatsApp flow)
   endTime: timestamp("end_time"), // When technician actually ended (WhatsApp flow)
   durationMinutes: integer("duration_minutes"), // Calculated duration in minutes
   signedDocumentUrl: text("signed_document_url"), // Client signature document
@@ -252,10 +252,10 @@ export const serviceRequests = pgTable("service_requests", {
   year: integer("year"), // 2023, 2024, etc.
   excelData: jsonb("excel_data"), // Store all Excel data as JSON
   
-  // Inventory Integration fields (commented out until migration is run)
-  // inventoryOrderId: text("inventory_order_id"), // Order ID from Inventory System
-  // inventoryOrderNumber: text("inventory_order_number"), // Order Number from Inventory System
-  // inventoryOrderCreatedAt: timestamp("inventory_order_created_at"), // When order was created in Inventory System
+  // Inventory Integration fields
+  inventoryOrderId: text("inventory_order_id"), // Order ID from Inventory System
+  inventoryOrderNumber: text("inventory_order_number"), // Order Number from Inventory System
+  inventoryOrderCreatedAt: timestamp("inventory_order_created_at"), // When order was created in Inventory System
 });
 
 // Invoices table (enhanced according to PRD)

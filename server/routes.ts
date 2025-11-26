@@ -1696,23 +1696,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resolutionNotes: updatedNotes
       });
 
-      console.log(`[Inventory Integration] ✅ Order created successfully for SR ${serviceRequest.requestNumber}:`, {
-        orderId: orderResult.orderId,
-        orderNumber: orderResult.orderNumber
+      res.json(updatedRequest);
+    } catch (error) {
+      console.error("Error requesting indent:", error);
+      res.status(500).json({ error: "Failed to request indent" });
+    }
+  });
+
+  // NEW: Dedicated Indent Request Endpoint with Custom Payload
+  app.post("/api/inventory/request-indent", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { serviceRequestId, containerCode, companyName, technicianName, siteAddress, parts } = req.body;
+
+      // Validation
+      if (!serviceRequestId || !parts || !Array.isArray(parts) || parts.length === 0) {
+        return res.status(400).json({ error: "Missing required fields or invalid parts list" });
+      }
+
+      const { inventoryService } = await import('./services/inventoryIntegration');
+
+      const result = await inventoryService.requestIndent({
+        serviceRequestId,
+        containerCode,
+        companyName,
+        technicianName,
+        siteAddress,
+        parts
       });
 
-      res.json({
-        success: true,
-        message: "Indent Requested Successfully — Order Created in Inventory System",
-        orderId: orderResult.orderId,
-        orderNumber: orderResult.orderNumber,
-        serviceRequest: updatedRequest
-      });
-    } catch (error: any) {
-      console.error("[Inventory Integration] Error requesting indent:", error);
-      res.status(500).json({ 
-        error: error.message || "Failed to request indent" 
-      });
+      if (result.success && result.orderId) {
+        // Update Service Request with Inventory Order ID
+        await storage.updateServiceRequest(serviceRequestId, {
+          inventoryOrderId: result.orderId,
+          inventoryOrderNumber: result.orderNumber,
+          inventoryOrderCreatedAt: new Date()
+        });
+      }
+
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "Failed to create indent" });
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error requesting indent:", error);
+      res.status(500).json({ error: "Failed to request indent" });
     }
   });
 

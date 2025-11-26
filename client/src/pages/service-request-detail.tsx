@@ -167,8 +167,34 @@ export default function ServiceRequestDetail() {
         throw new Error("No parts available to create indent");
       }
 
+      const req = data as any;
+      const customer = req.customer || {};
+      const container = req.container || {};
+      const technician = req.technician || {};
+      const user = customer.user || {};
+
+      // Construct payload for new Indent API
+      const payload = {
+        serviceRequestId: req.id,
+        containerCode: container.containerCode || "UNKNOWN",
+        companyName: customer.companyName || "UNKNOWN",
+        customerName: customer.name || customer.companyName || "UNKNOWN",
+        customerEmail: customer.email || "",
+        customerPhone: customer.phone || "",
+        technicianName: technician.user?.name || "Unassigned",
+        siteAddress: container.currentLocation?.address || customer.billingAddress || "Unknown",
+        parts: req.requiredParts.map((part: string) => {
+          // Parse "Part Name (qty)" format
+          const match = part.match(/^(.+?)\s*\((\d+)\)$/);
+          return {
+            itemName: match ? match[1].trim() : part,
+            quantity: match ? parseInt(match[2], 10) : 1
+          };
+        })
+      };
+
       // Call the new inventory integration endpoint
-      return await apiRequest("POST", `/api/service-requests/${id}/request-indent`, {});
+      return await apiRequest("POST", `/api/inventory/request-indent`, payload);
     },
     onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests", id] });

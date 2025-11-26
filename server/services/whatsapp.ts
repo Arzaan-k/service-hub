@@ -58,6 +58,7 @@ import {
   handleSignatureUpload,
   requestInvoiceUpload,
   handleInvoiceUpload,
+  handleInvoiceResponse,
   completeServiceRequest
 } from './whatsapp-technician-flows';
 
@@ -1948,6 +1949,86 @@ async function handleInteractiveMessage(message: any, user: any, roleData: any, 
 async function handleButtonClick(buttonId: string, from: string, user: any, roleData: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
 
+  // Technician Flow Handling
+  if (user.role === 'technician') {
+    const technician = await storage.getTechnicianByUserId(user.id);
+    
+    if (technician) {
+      if (buttonId === 'view_schedule') {
+        await showScheduleDateSelection(from, technician);
+        return;
+      }
+      if (buttonId === 'schedule_today') {
+        await showScheduleForToday(from, technician, session, storage);
+        return;
+      }
+      if (buttonId === 'schedule_previous') {
+        await showScheduleForPrevious(from, technician, session, storage);
+        return;
+      }
+      if (buttonId === 'schedule_future') {
+        await showScheduleForFuture(from, technician, session, storage);
+        return;
+      }
+      if (buttonId === 'back_to_menu') {
+        await sendTechnicianMainMenu(from, user, storage);
+        return;
+      }
+      if (buttonId.startsWith('view_service_')) {
+        const serviceId = buttonId.replace('view_service_', '');
+        await showServiceDetails(from, serviceId, storage);
+        return;
+      }
+      if (buttonId.startsWith('start_service_')) {
+        const serviceId = buttonId.replace('start_service_', '');
+        await startServiceRequest(from, serviceId, session, storage);
+        return;
+      }
+      if (buttonId.startsWith('end_service')) {
+        let serviceId = null;
+        if (buttonId === 'end_service') {
+           const active = getActiveServices(session);
+           if (active.length > 0) serviceId = active[0].serviceId;
+        } else if (buttonId.startsWith('end_service_direct_')) {
+           serviceId = buttonId.replace('end_service_direct_', '');
+        } else {
+           const parts = buttonId.split('_');
+           const idx = parseInt(parts[parts.length - 1]) - 1;
+           serviceId = getServiceIdByIndex(session, idx);
+        }
+        
+        if (serviceId) {
+          await initiateServiceCompletion(from, serviceId, session, storage);
+        } else {
+          await sendTextMessage(from, "❌ Could not identify service to end.");
+        }
+        return;
+      }
+      
+      // Completion Flow Buttons
+      if (buttonId === 'skip_before_photos') {
+        await moveToAfterPhotos(from, session, storage);
+        return;
+      }
+      if (buttonId === 'done_before_photos') {
+        await moveToAfterPhotos(from, session, storage);
+        return;
+      }
+      if (buttonId === 'done_after_photos') {
+        await requestSignatureUpload(from, session, storage);
+        return;
+      }
+      if (buttonId === 'invoice_yes') {
+        await handleInvoiceResponse(from, true, session, storage);
+        return;
+      }
+      if (buttonId === 'invoice_no') {
+        await handleInvoiceResponse(from, false, session, storage);
+        return;
+      }
+    }
+  }
+
   // Update conversation state based on button click
   const conversationState = session.conversationState || {};
   // Testing override: let the special number choose or switch roles and access mock flows
@@ -2625,7 +2706,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
   if (buttonId === 'schedule_previous') {
     const technician = await storage.getTechnicianByUserId(user.id);
     if (technician) {
-      await showScheduleForPrevious(from, technician, storage);
+      await showScheduleForPrevious(from, technician, session, storage);
     }
     return;
   }
@@ -2633,7 +2714,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
   if (buttonId === 'schedule_future') {
     const technician = await storage.getTechnicianByUserId(user.id);
     if (technician) {
-      await showScheduleForFuture(from, technician, storage);
+      await showScheduleForFuture(from, technician, session, storage);
     }
     return;
   }
@@ -2648,7 +2729,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
   // NEW: Handle service start
   if (buttonId.startsWith('start_service_')) {
     const serviceId = buttonId.replace('start_service_', '');
-    await startServiceRequest(from, user, serviceId, session, storage);
+    await startServiceRequest(from, serviceId, session, storage);
     return;
   }
 
@@ -2656,7 +2737,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
   if (buttonId === 'end_service') {
     const activeServices = getActiveServices(session);
     if (activeServices.length === 1) {
-      await initiateServiceCompletion(from, user, activeServices[0].serviceId, session, storage);
+      await initiateServiceCompletion(from, activeServices[0].serviceId, session, storage);
     } else {
       await sendTextMessage(from, '❌ Please specify which service to end.');
     }
@@ -2669,7 +2750,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
       const index = parseInt(match[1]) - 1;
       const serviceId = getServiceIdByIndex(session, index);
       if (serviceId) {
-        await initiateServiceCompletion(from, user, serviceId, session, storage);
+        await initiateServiceCompletion(from, serviceId, session, storage);
       } else {
         await sendTextMessage(from, '❌ Service not found.');
       }
@@ -2679,7 +2760,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
 
   if (buttonId.startsWith('end_service_for_')) {
     const serviceId = buttonId.replace('end_service_for_', '');
-    await initiateServiceCompletion(from, user, serviceId, session, storage);
+    await initiateServiceCompletion(from, serviceId, session, storage);
     return;
   }
 
@@ -2711,7 +2792,7 @@ async function handleTechnicianButtonClick(buttonId: string, from: string, user:
   }
 
   if (buttonId === 'upload_invoice_no') {
-    await completeServiceRequest(from, user, session, storage);
+    await completeServiceRequest(from, session, storage);
     return;
   }
 
@@ -3078,17 +3159,17 @@ async function handleMediaMessageLegacy(message: any, user: any, roleData: any, 
     const completionStep = session.conversationState?.completionStep;
     
     if (completionStep === 'awaiting_before_photos' || completionStep === 'awaiting_after_photos') {
-      await handlePhotoUploadStep(from, user, mediaId, session, storage);
+      await handlePhotoUploadStep(from, mediaId, session, storage);
       return;
     }
     
     if (completionStep === 'awaiting_signature') {
-      await handleSignatureUpload(from, user, mediaId, session, storage);
+      await handleSignatureUpload(from, mediaId, session, storage);
       return;
     }
     
     if (completionStep === 'awaiting_invoice') {
-      await handleInvoiceUpload(from, user, mediaId, session, storage);
+      await handleInvoiceUpload(from, mediaId, session, storage);
       return;
     }
   }
@@ -5197,15 +5278,21 @@ async function handleMediaMessage(message: any, user: any, session: any): Promis
   }
   
   // Handle TECHNICIAN photo uploads during completion flow
-  if (user.role === 'technician' && conversationState.completionStep) {
-    const step = conversationState.completionStep;
+  if (user.role === 'technician') {
+    const step = conversationState.step;
     
-    if ((step === 'awaiting_before_photos' || step === 'awaiting_after_photos') && message.type === 'image') {
-      await handlePhotoUploadStep(from, user, mediaId, session, await import('../storage').then(m => m.storage));
-    } else if (step === 'awaiting_signature' && (message.type === 'image' || message.type === 'document')) {
-      await handleSignatureUpload(from, user, mediaId, session, await import('../storage').then(m => m.storage));
-    } else if (step === 'awaiting_invoice' && (message.type === 'image' || message.type === 'document')) {
-      await handleInvoiceUpload(from, user, mediaId, session, await import('../storage').then(m => m.storage));
+    // Import storage properly
+    const { storage } = await import('../storage');
+    
+    if ((step === 'upload_before_photos' || step === 'upload_after_photos') && message.type === 'image') {
+      await handlePhotoUploadStep(from, mediaId, session, storage);
+      return;
+    } else if (step === 'upload_signature' && (message.type === 'image' || message.type === 'document')) {
+      await handleSignatureUpload(from, mediaId, session, storage);
+      return;
+    } else if (step === 'upload_invoice' && (message.type === 'image' || message.type === 'document')) {
+      await handleInvoiceUpload(from, mediaId, session, storage);
+      return;
     }
   }
 }
