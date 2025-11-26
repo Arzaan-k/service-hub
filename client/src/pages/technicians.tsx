@@ -103,16 +103,54 @@ export default function Technicians() {
       }
       const technicianData = await res.json();
 
-      // Backend automatically creates user account and sends credentials
-      return {
-        ...technicianData,
-        userCreated: true,
-        name: technicianData.name ?? technicianData.user?.name,
-        email: technicianData.email ?? technicianData.user?.email,
-        phone: technicianData.phone ?? technicianData.user?.phoneNumber,
-        specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
-        baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
-      };
+      // Create user account for the technician
+      try {
+        const userResponse = await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken || ''}`
+          },
+          body: JSON.stringify({
+            name: data.name,
+            email: data.email,
+            phoneNumber: data.phone,
+            role: 'technician'
+          }),
+        });
+
+        let userCreated = false;
+        let user = null;
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          userCreated = true;
+          user = userData.user;
+        } else {
+          console.warn('Failed to create user account:', await userResponse.text());
+        }
+
+        return {
+          ...technicianData,
+          userCreated,
+          user,
+          name: technicianData.name ?? technicianData.user?.name,
+          email: technicianData.email ?? technicianData.user?.email,
+          phone: technicianData.phone ?? technicianData.user?.phoneNumber,
+          specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
+          baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
+        };
+      } catch (error) {
+        console.warn('Error creating user account:', error);
+        return {
+          ...technicianData,
+          userCreated: false,
+          name: technicianData.name ?? technicianData.user?.name,
+          email: technicianData.email ?? technicianData.user?.email,
+          phone: technicianData.phone ?? technicianData.user?.phoneNumber,
+          specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
+          baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
+        };
+      }
     },
     onSuccess: (result) => {
       console.log("Technician created successfully:", result);
