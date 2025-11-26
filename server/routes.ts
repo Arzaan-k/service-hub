@@ -23,6 +23,7 @@ import {
   formatCriticalAlertMessage,
   formatInvoiceMessage,
   formatFeedbackRequestMessage,
+  formatTravelPlanMessage,
   sendTechnicianSchedule,
   sendServiceStartPrompt,
   sendServiceCompletePrompt,
@@ -35,6 +36,13 @@ import { DocumentProcessor } from "./services/documentProcessor";
 import { vectorStore } from "./services/vectorStore";
 import multer from 'multer';
 import { generateJobOrderNumber } from './utils/jobOrderGenerator';
+import {
+  autoPlanTravel,
+  autoPlanTravelByTechnician,
+  generateTripTasksForDestination,
+  savePlannedTrip,
+  recalculateTripCosts
+} from "./services/travel-planning";
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -926,14 +934,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
         afterPhotos: request.afterPhotos
       });
 
-      const [container, customer, technician] = await Promise.all([
+      // Check for technician assignment - use DB assignedTechnicianId as source of truth
+      let technician: any = undefined;
+      let thirdPartyTechnician: any = undefined;
+      
+      if (request.assignedTechnicianId) {
+        // Try internal technician first
+        technician = await storage.getTechnician(request.assignedTechnicianId).catch(() => undefined);
+        
+        // If not found as internal, check if it's a third-party technician
+        if (!technician) {
+          const { readThirdPartyList } = await import('./services/third-party-technicians');
+          const tpList = readThirdPartyList();
+          thirdPartyTechnician = tpList.find((t: any) => 
+            (t.id === request.assignedTechnicianId || t._id === request.assignedTechnicianId)
+          );
+        }
+      }
+      
+      // Legacy: Check excelData for third-party assignment and sync to DB if needed
+      const thirdPartyTechId = (request.excelData as any)?.thirdPartyTechnicianId;
+      if (thirdPartyTechId && !request.assignedTechnicianId) {
+        const { readThirdPartyList } = await import('./services/third-party-technicians');
+        const tpList = readThirdPartyList();
+        const tpTech = tpList.find((t: any) => 
+          (t.id === thirdPartyTechId || t._id === thirdPartyTechId)
+        );
+        
+        if (tpTech) {
+          // Sync to DB
+          const { db } = await import('./db');
+          const { serviceRequests } = await import('@shared/schema');
+          const { eq } = await import('drizzle-orm');
+          
+          try {
+            await db.update(serviceRequests)
+              .set({ assignedTechnicianId: tpTech.id || tpTech._id })
+              .where(eq(serviceRequests.id, request.id));
+            
+            // Update request object
+            request.assignedTechnicianId = tpTech.id || tpTech._id;
+            thirdPartyTechnician = tpTech;
+            console.log(`[API] Synced third-party assignment for SR ${request.id} to DB`);
+          } catch (err) {
+            console.warn(`[API] Failed to sync third-party assignment for SR ${request.id}:`, err);
+          }
+        }
+      }
+      
+      const [container, customer] = await Promise.all([
         storage.getContainer(request.containerId),
-        storage.getCustomer(request.customerId),
-        request.assignedTechnicianId ? storage.getTechnician(request.assignedTechnicianId) : Promise.resolve(undefined)
+        storage.getCustomer(request.customerId)
       ]);
 
-      // Get technician user data if technician is assigned
+      // Get technician user data if technician is assigned (internal only)
       const technicianUser = technician ? await storage.getUser(technician.userId) : undefined;
+      
+      // Use third-party technician if no internal technician is assigned
+      const assignedTechnician = technician || thirdPartyTechnician;
 
       // Parse multiple containers from issue description if present
       let allContainers = [];
@@ -1181,19 +1239,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
         allContainers, // Array of all containers involved in this service request
         customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
-        technician: technician ? {
-          id: technician.id,
-          employeeCode: technician.employeeCode,
-          experienceLevel: technician.experienceLevel,
-          skills: technician.skills,
-          status: technician.status,
-          user: technicianUser ? {
-            id: technicianUser.id,
-            name: technicianUser.name,
-            phoneNumber: technicianUser.phoneNumber,
-            email: technicianUser.email
-          } : undefined
-        } : undefined,
+        technician: assignedTechnician ? (
+          thirdPartyTechnician ? {
+            // Third-party technician
+            id: thirdPartyTechnician.id || thirdPartyTechnician._id,
+            name: thirdPartyTechnician.name,
+            phone: thirdPartyTechnician.phone,
+            type: 'thirdparty',
+            employeeCode: thirdPartyTechnician.employeeCode || thirdPartyTechnician.mid,
+            location: thirdPartyTechnician.location || thirdPartyTechnician.baseLocation
+          } : {
+            // Internal technician
+            id: technician.id,
+            employeeCode: technician.employeeCode,
+            experienceLevel: technician.experienceLevel,
+            skills: technician.skills,
+            status: technician.status,
+            type: 'internal',
+            user: technicianUser ? {
+              id: technicianUser.id,
+              name: technicianUser.name,
+              phoneNumber: technicianUser.phoneNumber,
+              email: technicianUser.email
+            } : undefined
+          }
+        ) : undefined,
       };
 
       res.json(response);
@@ -1335,17 +1405,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       broadcast({ type: "service_request_created", data: request });
-      // Auto-assign best technician based on proximity/availability
+      
+      // Auto-assign technician silently in background
+      // Use distributed assignment to ensure equal distribution across technicians
       try {
         const { schedulerService } = await import('./services/scheduler');
+        // Try distributed assignment first (for better load balancing)
+        const distributedResult = await schedulerService.distributeServicesAcrossTechnicians([request.id]);
+        const assignment = distributedResult.assignments.find(a => a.requestId === request.id);
+        
+        if (assignment?.assigned && assignment.technicianId) {
+          // Fetch the updated request
+          const updatedRequest = await storage.getServiceRequest(request.id);
+          if (updatedRequest) {
+            broadcast({ type: "service_request_assigned", data: updatedRequest });
+            return res.json({ ...updatedRequest, autoAssigned: true, technicianId: assignment.technicianId });
+          }
+        }
+        
+        // Fallback to single assignment if distributed didn't work
         const result = await schedulerService.autoAssignBestTechnician(request.id);
         if (result.assigned && result.request) {
           broadcast({ type: "service_request_assigned", data: result.request });
           return res.json({ ...result.request, autoAssigned: true, technicianId: result.technicianId });
         }
       } catch (autoErr) {
-        // Log but don't fail the creation
-        console.warn('Auto-assign failed:', (autoErr as any)?.message || autoErr);
+        // Log but don't fail the creation - assignment happens silently
+        console.warn('[Auto-Assign] Silent failure for new service request:', (autoErr as any)?.message || autoErr);
       }
 
       res.json({ ...request, autoAssigned: false });
@@ -1401,10 +1487,173 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/service-requests/technician/:technicianId", authenticateUser, async (req, res) => {
     try {
-      const requests = await storage.getServiceRequestsByTechnician(req.params.technicianId);
-      res.json(requests);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch technician service requests" });
+      const techId = req.params.technicianId;
+      
+      if (!techId) {
+        console.warn('[GET /api/service-requests/technician/:id] No technician ID provided');
+        return res.status(400).json({ error: "Technician ID is required" });
+      }
+      
+      // Use DB as source of truth - check if technician exists (internal or third-party)
+      // Both internal and third-party technicians should have assignedTechnicianId in DB
+      let requests: any[] = [];
+      
+      try {
+        // Try to get services from DB using assignedTechnicianId
+        // This works for both internal and third-party if they've been assigned via the normal flow
+        requests = await storage.getServiceRequestsByTechnician(techId, false);
+        console.log(`[GET /api/service-requests/technician/${techId}] Returning ${requests.length} services from DB`);
+        
+        // If no services found, check if this is a third-party tech with legacy file/excel assignments
+        if (requests.length === 0) {
+          const thirdPartyList = readThirdPartyList();
+          const thirdPartyTech = thirdPartyList.find((tp: any) => (tp.id === techId || tp._id === techId));
+          
+          if (thirdPartyTech) {
+            // Sync legacy assignments to DB
+            const assigns = readThirdPartyAssignments().filter((a: any) => {
+              const normalizedTechId = thirdPartyTech.id || thirdPartyTech._id || techId;
+              return a.technicianId === normalizedTechId || a.technicianId === techId;
+            });
+            const serviceIdsFromAssigns = assigns.map((a: any) => a.serviceId);
+            
+            const allRequests = await storage.getAllServiceRequests();
+            const normalizedTechId = thirdPartyTech.id || thirdPartyTech._id || techId;
+            const servicesFromExcel = allRequests.filter((req: any) => {
+              const excelThirdPartyId = req.excelData?.thirdPartyTechnicianId?.toString()?.toLowerCase();
+              return excelThirdPartyId === normalizedTechId?.toString()?.toLowerCase() && !req.assignedTechnicianId;
+            });
+            
+            // Sync to DB
+            const { db } = await import('./db');
+            const { serviceRequests } = await import('@shared/schema');
+            const { eq } = await import('drizzle-orm');
+            
+            for (const serviceId of serviceIdsFromAssigns) {
+              try {
+                const existing = await storage.getServiceRequest(serviceId);
+                if (existing && !existing.assignedTechnicianId) {
+                  await db.update(serviceRequests)
+                    .set({ assignedTechnicianId: techId })
+                    .where(eq(serviceRequests.id, serviceId));
+                }
+              } catch (err) {
+                // Ignore errors
+              }
+            }
+            
+            for (const req of servicesFromExcel) {
+              try {
+                if (!req.assignedTechnicianId) {
+                  await db.update(serviceRequests)
+                    .set({ assignedTechnicianId: techId })
+                    .where(eq(serviceRequests.id, req.id));
+                }
+              } catch (err) {
+                // Ignore errors
+              }
+            }
+            
+            // Re-fetch from DB after syncing
+            requests = await storage.getServiceRequestsByTechnician(techId, false);
+            console.log(`[GET /api/service-requests/technician/${techId}] After sync: ${requests.length} services from DB`);
+          }
+        }
+      } catch (queryError: any) {
+        console.error(`[GET /api/service-requests/technician/${techId}] Query error:`, queryError);
+        console.error(`[GET /api/service-requests/technician/${techId}] Error stack:`, queryError?.stack);
+        // Return empty array instead of crashing
+        requests = [];
+      }
+      
+      // Format response - include all fields that frontend expects
+      // DO NOT filter in JS - return ALL services regardless of status
+      const formatted = requests.map((req: any) => ({
+        id: req.id,
+        requestNumber: req.requestNumber,
+        jobOrder: req.jobOrder,
+        status: req.status,
+        priority: req.priority,
+        issueDescription: req.issueDescription,
+        scheduledDate: req.scheduledDate,
+        scheduledTimeWindow: req.scheduledTimeWindow,
+        actualStartTime: req.actualStartTime,
+        actualEndTime: req.actualEndTime,
+        durationMinutes: req.durationMinutes,
+        containerId: req.containerId,
+        customerId: req.customerId,
+        assignedTechnicianId: req.assignedTechnicianId,
+        // Container fields - MUST include containerCode, location, clientName
+        container: {
+          id: req.container?.id || null,
+          containerCode: req.container?.containerCode || null,
+          type: req.container?.type || null,
+          status: req.container?.status || null,
+          currentLocation: req.container?.currentLocation || null,
+          // Extract location from currentLocation if it's JSON
+          location: req.container?.currentLocation || null,
+        },
+        // Customer fields - MUST include clientName (companyName)
+        customer: {
+          id: req.customer?.id || null,
+          companyName: req.customer?.companyName || null,
+          clientName: req.customer?.companyName || null, // Alias for frontend compatibility
+          contactPerson: req.customer?.contactPerson || null,
+          phone: req.customer?.phone || null,
+          email: req.customer?.email || null,
+        }
+      }));
+      
+      // Debug log
+      const listOfIds = formatted.map((r: any) => r.id);
+      // Categorize services by status but DO NOT filter out
+      const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'];
+      const active = formatted.filter((r: any) => {
+        const status = (r.status || '').toLowerCase();
+        return activeStatuses.includes(status);
+      });
+      const completed = formatted.filter((r: any) => {
+        const status = (r.status || '').toLowerCase();
+        return status === 'completed';
+      });
+      const cancelled = formatted.filter((r: any) => {
+        const status = (r.status || '').toLowerCase();
+        return status === 'cancelled';
+      });
+      
+      // Enhanced debug logging
+      console.log("[Technician Assigned Services]", {
+        technicianId: techId,
+        total: formatted.length,
+        active: active.length,
+        completed: completed.length,
+        cancelled: cancelled.length,
+        all: formatted.map((r: any) => ({
+          id: r.id,
+          requestNumber: r.requestNumber,
+          status: r.status,
+          containerCode: r.container?.containerCode
+        }))
+      });
+      
+      // Return categorized response
+      const response = {
+        active,
+        completed,
+        cancelled,
+        all: formatted
+      };
+      
+      res.json(response);
+    } catch (error: any) {
+      console.error("Error fetching technician service requests:", error);
+      console.error("Error stack:", error?.stack);
+      console.error("Technician ID:", req.params.technicianId);
+      res.status(500).json({ 
+        error: "Failed to fetch technician service requests",
+        details: error?.message || String(error),
+        technicianId: req.params.technicianId
+      });
     }
   });
 
@@ -1629,10 +1878,228 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Technician routes
+  // Summary of assigned services for all technicians (optimized single call)
+  // Uses DB as source of truth - assignedTechnicianId field on service_requests
+  app.get("/api/technicians/assigned-services-summary", authenticateUser, async (_req, res) => {
+    try {
+      const technicians = await storage.getAllTechnicians();
+      const summary: Record<string, { count: number; services: any[] }> = {};
+      const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'];
+
+      // Get third-party technicians list for reference
+      const thirdPartyTechs = readThirdPartyList();
+      const thirdPartyAssignments = readThirdPartyAssignments();
+
+      // Process internal technicians - use DB query only
+      await Promise.all(
+        technicians.map(async (tech: any) => {
+          try {
+            // Get ALL assigned services from DB using assignedTechnicianId
+            const rows = await storage.getServiceRequestsByTechnician(tech.id, false);
+            
+            // Filter active vs total by status
+            const active = rows.filter((sr: any) => {
+              const status = (sr.status || '').toLowerCase();
+              return activeStatuses.includes(status);
+            });
+            
+            // Format services for response
+            const services = rows.map((sr: any) => ({
+              id: sr.id,
+              requestNumber: sr.requestNumber,
+              status: sr.status,
+              priority: sr.priority,
+              issueDescription: sr.issueDescription,
+              scheduledDate: sr.scheduledDate,
+              containerId: sr.containerId,
+              customerId: sr.customerId,
+              containerCode: sr.container?.containerCode || null,
+              customerName: sr.customer?.companyName || null,
+            }));
+            
+            console.log(`[Assigned Services Summary] Tech ${tech.id} (${tech.name || tech.employeeCode}): ${active.length} active out of ${rows.length} total`);
+            
+            summary[tech.id] = { 
+              count: active.length, 
+              services: services 
+            };
+          } catch (error) {
+            console.error(`Error building assigned-services summary for tech ${tech.id}:`, error);
+            summary[tech.id] = { count: 0, services: [] };
+          }
+        })
+      );
+
+      // Process third-party technicians - use DB query if they have assignedTechnicianId
+      // Also sync file/excel assignments to DB
+      for (const tpTech of thirdPartyTechs) {
+        const techId = tpTech.id || tpTech._id;
+        try {
+          // First, try to get services from DB using assignedTechnicianId
+          // Third-party techs might have been assigned via the normal assignment flow
+          const dbServices = await storage.getServiceRequestsByTechnician(techId, false);
+          
+          // Also check file/excel assignments for legacy data
+          const normalizedTechId = techId?.toString()?.toLowerCase();
+          const tpAssignments = thirdPartyAssignments.filter((a: any) => {
+            const assignTechId = a.technicianId?.toString()?.toLowerCase();
+            return assignTechId === normalizedTechId;
+          });
+          const serviceIdsFromAssigns = tpAssignments.map((a: any) => a.serviceId);
+          
+          // Get services from excelData.thirdPartyTechnicianId
+          const allRequests = await storage.getAllServiceRequests();
+          const servicesFromExcel = allRequests.filter((req: any) => {
+            const excelThirdPartyId = req.excelData?.thirdPartyTechnicianId?.toString()?.toLowerCase();
+            return excelThirdPartyId === normalizedTechId && !req.assignedTechnicianId;
+          });
+          
+          // Sync file/excel assignments to DB by updating assignedTechnicianId
+          const { db } = await import('./db');
+          const { serviceRequests } = await import('@shared/schema');
+          const { eq } = await import('drizzle-orm');
+          
+          for (const serviceId of serviceIdsFromAssigns) {
+            try {
+              const existing = await storage.getServiceRequest(serviceId);
+              if (existing && !existing.assignedTechnicianId) {
+                await db.update(serviceRequests)
+                  .set({ assignedTechnicianId: techId })
+                  .where(eq(serviceRequests.id, serviceId));
+                console.log(`[Assigned Services Summary] Synced third-party assignment: SR ${serviceId} -> tech ${techId}`);
+              }
+            } catch (err) {
+              console.warn(`[Assigned Services Summary] Failed to sync assignment for SR ${serviceId}:`, err);
+            }
+          }
+          
+          for (const req of servicesFromExcel) {
+            try {
+              if (!req.assignedTechnicianId) {
+                await db.update(serviceRequests)
+                  .set({ assignedTechnicianId: techId })
+                  .where(eq(serviceRequests.id, req.id));
+                console.log(`[Assigned Services Summary] Synced excel assignment: SR ${req.id} -> tech ${techId}`);
+              }
+            } catch (err) {
+              console.warn(`[Assigned Services Summary] Failed to sync excel assignment for SR ${req.id}:`, err);
+            }
+          }
+          
+          // Re-fetch after syncing
+          const allServices = await storage.getServiceRequestsByTechnician(techId, false);
+          
+          // Filter active vs total
+          const active = allServices.filter((sr: any) => {
+            const status = (sr.status || '').toLowerCase();
+            return activeStatuses.includes(status);
+          });
+          
+          // Format services
+          const services = allServices.map((sr: any) => ({
+            id: sr.id,
+            requestNumber: sr.requestNumber,
+            status: sr.status,
+            priority: sr.priority,
+            issueDescription: sr.issueDescription,
+            scheduledDate: sr.scheduledDate,
+            containerId: sr.containerId,
+            customerId: sr.customerId,
+            containerCode: sr.container?.containerCode || null,
+            customerName: sr.customer?.companyName || null,
+          }));
+          
+          console.log(`[Assigned Services Summary] Third-party tech ${techId}: ${active.length} active out of ${allServices.length} total`);
+          
+          summary[techId] = { 
+            count: active.length, 
+            services: services 
+          };
+        } catch (error) {
+          console.error(`Error building assigned-services summary for third-party tech ${techId}:`, error);
+          summary[techId] = { count: 0, services: [] };
+        }
+      }
+
+      res.json(summary);
+    } catch (error: any) {
+      console.error("Error fetching assigned services summary:", error);
+      res.status(500).json({ error: "Failed to fetch assigned services summary" });
+    }
+  });
+
+  // Get assigned services for a technician
+  app.get("/api/technicians/:id/assigned-services", authenticateUser, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.query;
+      
+      const technician = await storage.getTechnician(id);
+      if (!technician) {
+        return res.status(404).json({ error: "Technician not found" });
+      }
+
+      let services = await storage.getServiceRequestsByTechnician(id);
+      
+      // Filter by status if provided
+      if (status) {
+        services = services.filter((sr: any) => sr.status === status);
+      }
+
+      // Return ALL services (including completed) - let frontend filter by status
+      // Frontend will separate: active services in "Assigned Services", completed in "Service History"
+      // Don't filter here - return everything so frontend can organize it properly
+
+      // Enrich with container and customer info
+      const enrichedServices = await Promise.all(
+        services.map(async (sr: any) => {
+          const container = sr.containerId ? await storage.getContainer(sr.containerId).catch(() => null) : null;
+          const customer = sr.customerId ? await storage.getCustomer(sr.customerId).catch(() => null) : null;
+          return {
+            ...sr,
+            container: container ? { id: container.id, containerCode: container.containerCode } : null,
+            customer: customer ? { id: customer.id, companyName: customer.companyName } : null,
+          };
+        })
+      );
+
+      res.json({
+        technicianId: id,
+        count: enrichedServices.length,
+        services: enrichedServices
+      });
+    } catch (error: any) {
+      console.error("Error fetching assigned services:", error);
+      res.status(500).json({ error: "Failed to fetch assigned services" });
+    }
+  });
+
   app.get("/api/technicians", authenticateUser, async (req, res) => {
     try {
       const technicians = await storage.getAllTechnicians();
-      res.json(technicians);
+      
+      // Enrich technicians with assigned services count
+      const techniciansWithServices = await Promise.all(
+        technicians.map(async (tech: any) => {
+          try {
+            const services = await storage.getServiceRequestsByTechnician(tech.id);
+            const assignedCount = services.filter((sr: any) => 
+              ['pending', 'scheduled', 'approved', 'in_progress'].includes(sr.status)
+            ).length;
+            return {
+              ...tech,
+              assignedServicesCount: assignedCount
+            };
+          } catch (error) {
+            return {
+              ...tech,
+              assignedServicesCount: 0
+            };
+          }
+        })
+      );
+      
+      res.json(techniciansWithServices);
     } catch (error) {
       console.error("Error fetching technicians:", error);
       res.status(500).json({ error: "Failed to fetch technicians" });
@@ -1833,6 +2300,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!reqAssigned) {
         return res.status(404).json({ error: "Service request not found" });
       }
+      
+      console.log(`[Assign Service] Assigned service ${serviceId} to internal technician ${technicianId}`);
+      console.log(`[Assign Service] Assigned request has assignedTechnicianId:`, reqAssigned.assignedTechnicianId);
+      console.log(`[Assign Service] Assigned request status:`, reqAssigned.status);
+      
+      // Verify the assignment was saved correctly
+      const verifyRequest = await storage.getServiceRequest(serviceId);
+      console.log(`[Assign Service] Verification - Service ${serviceId} assignedTechnicianId:`, verifyRequest?.assignedTechnicianId);
+      console.log(`[Assign Service] Verification - Service ${serviceId} status:`, verifyRequest?.status);
+      
+      // Broadcast assignment event
+      broadcast({ type: "service_request_assigned", data: reqAssigned });
+      
+      // Notify client via WhatsApp
+      try {
+        const { customerCommunicationService } = await import('./services/whatsapp');
+        await customerCommunicationService.notifyServiceRequestUpdate(serviceId, 'assigned');
+      } catch (notifError) {
+        console.error('Failed to send WhatsApp notification:', notifError);
+      }
+      
       return res.json({ success: true, type: "internal", request: reqAssigned });
     } catch (err: any) {
       console.error("Error assigning technician:", err);
@@ -1914,11 +2402,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update only this service
       if (technicianType === "thirdparty") {
         // Merge third-party tech info into excelData for visibility
+        // Clear any internal assignedTechnicianId to avoid confusion
         const mergedExcelData = {
           ...(service.excelData || {}),
           thirdPartyTechnicianId: technicianId,
         };
-        await storage.updateServiceRequest(serviceId, { status: "assigned", excelData: mergedExcelData } as any);
+        // Use "scheduled" status (not "assigned" - that's not a valid enum value)
+        // Clear assignedTechnicianId since this is a third-party assignment
+        await storage.updateServiceRequest(serviceId, { 
+          status: "scheduled", 
+          assignedTechnicianId: null, // Clear internal assignment
+          excelData: mergedExcelData 
+        } as any);
 
         // Update only the selected third-party tech in file-backed store
         const tpList = readThirdPartyList();
@@ -1939,8 +2434,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           writeThirdPartyAssignments(assigns);
         }
 
-        console.log("Assigned service:", serviceId, "to technician:", technicianId);
-        return res.json({ success: true, message: "Service assigned successfully", service: { ...service, status: "assigned" } });
+        // Broadcast assignment event so frontend can refresh
+        const updatedService = await storage.getServiceRequest(serviceId);
+        broadcast({ type: "service_request_assigned", data: updatedService });
+        
+        console.log("Assigned service:", serviceId, "to third-party technician:", technicianId);
+        return res.json({ success: true, message: "Service assigned successfully", service: updatedService || { ...service, status: "scheduled" } });
       } else {
         // Internal assignment - use existing storage logic (affects only this SR)
         const assigned = await storage.assignServiceRequest(serviceId, technicianId, undefined, undefined);
@@ -1948,6 +2447,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(404).json({ message: "Service Request not found" });
         }
         console.log("Assigned service:", serviceId, "to technician:", technicianId);
+        console.log(`[PATCH Assign] Assigned request has assignedTechnicianId:`, assigned.assignedTechnicianId);
+        console.log(`[PATCH Assign] Assigned request status:`, assigned.status);
+        
+        // Broadcast assignment event so frontend can refresh
+        broadcast({ type: "service_request_assigned", data: assigned });
+        
+        // Notify client via WhatsApp
+        try {
+          const { customerCommunicationService } = await import('./services/whatsapp');
+          await customerCommunicationService.notifyServiceRequestUpdate(serviceId, 'assigned');
+        } catch (notifError) {
+          console.error('Failed to send WhatsApp notification:', notifError);
+        }
+        
         return res.json({ success: true, message: "Service assigned successfully", service: assigned });
       }
     } catch (error: any) {
@@ -2134,11 +2647,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/technicians/:id/service-history", authenticateUser, async (req, res) => {
     try {
-      const serviceHistory = await storage.getServiceRequestsByTechnician(req.params.id);
-      res.json(serviceHistory);
-    } catch (error) {
+      const techId = req.params.id;
+      // Get ALL services for this technician (including completed)
+      const allServices = await storage.getServiceRequestsByTechnician(techId, false);
+      
+      // Filter to show only completed and cancelled services in history
+      const completedServices = allServices.filter((sr: any) => {
+        const status = (sr.status || '').toLowerCase();
+        return status === 'completed' || status === 'cancelled';
+      });
+      
+      console.log(`[GET /api/technicians/${techId}/service-history] Found ${completedServices.length} completed services out of ${allServices.length} total`);
+      
+      res.json(completedServices);
+    } catch (error: any) {
       console.error("Failed to fetch technician service history:", error);
-      res.status(500).json({ error: "Failed to fetch technician service history" });
+      console.error("Error details:", error?.message, error?.stack);
+      res.status(500).json({ 
+        error: "Failed to fetch technician service history",
+        details: error?.message || String(error)
+      });
     }
   });
 
@@ -2803,33 +3331,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Scheduling routes
   app.post("/api/scheduling/run", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
-      // Get all pending service requests
-      const pendingRequests = await storage.getServiceRequestsByStatus("pending");
-      const assignments = [];
-
+      console.log('[API] Smart auto-assignment request received');
+      
       const { schedulerService } = await import('./services/scheduler');
 
-      for (const request of pendingRequests) {
+      // Use smart auto-assign for internal technicians
+      const result = await schedulerService.smartAutoAssignPending();
+
+      console.log(`[API] Smart auto-assign complete: ${result.assigned.length} assigned, ${result.skipped.length} skipped`);
+
+      // Broadcast assignment events for all successfully assigned requests
+      for (const assignment of result.assigned) {
         try {
-          const assignment = await schedulerService.autoAssignBestTechnician(request.id);
-          assignments.push(assignment);
-        } catch (error: any) {
-          console.error(`Failed to assign request ${request.id}:`, error);
-          assignments.push({ assigned: false, requestId: request.id, reason: error.message });
+          const updatedRequest = await storage.getServiceRequest(assignment.requestId);
+          if (updatedRequest) {
+            broadcast({ type: "service_request_assigned", data: updatedRequest });
+          }
+        } catch (err) {
+          console.error(`[API] Failed to broadcast assignment for request ${assignment.requestId}:`, err);
         }
       }
 
-      const successCount = assignments.filter(a => a.assigned).length;
+      // Format response to match expected structure
+      // Get technicians to map IDs to names
+      const allTechnicians = await storage.getAllTechnicians();
+      const byTechnician = result.distributionSummary.map((s: any) => {
+        const tech = allTechnicians.find((t: any) => t.id === s.techId);
+        return {
+          technicianId: s.techId,
+          name: tech?.name || tech?.employeeCode || s.techId,
+          newAssignments: s.countAssigned,
+          totalActive: s.totalActive
+        };
+      });
 
       res.json({
-        success: true,
-        assignments,
-        assignedCount: successCount,
-        totalRequests: pendingRequests.length
+        success: result.success,
+        assignedCount: result.assigned.length,
+        byTechnician: byTechnician,
+        assigned: result.assigned,
+        skipped: result.skipped,
+        distributionSummary: result.distributionSummary, // Keep for backward compatibility
+        message: result.success 
+          ? `Successfully assigned ${result.assigned.length} requests${result.skipped.length > 0 ? `, ${result.skipped.length} skipped` : ''}`
+          : "Auto-assignment failed"
       });
     } catch (error: any) {
-      console.error('Auto-assignment error:', error);
-      res.status(500).json({ error: "Failed to run auto-assignment", details: error?.message });
+      console.error('[API] Auto-assignment error:', error);
+      console.error('[API] Error stack:', error?.stack);
+      res.status(500).json({ 
+        error: "Failed to run auto-assignment", 
+        details: error?.message || String(error),
+        stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      });
     }
   });
 
@@ -3419,6 +3973,593 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(schedule);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch daily schedule" });
+    }
+  });
+
+  app.post("/api/travel/auto-plan", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { technicianId, destinationCity, startDate, endDate } = req.body;
+      if (!destinationCity || !startDate || !endDate) {
+        return res.status(400).json({ error: "destinationCity, startDate, endDate are required" });
+      }
+
+      const plan = await autoPlanTravel({
+        destinationCity,
+        startDate,
+        endDate,
+        technicianId,
+      });
+      res.json(plan);
+    } catch (error: any) {
+      console.error("Error auto-planning travel:", error);
+      const message = error?.message || "Failed to auto-plan travel";
+      const status =
+        error?.statusCode ||
+        (message.toLowerCase().includes("not found")
+          ? 404
+          : message.toLowerCase().includes("invalid") || message.toLowerCase().includes("missing")
+          ? 400
+          : 500);
+      res.status(status).json({ error: status === 500 ? "Failed to auto-plan travel" : message });
+    }
+  });
+
+  // Auto-plan travel based on technician's location/service areas
+  app.post("/api/travel/auto-plan-by-technician", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { technicianId, startDate, endDate, destinationCity, autoSave } = req.body;
+      if (!technicianId || !startDate || !endDate) {
+        return res.status(400).json({ error: "technicianId, startDate, endDate are required" });
+      }
+
+      const plan = await autoPlanTravelByTechnician({
+        technicianId,
+        startDate,
+        endDate,
+        destinationCity,
+      });
+
+      // If autoSave is true, automatically save the trip and send to technician
+      if (autoSave === true) {
+        try {
+          const result = await savePlannedTrip({
+            technicianId: plan.technician.id,
+            destinationCity: plan.destinationCity,
+            startDate: plan.travelWindow.start,
+            endDate: plan.travelWindow.end,
+            origin: plan.technicianSourceCity,
+            purpose: 'pm',
+            costs: plan.costs,
+            tasks: plan.tasks,
+          }, req.user?.id);
+
+          // Send travel plan to technician
+          let notification = null;
+          try {
+            notification = await sendTravelPlanToTechnician(result.trip.id, req.user?.id);
+          } catch (notifError: any) {
+            console.error("Error sending travel plan to technician:", notifError);
+            // Don't fail the whole request if notification fails
+          }
+
+          return res.status(201).json({
+            success: true,
+            plan,
+            trip: result.trip,
+            costs: result.costs,
+            tasks: result.tasks,
+            notifications: notification ? { whatsapp: notification } : null,
+            message: "Travel plan created and sent to technician",
+          });
+        } catch (saveError: any) {
+          console.error("Error auto-saving travel trip:", saveError);
+          // Return the plan even if save fails
+          return res.json({
+            success: true,
+            plan,
+            saveError: saveError?.message || "Failed to auto-save trip",
+            message: "Plan generated but failed to save. You can save it manually.",
+          });
+        }
+      }
+
+      res.json(plan);
+    } catch (error: any) {
+      console.error("Error auto-planning travel by technician:", error);
+      const message = error?.message || "Failed to auto-plan travel";
+      const status =
+        error?.statusCode ||
+        (message.toLowerCase().includes("not found")
+          ? 404
+          : message.toLowerCase().includes("invalid") || message.toLowerCase().includes("missing")
+          ? 400
+          : 500);
+      res.status(status).json({ error: status === 500 ? "Failed to auto-plan travel" : message });
+    }
+  });
+
+  app.post("/api/travel/trips", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const result = await savePlannedTrip(req.body, req.user?.id);
+      const notification = await sendTravelPlanToTechnician(result.trip.id, req.user?.id);
+      res.status(201).json({
+        success: true,
+        trip: result.trip,
+        costs: result.costs,
+        tasks: result.tasks,
+        notifications: { whatsapp: notification },
+      });
+    } catch (error: any) {
+      console.error("Error saving travel trip:", error);
+      const message = error?.message || "Failed to save trip";
+      const status =
+        error?.statusCode ||
+        (message.toLowerCase().includes("not found")
+          ? 404
+          : message.toLowerCase().includes("invalid") || message.toLowerCase().includes("missing")
+          ? 400
+          : 500);
+      res.status(status).json({ error: status === 500 ? "Failed to save trip" : message });
+    }
+  });
+
+  app.patch("/api/travel/trips/:id/recalculate-cost", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const costs = await recalculateTripCosts(req.params.id);
+      res.json({ success: true, costs });
+    } catch (error: any) {
+      console.error("Error recalculating costs:", error);
+      const message = error?.message || "Failed to recalculate costs";
+      const status =
+        error?.statusCode ||
+        (message.toLowerCase().includes("not found")
+          ? 404
+          : message.toLowerCase().includes("invalid") || message.toLowerCase().includes("missing")
+          ? 400
+          : 500);
+      res.status(status).json({ error: status === 500 ? "Failed to recalculate costs" : message });
+    }
+  });
+
+  // Technician Travel Planning API routes
+  // POST /api/scheduling/travel/trips - Create a new technician trip
+  app.post("/api/scheduling/travel/trips", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const {
+        technicianId,
+        origin,
+        destinationCity,
+        startDate,
+        endDate,
+        dailyWorkingTimeWindow,
+        purpose,
+        notes,
+        travelFare,
+        stayCost,
+        dailyAllowance,
+        localTravelCost,
+        miscCost,
+        currency
+      } = req.body;
+
+      // Validation
+      if (!technicianId || !origin || !destinationCity || !startDate || !endDate) {
+        return res.status(400).json({ error: "Missing required fields: technicianId, origin, destinationCity, startDate, endDate" });
+      }
+
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (end < start) {
+        return res.status(400).json({ error: "endDate must be after startDate" });
+      }
+
+      // Verify technician exists
+      const technician = await storage.getTechnician(technicianId);
+      if (!technician) {
+        return res.status(400).json({ error: "Invalid technicianId" });
+      }
+
+      // Create trip
+      const trip = await storage.createTechnicianTrip({
+        technicianId,
+        origin,
+        destinationCity,
+        startDate: start,
+        endDate: end,
+        dailyWorkingTimeWindow: dailyWorkingTimeWindow || null,
+        purpose: purpose || 'pm',
+        notes: notes || null,
+        tripStatus: 'planned',
+        bookingStatus: 'not_started',
+        createdBy: req.user?.id,
+      });
+
+      // Create initial cost breakdown
+      const numberOfNights = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      const numberOfDays = numberOfNights + 1;
+
+      // Auto-calculate costs if not provided
+      const hotelRate = technician.hotelAllowance || 0;
+      const daRate = technician.foodAllowance || 0; // Using foodAllowance as DA
+      const localTravelRate = technician.localTravelAllowance || 0;
+
+      const calculatedStayCost = (stayCost !== undefined ? parseFloat(stayCost) : numberOfNights * hotelRate).toFixed(2);
+      const calculatedDailyAllowance = (dailyAllowance !== undefined ? parseFloat(dailyAllowance) : numberOfDays * daRate).toFixed(2);
+      const calculatedLocalTravelCost = (localTravelCost !== undefined ? parseFloat(localTravelCost) : numberOfDays * localTravelRate).toFixed(2);
+
+      await storage.updateTechnicianTripCosts(trip.id, {
+        travelFare: travelFare || 0,
+        stayCost: calculatedStayCost,
+        dailyAllowance: calculatedDailyAllowance,
+        localTravelCost: calculatedLocalTravelCost,
+        miscCost: miscCost || 0,
+        currency: currency || 'INR',
+      });
+
+      // Fetch complete trip with costs
+      const tripWithCosts = await storage.getTechnicianTrip(trip.id);
+      const costs = await storage.getTechnicianTripCosts(trip.id);
+
+      res.status(201).json({
+        ...tripWithCosts,
+        costs,
+      });
+    } catch (error: any) {
+      console.error("Error creating technician trip:", error);
+      res.status(500).json({ error: "Failed to create technician trip", details: error.message });
+    }
+  });
+
+  const isScheduler = (role?: string) =>
+    ["admin", "coordinator", "super_admin"].includes((role || "").toLowerCase());
+  const isTechnicianRole = (role?: string) => (role || "").toLowerCase() === "technician";
+
+  const enrichTripTasks = async (tasks: any[]) => {
+    return Promise.all(
+      tasks.map(async (task) => {
+        const container = task.containerId ? await storage.getContainer(task.containerId) : null;
+        const customer = task.customerId ? await storage.getCustomer(task.customerId) : null;
+        return {
+          ...task,
+          container: container ? { id: container.id, containerCode: container.containerCode } : null,
+          customer: customer ? { id: customer.id, companyName: customer.companyName } : null,
+        };
+      })
+    );
+  };
+
+  const sendTravelPlanToTechnician = async (tripId: string, userId?: string) => {
+    const trip = await storage.getTechnicianTrip(tripId);
+    if (!trip) {
+      const err = new Error("Trip not found");
+      (err as any).statusCode = 404;
+      throw err;
+    }
+    if (!trip.technicianId) {
+      const err = new Error("Trip does not have an assigned technician");
+      (err as any).statusCode = 400;
+      throw err;
+    }
+
+    const technician = await storage.getTechnician(trip.technicianId);
+    if (!technician) {
+      const err = new Error("Technician record not found");
+      (err as any).statusCode = 400;
+      throw err;
+    }
+
+    const technicianUser = technician.userId ? await storage.getUser(technician.userId).catch(() => null) : null;
+    const technicianPhone =
+      (technician as any).phone ||
+      (technician as any).whatsappNumber ||
+      (technicianUser as any)?.whatsappNumber ||
+      (technicianUser as any)?.phoneNumber;
+
+    if (!technicianPhone) {
+      const err = new Error("Technician does not have a WhatsApp/phone number on file");
+      (err as any).statusCode = 400;
+      throw err;
+    }
+
+    const costs = await storage.getTechnicianTripCosts(trip.id);
+    const rawTasks = await storage.getTechnicianTripTasks(trip.id);
+    const enrichedTasks = await enrichTripTasks(rawTasks);
+
+    const message = formatTravelPlanMessage({
+      technicianName: (technician as any).name || technicianUser?.name || "Technician",
+      origin: trip.origin,
+      destination: trip.destinationCity,
+      startDate: trip.startDate,
+      endDate: trip.endDate,
+      purpose: trip.purpose,
+      notes: trip.notes,
+      costs,
+      tasks: enrichedTasks,
+    });
+
+    await sendTextMessage(technicianPhone, message);
+    await storage.createAuditLog({
+      userId,
+      action: "send_travel_plan",
+      entityType: "technician_trip",
+      entityId: trip.id,
+      changes: { to: technicianPhone },
+      source: "dashboard",
+    });
+
+    return { to: technicianPhone };
+  };
+
+  // GET /api/scheduling/travel/trips - List trips with filters
+  app.get("/api/scheduling/travel/trips", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { technicianId, startDate, endDate, destinationCity, tripStatus } = req.query;
+
+      const filters: any = {};
+      if (technicianId) filters.technicianId = technicianId as string;
+      if (startDate) filters.startDate = new Date(startDate as string);
+      if (endDate) filters.endDate = new Date(endDate as string);
+      if (destinationCity) filters.destinationCity = destinationCity as string;
+      if (tripStatus) filters.tripStatus = tripStatus as string;
+
+      let technicianProfile;
+      const userRole = (req.user?.role || "").toLowerCase();
+      if (isTechnicianRole(userRole)) {
+        technicianProfile = await storage.getTechnicianByUserId(req.user!.id);
+        if (!technicianProfile) {
+          return res.status(403).json({ error: "Technician profile not found" });
+        }
+        filters.technicianId = technicianProfile.id;
+      }
+
+      const trips = await storage.getTechnicianTrips(filters);
+
+      // Enrich trips with costs and technician info
+      const tripsWithCosts = await Promise.all(
+        trips.map(async (trip) => {
+          const costs = await storage.getTechnicianTripCosts(trip.id);
+          const tasks = await storage.getTechnicianTripTasks(trip.id);
+          const technician =
+            trip.technicianId && !technicianProfile
+              ? await storage.getTechnician(trip.technicianId)
+              : technicianProfile;
+          let technicianUser = null;
+          if (technician?.userId) {
+            try {
+              const user = await storage.getUser(technician.userId);
+              if (user) {
+                technicianUser = { name: user.name, email: user.email };
+              }
+            } catch {
+              technicianUser = null;
+            }
+          }
+          return {
+            ...trip,
+            costs,
+            tasksCount: tasks.length,
+            technician: technician
+              ? {
+                  id: technician.id,
+                  name: (technician as any).name || technicianUser?.name || null,
+                  employeeCode: technician.employeeCode,
+                  user: technicianUser,
+                }
+              : null,
+          };
+        })
+      );
+
+      res.json(tripsWithCosts);
+    } catch (error: any) {
+      console.error("Error fetching technician trips:", error);
+      res.status(500).json({ error: "Failed to fetch technician trips", details: error.message });
+    }
+  });
+
+  // GET /api/scheduling/travel/trips/:id - Get trip details
+  app.get("/api/scheduling/travel/trips/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const trip = await storage.getTechnicianTrip(req.params.id);
+      if (!trip) {
+        return res.status(404).json({ error: "Trip not found" });
+      }
+
+      const userRole = (req.user?.role || "").toLowerCase();
+      if (isTechnicianRole(userRole)) {
+        const technicianProfile = await storage.getTechnicianByUserId(req.user!.id);
+        if (!technicianProfile || technicianProfile.id !== trip.technicianId) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      }
+
+      const costs = await storage.getTechnicianTripCosts(trip.id);
+      const rawTasks = await storage.getTechnicianTripTasks(trip.id);
+      const technician = trip.technicianId ? await storage.getTechnician(trip.technicianId) : null;
+
+      const enrichedTasks = await enrichTripTasks(rawTasks);
+
+      // Get technician user info if available
+      let technicianUser = null;
+      if (technician?.userId) {
+        try {
+          const user = await storage.getUser(technician.userId);
+          if (user) {
+            technicianUser = { name: user.name, email: user.email };
+          }
+        } catch (error) {
+          // Ignore errors fetching user
+        }
+      }
+
+      res.json({
+        ...trip,
+        costs,
+        tasks: enrichedTasks,
+        technician: technician ? {
+          id: technician.id,
+          name: (technician as any).name || technicianUser?.name || null,
+          employeeCode: technician.employeeCode,
+          user: technicianUser,
+        } : null,
+      });
+    } catch (error: any) {
+      console.error("Error fetching technician trip:", error);
+      res.status(500).json({ error: "Failed to fetch technician trip", details: error.message });
+    }
+  });
+
+  // PATCH /api/scheduling/travel/trips/:id - Update trip
+  app.patch("/api/scheduling/travel/trips/:id", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const trip = await storage.getTechnicianTrip(req.params.id);
+      if (!trip) {
+        return res.status(404).json({ error: "Trip not found" });
+      }
+
+      const {
+        origin,
+        destinationCity,
+        startDate,
+        endDate,
+        dailyWorkingTimeWindow,
+        purpose,
+        notes,
+        tripStatus,
+        bookingStatus,
+        ticketReference,
+        hotelReference,
+        bookingAttachments,
+      } = req.body;
+
+      const updateData: any = {};
+      if (origin !== undefined) updateData.origin = origin;
+      if (destinationCity !== undefined) updateData.destinationCity = destinationCity;
+      if (startDate !== undefined) updateData.startDate = new Date(startDate);
+      if (endDate !== undefined) updateData.endDate = new Date(endDate);
+      if (dailyWorkingTimeWindow !== undefined) updateData.dailyWorkingTimeWindow = dailyWorkingTimeWindow;
+      if (purpose !== undefined) updateData.purpose = purpose;
+      if (notes !== undefined) updateData.notes = notes;
+      if (tripStatus !== undefined) updateData.tripStatus = tripStatus;
+      if (bookingStatus !== undefined) updateData.bookingStatus = bookingStatus;
+      if (ticketReference !== undefined) updateData.ticketReference = ticketReference;
+      if (hotelReference !== undefined) updateData.hotelReference = hotelReference;
+      if (bookingAttachments !== undefined) updateData.bookingAttachments = bookingAttachments;
+
+      // Validate dates if both are being updated
+      if (updateData.startDate && updateData.endDate && updateData.endDate < updateData.startDate) {
+        return res.status(400).json({ error: "endDate must be after startDate" });
+      }
+
+      const updatedTrip = await storage.updateTechnicianTrip(req.params.id, updateData);
+
+      res.json(updatedTrip);
+    } catch (error: any) {
+      console.error("Error updating technician trip:", error);
+      res.status(500).json({ error: "Failed to update technician trip", details: error.message });
+    }
+  });
+
+  // DELETE /api/scheduling/travel/trips/:id - Soft delete (cancel) trip
+  app.delete("/api/scheduling/travel/trips/:id", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const trip = await storage.getTechnicianTrip(req.params.id);
+      if (!trip) {
+        return res.status(404).json({ error: "Trip not found" });
+      }
+
+      await storage.deleteTechnicianTrip(req.params.id);
+
+      res.json({ message: "Trip cancelled successfully" });
+    } catch (error: any) {
+      console.error("Error cancelling technician trip:", error);
+      res.status(500).json({ error: "Failed to cancel technician trip", details: error.message });
+    }
+  });
+
+  // PATCH /api/scheduling/travel/trips/:id/cost - Update cost components
+  app.patch("/api/scheduling/travel/trips/:id/cost", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const trip = await storage.getTechnicianTrip(req.params.id);
+      if (!trip) {
+        return res.status(404).json({ error: "Trip not found" });
+      }
+
+      const {
+        travelFare,
+        stayCost,
+        dailyAllowance,
+        localTravelCost,
+        miscCost,
+        currency,
+      } = req.body;
+
+      const updateData: any = {};
+      if (travelFare !== undefined) updateData.travelFare = travelFare.toString();
+      if (stayCost !== undefined) updateData.stayCost = stayCost.toString();
+      if (dailyAllowance !== undefined) updateData.dailyAllowance = dailyAllowance.toString();
+      if (localTravelCost !== undefined) updateData.localTravelCost = localTravelCost.toString();
+      if (miscCost !== undefined) updateData.miscCost = miscCost.toString();
+      if (currency !== undefined) updateData.currency = currency;
+
+      // Update costs (this will auto-recalculate total_estimated_cost)
+      const updatedCosts = await storage.updateTechnicianTripCosts(req.params.id, updateData);
+
+      res.json(updatedCosts);
+    } catch (error: any) {
+      console.error("Error updating trip costs:", error);
+      res.status(500).json({ error: "Failed to update trip costs", details: error.message });
+    }
+  });
+
+  // POST /api/scheduling/travel/trips/:id/auto-assign-tasks - Auto-assign PM/container tasks
+  app.post("/api/scheduling/travel/trips/:id/auto-assign-tasks", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const trip = await storage.getTechnicianTrip(req.params.id);
+      if (!trip) {
+        return res.status(404).json({ error: "Trip not found" });
+      }
+
+      const createdTasks = await generateTripTasksForDestination(req.params.id);
+      const allTasks = await storage.getTechnicianTripTasks(req.params.id);
+
+      res.json({
+        message: `Auto-assigned ${createdTasks.length} tasks`,
+        createdTasks: createdTasks.length,
+        totalTasks: allTasks.length,
+        tasks: allTasks,
+      });
+    } catch (error: any) {
+      console.error("Error auto-assigning trip tasks:", error);
+      res.status(500).json({ error: "Failed to auto-assign trip tasks", details: error.message });
+    }
+  });
+
+  // POST /api/scheduling/travel/trips/:id/send-plan - Send travel plan summary via WhatsApp
+  app.post("/api/scheduling/travel/trips/:id/send-plan", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const notification = await sendTravelPlanToTechnician(req.params.id, req.user?.id);
+      res.json({ message: "Travel plan sent to technician", to: notification.to });
+    } catch (error: any) {
+      console.error("Error sending travel plan:", error);
+      const message = error?.message || "Failed to send travel plan";
+      const status = error?.statusCode || (message.toLowerCase().includes("not found") ? 404 : 500);
+      res.status(status).json({ error: status === 500 ? "Failed to send travel plan" : message });
+    }
+  });
+
+  // PATCH /api/scheduling/travel/trips/:tripId/tasks/:taskId - Update trip task status
+  app.patch("/api/scheduling/travel/trips/:tripId/tasks/:taskId", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { status, completedAt } = req.body;
+      const task = await storage.updateTechnicianTripTask(req.params.taskId, {
+        status,
+        completedAt: status === 'completed' ? new Date() : completedAt,
+      });
+      res.json(task);
+    } catch (error: any) {
+      console.error("Error updating trip task:", error);
+      res.status(500).json({ error: "Failed to update trip task", details: error.message });
     }
   });
 

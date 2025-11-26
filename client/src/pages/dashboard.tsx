@@ -118,6 +118,13 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     });
 
+    // Refresh technician schedules and assigned services when assignments happen
+    websocket.on("service_request_assigned", () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/assigned-services-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+    });
+
     // Handle Orbcomm real-time container updates
     const onContainerUpdate = (payload: any) => {
       try {

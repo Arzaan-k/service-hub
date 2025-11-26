@@ -37,6 +37,7 @@ export {
   formatCriticalAlertMessage,
   formatInvoiceMessage,
   formatFeedbackRequestMessage,
+  formatTravelPlanMessage,
   sendTechnicianSchedule,
   sendServiceStartPrompt,
   sendServiceCompletePrompt,

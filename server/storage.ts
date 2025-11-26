@@ -21,6 +21,7 @@ import {
   inventoryIndentItems,
   manuals,
   ragQueries,
+  locationMultipliers,
   type User,
   type InsertUser,
   type Customer,
@@ -38,9 +39,18 @@ import {
   type InventoryItem,
   type EmailVerification,
   type InventoryTransaction,
+  technicianTrips,
+  technicianTripCosts,
+  technicianTripTasks,
+  type TechnicianTrip,
+  type TechnicianTripCost,
+  type TechnicianTripTask,
+  type InsertTechnicianTrip,
+  type InsertTechnicianTripCost,
+  type InsertTechnicianTripTask,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, gte, sql, isNull, ilike } from "drizzle-orm";
+import { eq, and, desc, asc, gte, sql, isNull, ilike, inArray } from "drizzle-orm";
 import { Pool } from '@neondatabase/serverless';
 
 export interface IStorage {
@@ -123,6 +133,7 @@ export interface IStorage {
   // Technician operations
   getAllTechnicians(): Promise<Technician[]>;
   getTechnician(id: string): Promise<Technician | undefined>;
+  getTechnicianByUserId(userId: string): Promise<Technician | undefined>;
   getAvailableTechnicians(): Promise<Technician[]>;
   updateTechnicianStatus(id: string, status: string): Promise<Technician>;
   getTechnicianPerformance(technicianId: string): Promise<any>;
@@ -169,6 +180,19 @@ export interface IStorage {
   updateScheduledService(id: string, service: any): Promise<ScheduledService>;
   getNextScheduledService(technicianId: string): Promise<ScheduledService | undefined>;
   getUsersByRole(role: string): Promise<User[]>;
+
+  // Technician Travel Planning operations
+  createTechnicianTrip(trip: any): Promise<any>;
+  getTechnicianTrip(id: string): Promise<any | undefined>;
+  getTechnicianTrips(filters?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string }): Promise<any[]>;
+  updateTechnicianTrip(id: string, trip: any): Promise<any>;
+  deleteTechnicianTrip(id: string): Promise<void>;
+  getTechnicianTripCosts(tripId: string): Promise<any | undefined>;
+  updateTechnicianTripCosts(tripId: string, costs: any): Promise<any>;
+  getTechnicianTripTasks(tripId: string): Promise<any[]>;
+  createTechnicianTripTask(task: any): Promise<any>;
+  updateTechnicianTripTask(id: string, task: any): Promise<any>;
+  getLocationMultiplier(city: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -582,56 +606,107 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(serviceRequests.createdAt));
   }
 
-  async getServiceRequestsByTechnician(technicianId: string): Promise<any[]> {
-    const results = await db
-      .select({
-        // Service request fields
-        id: serviceRequests.id,
-        requestNumber: serviceRequests.requestNumber,
-        jobOrder: serviceRequests.jobOrder,
-        status: serviceRequests.status,
-        priority: serviceRequests.priority,
-        issueDescription: serviceRequests.issueDescription,
-        scheduledDate: serviceRequests.scheduledDate,
-        scheduledTimeWindow: serviceRequests.scheduledTimeWindow,
-        actualStartTime: serviceRequests.actualStartTime,
-        actualEndTime: serviceRequests.actualEndTime,
-        durationMinutes: serviceRequests.durationMinutes,
-        resolutionNotes: serviceRequests.resolutionNotes,
-        beforePhotos: serviceRequests.beforePhotos,
-        afterPhotos: serviceRequests.afterPhotos,
-        clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
-        clientUploadedVideos: serviceRequests.clientUploadedVideos,
-        containerId: serviceRequests.containerId,
-        customerId: serviceRequests.customerId,
-        assignedTechnicianId: serviceRequests.assignedTechnicianId,
-        createdAt: serviceRequests.createdAt,
-        updatedAt: serviceRequests.updatedAt,
-        // Container fields
-        container: {
-          id: containers.id,
-          containerCode: containers.containerCode,
-          type: containers.type,
-          status: containers.status,
-          currentLocation: containers.currentLocation
-        },
-        // Customer fields
-        customer: {
-          id: customers.id,
-          companyName: customers.companyName,
-          contactPerson: customers.contactPerson,
-          phone: customers.phone,
-          email: customers.email,
-          address: customers.address
-        }
-      })
-      .from(serviceRequests)
-      .leftJoin(containers, eq(serviceRequests.containerId, containers.id))
-      .leftJoin(customers, eq(serviceRequests.customerId, customers.id))
-      .where(eq(serviceRequests.assignedTechnicianId, technicianId))
-      .orderBy(desc(serviceRequests.createdAt));
+  async getServiceRequestsByTechnician(technicianId: string, activeOnly: boolean = false): Promise<any[]> {
+    if (!technicianId) {
+      console.warn('[Storage] getServiceRequestsByTechnician called with empty technicianId');
+      return [];
+    }
+    
+    try {
+      // Build where conditions - use eq for direct comparison
+      const conditions: any[] = [
+        eq(serviceRequests.assignedTechnicianId, technicianId),
+        sql`${serviceRequests.assignedTechnicianId} IS NOT NULL`
+      ];
+      
+      // If activeOnly is true, filter by active statuses
+      if (activeOnly) {
+        const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'];
+        conditions.push(inArray(serviceRequests.status, activeStatuses));
+      }
+      
+      // Clean, simple select without nested objects to avoid orderSelectedFields issues
+      const rows = await db
+        .select({
+          id: serviceRequests.id,
+          requestNumber: serviceRequests.requestNumber,
+          jobOrder: serviceRequests.jobOrder,
+          status: serviceRequests.status,
+          priority: serviceRequests.priority,
+          issueDescription: serviceRequests.issueDescription,
+          scheduledDate: serviceRequests.scheduledDate,
+          scheduledTimeWindow: serviceRequests.scheduledTimeWindow,
+          actualStartTime: serviceRequests.actualStartTime,
+          actualEndTime: serviceRequests.actualEndTime,
+          durationMinutes: serviceRequests.durationMinutes,
+          resolutionNotes: serviceRequests.resolutionNotes,
+          beforePhotos: serviceRequests.beforePhotos,
+          afterPhotos: serviceRequests.afterPhotos,
+          clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
+          clientUploadedVideos: serviceRequests.clientUploadedVideos,
+          containerId: serviceRequests.containerId,
+          customerId: serviceRequests.customerId,
+          assignedTechnicianId: serviceRequests.assignedTechnicianId,
+          createdAt: serviceRequests.createdAt,
+          updatedAt: serviceRequests.updatedAt,
+        })
+        .from(serviceRequests)
+        .where(and(...conditions))
+        .orderBy(desc(serviceRequests.createdAt));
 
-    return results;
+      // Fetch container and customer data separately to avoid join complexity
+      const enrichedRows = await Promise.all(
+        rows.map(async (row) => {
+          let container = null;
+          let customer = null;
+          
+          if (row.containerId) {
+            try {
+              container = await this.getContainer(row.containerId);
+            } catch (err) {
+              console.warn(`[Storage] Failed to fetch container ${row.containerId}:`, err);
+            }
+          }
+          
+          if (row.customerId) {
+            try {
+              customer = await this.getCustomer(row.customerId);
+            } catch (err) {
+              console.warn(`[Storage] Failed to fetch customer ${row.customerId}:`, err);
+            }
+          }
+          
+          return {
+            ...row,
+            container: container ? {
+              id: container.id,
+              containerCode: container.containerCode,
+              type: container.type,
+              status: container.status,
+              currentLocation: container.currentLocation
+            } : null,
+            customer: customer ? {
+              id: customer.id,
+              companyName: customer.companyName,
+              contactPerson: customer.contactPerson,
+              phone: customer.phone,
+              email: customer.email,
+              address: customer.address
+            } : null
+          };
+        })
+      );
+
+      console.log("[Storage] getServiceRequestsByTechnician", { technicianId, count: enrichedRows.length });
+      
+      return enrichedRows;
+    } catch (error: any) {
+      console.error('[Storage] Error in getServiceRequestsByTechnician:', error);
+      console.error('[Storage] Technician ID:', technicianId);
+      console.error('[Storage] Error details:', error?.message, error?.stack);
+      // Return empty array instead of throwing to prevent 500 errors
+      return [];
+    }
   }
 
 
@@ -1057,11 +1132,22 @@ export class DatabaseStorage implements IStorage {
     if (scheduledTimeWindow) {
       updateFields.scheduledTimeWindow = scheduledTimeWindow;
     }
+    
+    console.log(`[Storage] assignServiceRequest: Setting assignedTechnicianId=${technicianId} for request ${serviceRequestId}`);
+    
     const [updated] = await db
       .update(serviceRequests)
       .set(updateFields)
       .where(eq(serviceRequests.id, serviceRequestId))
       .returning();
+    
+    console.log(`[Storage] assignServiceRequest: Updated request ${serviceRequestId}, assignedTechnicianId=${updated?.assignedTechnicianId}, status=${updated?.status}`);
+    
+    // Verify the assignment was saved
+    if (updated && updated.assignedTechnicianId !== technicianId) {
+      console.error(`[Storage] WARNING: Assignment mismatch! Expected ${technicianId}, got ${updated.assignedTechnicianId}`);
+    }
+    
     return updated;
   }
 
@@ -1726,6 +1812,177 @@ export class DatabaseStorage implements IStorage {
     return services[0];
   }
 
+  // Technician Travel Planning operations
+  async createTechnicianTrip(trip: any): Promise<TechnicianTrip> {
+    const [newTrip] = await db.insert(technicianTrips).values({
+      ...trip,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return newTrip;
+  }
+
+  async getTechnicianTrip(id: string): Promise<TechnicianTrip | undefined> {
+    const [trip] = await db
+      .select()
+      .from(technicianTrips)
+      .where(eq(technicianTrips.id, id))
+      .limit(1);
+    return trip;
+  }
+
+  async getTechnicianTrips(filters?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string }): Promise<TechnicianTrip[]> {
+    let query = db.select().from(technicianTrips);
+    const conditions = [];
+
+    if (filters?.technicianId) {
+      conditions.push(eq(technicianTrips.technicianId, filters.technicianId));
+    }
+    if (filters?.startDate) {
+      conditions.push(gte(technicianTrips.startDate, filters.startDate));
+    }
+    if (filters?.endDate) {
+      conditions.push(sql`${technicianTrips.endDate} <= ${filters.endDate}`);
+    }
+    if (filters?.destinationCity) {
+      conditions.push(ilike(technicianTrips.destinationCity, `%${filters.destinationCity}%`));
+    }
+    if (filters?.tripStatus) {
+      conditions.push(eq(technicianTrips.tripStatus, filters.tripStatus as any));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    const trips = await query.orderBy(desc(technicianTrips.createdAt));
+    return trips;
+  }
+
+  async updateTechnicianTrip(id: string, trip: any): Promise<TechnicianTrip> {
+    const [updated] = await db
+      .update(technicianTrips)
+      .set({
+        ...trip,
+        updatedAt: new Date(),
+      })
+      .where(eq(technicianTrips.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTechnicianTrip(id: string): Promise<void> {
+    // Soft delete: set status to cancelled instead of hard delete
+    await db
+      .update(technicianTrips)
+      .set({
+        tripStatus: 'cancelled' as any,
+        updatedAt: new Date(),
+      })
+      .where(eq(technicianTrips.id, id));
+  }
+
+  async getTechnicianTripCosts(tripId: string): Promise<TechnicianTripCost | undefined> {
+    const [costs] = await db
+      .select()
+      .from(technicianTripCosts)
+      .where(eq(technicianTripCosts.tripId, tripId))
+      .limit(1);
+    return costs;
+  }
+
+  async updateTechnicianTripCosts(tripId: string, costs: any): Promise<TechnicianTripCost> {
+    const existing = await this.getTechnicianTripCosts(tripId);
+
+    const numberOr = (value: any, fallback: number) => {
+      if (value === undefined || value === null || value === "") return fallback;
+      const parsed = Number(value);
+      return Number.isNaN(parsed) ? fallback : parsed;
+    };
+
+    const boolOr = (value: any, fallback: boolean) => {
+      if (value === undefined || value === null) return fallback;
+      return Boolean(value);
+    };
+
+    const normalized = {
+      currency: costs.currency ?? existing?.currency ?? "INR",
+      travelFare: numberOr(costs.travelFare, Number(existing?.travelFare ?? 0)),
+      travelFareIsManual: boolOr(costs.travelFareIsManual, Boolean(existing?.travelFareIsManual)),
+      stayCost: numberOr(costs.stayCost, Number(existing?.stayCost ?? 0)),
+      stayCostIsManual: boolOr(costs.stayCostIsManual, Boolean(existing?.stayCostIsManual)),
+      dailyAllowance: numberOr(costs.dailyAllowance, Number(existing?.dailyAllowance ?? 0)),
+      dailyAllowanceIsManual: boolOr(costs.dailyAllowanceIsManual, Boolean(existing?.dailyAllowanceIsManual)),
+      localTravelCost: numberOr(costs.localTravelCost, Number(existing?.localTravelCost ?? 0)),
+      localTravelCostIsManual: boolOr(costs.localTravelCostIsManual, Boolean(existing?.localTravelCostIsManual)),
+      miscCost: numberOr(costs.miscCost, Number(existing?.miscCost ?? 0)),
+      miscCostIsManual: boolOr(costs.miscCostIsManual, Boolean(existing?.miscCostIsManual)),
+    };
+
+    const totalEstimatedCost = (
+      normalized.travelFare +
+      normalized.stayCost +
+      normalized.dailyAllowance +
+      normalized.localTravelCost +
+      normalized.miscCost
+    ).toFixed(2);
+
+    if (existing) {
+      const [updated] = await db
+        .update(technicianTripCosts)
+        .set({
+          ...normalized,
+          totalEstimatedCost,
+          updatedAt: new Date(),
+        })
+        .where(eq(technicianTripCosts.tripId, tripId))
+        .returning();
+      return updated;
+    }
+
+    const [created] = await db
+      .insert(technicianTripCosts)
+      .values({
+        tripId,
+        ...normalized,
+        totalEstimatedCost,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return created;
+  }
+
+  async getTechnicianTripTasks(tripId: string): Promise<TechnicianTripTask[]> {
+    const tasks = await db
+      .select()
+      .from(technicianTripTasks)
+      .where(eq(technicianTripTasks.tripId, tripId))
+      .orderBy(asc(technicianTripTasks.scheduledDate));
+    return tasks;
+  }
+
+  async createTechnicianTripTask(task: any): Promise<TechnicianTripTask> {
+    const [newTask] = await db.insert(technicianTripTasks).values({
+      ...task,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    return newTask;
+  }
+
+  async updateTechnicianTripTask(id: string, task: any): Promise<TechnicianTripTask> {
+    const [updated] = await db
+      .update(technicianTripTasks)
+      .set({
+        ...task,
+        updatedAt: new Date(),
+      })
+      .where(eq(technicianTripTasks.id, id))
+      .returning();
+    return updated;
+  }
+
   async getUsersByRole(role: string): Promise<User[]> {
     return await db
       .select()
@@ -1739,6 +1996,23 @@ export class DatabaseStorage implements IStorage {
 
   async getAllUsers(): Promise<User[]> {
     return await db.select().from(users);
+  }
+
+  async getLocationMultiplier(city: string): Promise<number> {
+    if (!city) {
+      return 1;
+    }
+    const normalized = city.trim().toLowerCase();
+    const [record] = await db
+      .select({ multiplier: locationMultipliers.multiplier })
+      .from(locationMultipliers)
+      .where(ilike(locationMultipliers.city, normalized))
+      .limit(1);
+    if (record?.multiplier != null) {
+      const value = Number(record.multiplier);
+      return Number.isNaN(value) ? 1 : value;
+    }
+    return 1;
   }
 }
 

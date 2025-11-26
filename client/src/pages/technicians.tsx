@@ -15,6 +15,7 @@ import { User, Phone, MapPin, Star, Wrench, Plus, Edit, Trash2, UserPlus, UserCo
 import { Link, useLocation } from "wouter";
 import { saveAuth, getAuthToken } from "@/lib/auth";
 import ThirdPartyTechnicianForm from "@/components/technicians/third-party-technician-form";
+import { websocket } from "@/lib/websocket";
 
 interface Technician {
   id: string;
@@ -79,6 +80,60 @@ export default function Technicians() {
       console.error("Error loading technicians:", error);
     },
   });
+
+  // Fetch assigned services summary for all technicians (single request)
+  const { data: assignedServicesData, refetch: refetchAssignedServices } = useQuery({
+    queryKey: ["/api/technicians/assigned-services-summary"],
+    enabled: authReady && !!authToken,
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/technicians/assigned-services-summary");
+      if (!res.ok) throw new Error("Failed to fetch assigned services summary");
+      const data = await res.json();
+      console.log("[Technicians] Assigned services data received:", data);
+      console.log("[Technicians] Number of technicians with data:", Object.keys(data || {}).length);
+      // Log each technician's assigned services
+      Object.keys(data || {}).forEach(techId => {
+        const techData = data[techId];
+        if (techData) {
+          const serviceCount = techData.count || 0;
+          const totalServices = Array.isArray(techData.services) ? techData.services.length : 0;
+          console.log(`[Technicians] Tech ${techId}: ${serviceCount} active, ${totalServices} total services`);
+          if (serviceCount > 0 || totalServices > 0) {
+            console.log(`[Technicians] Tech ${techId} services:`, 
+              techData.services?.map((s: any) => `${s.requestNumber || s.id} (${s.status})`) || []);
+          }
+        }
+      });
+      return data;
+    },
+    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchIntervalInBackground: true,
+    staleTime: 0, // Always consider stale to allow immediate refetch
+    refetchInterval: 10_000, // Refetch every 10 seconds
+    refetchIntervalInBackground: true,
+    // Refetch when window regains focus
+    refetchOnWindowFocus: true,
+  });
+
+  // Listen for service assignment events to refresh assigned services
+  // This must be AFTER refetchAssignedServices is defined
+  useEffect(() => {
+    if (!refetchAssignedServices) return;
+    
+    const handleServiceAssigned = () => {
+      console.log("[Technicians] Service assigned event received, refreshing assigned services...");
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/assigned-services-summary"] });
+      refetchAssignedServices();
+    };
+
+    websocket.on("service_request_assigned", handleServiceAssigned);
+    websocket.on("service_request_updated", handleServiceAssigned);
+
+    return () => {
+      websocket.off("service_request_assigned", handleServiceAssigned);
+      websocket.off("service_request_updated", handleServiceAssigned);
+    };
+  }, [queryClient, refetchAssignedServices]);
 
   const { data: thirdPartyTechs, isLoading: isLoadingThirdParty, error: thirdPartyError } = useQuery({
     queryKey: ["/api/thirdparty-technicians"],
@@ -387,6 +442,67 @@ export default function Technicians() {
                 👷 Internal Technicians: {(technicians as any[])?.length ?? 0} • 🧰 Third-Party Technicians: {(thirdPartyTechs as any[])?.length ?? 0}
               </p>
             </div>
+          </div>
+
+          {/* Assignment Distribution Summary */}
+          {assignedServicesData && technicians && (
+            <Card className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+              <CardHeader>
+                <CardTitle className="text-lg">📊 Assignment Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <div className="text-sm text-muted-foreground mb-1">Total Active Assignments</div>
+                    <div className="text-2xl font-bold text-primary">
+                      {Object.values(assignedServicesData).reduce((sum: number, techData: any) => sum + (techData?.count || 0), 0)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground mb-1">Average per Technician</div>
+                    <div className="text-2xl font-bold text-primary">
+                      {technicians.length > 0 
+                        ? Math.round((Object.values(assignedServicesData).reduce((sum: number, techData: any) => sum + (techData?.count || 0), 0) / technicians.length) * 10) / 10
+                        : 0}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground mb-1">Technicians with Assignments</div>
+                    <div className="text-2xl font-bold text-primary">
+                      {Object.values(assignedServicesData || {}).filter((techData: any) => (techData?.count || 0) > 0).length} / {((technicians as any[])?.length || 0) + ((thirdPartyTechs as any[])?.length || 0)}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-blue-200">
+                  <div className="text-xs text-muted-foreground mb-2">Assignment Count by Technician:</div>
+                  <div className="flex flex-wrap gap-2">
+                    {/* Internal Technicians */}
+                    {(technicians as any[]).map((tech: any) => {
+                      const count = assignedServicesData?.[tech.id]?.count ?? 0;
+                      return (
+                        <Badge key={tech.id} variant={count > 0 ? "default" : "outline"} className="text-xs">
+                          {tech.name || tech.employeeCode}: {count}
+                        </Badge>
+                      );
+                    })}
+                    {/* Third-Party Technicians */}
+                    {(thirdPartyTechs as any[]).map((tp: any) => {
+                      const tpTechId = tp.id || tp._id;
+                      const count = assignedServicesData?.[tpTechId]?.count ?? 0;
+                      return (
+                        <Badge key={tpTechId} variant={count > 0 ? "default" : "outline"} className="text-xs" style={{ backgroundColor: count > 0 ? '#FFD4E3' : undefined }}>
+                          {tp.name || tp.contactName} (TP): {count}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="mb-6 flex items-center justify-between">
+            <div></div>
             <div className="flex justify-end gap-3">
               <button
                 className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFC6B3] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
@@ -460,6 +576,62 @@ export default function Technicians() {
                       {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
                       </span>
                     </div>
+                    {/* Assigned Services Section */}
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-foreground">Assigned Services</span>
+                        <Badge variant="outline" className="text-xs">
+                          {(() => {
+                            const count = assignedServicesData?.[tech.id]?.count ?? assignedServicesData?.[tech.id]?.services?.length ?? 0;
+                            return `${count} ${count === 1 ? 'service' : 'services'}`;
+                          })()}
+                        </Badge>
+                      </div>
+                      {(() => {
+                        const techServices = assignedServicesData?.[tech.id]?.services;
+                        const hasServices = techServices && Array.isArray(techServices) && techServices.length > 0;
+                        
+                        if (!hasServices) {
+                          return (
+                            <div className="text-xs text-muted-foreground text-center py-2">
+                              No assigned services
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {techServices.slice(0, 3).map((service: any) => (
+                              <Link key={service.id} href={`/service-requests/${service.id}`} className="block">
+                                <div className="text-xs p-2 bg-muted/50 rounded border border-border hover:bg-muted/70 hover:border-primary transition-colors cursor-pointer">
+                                  <div className="font-medium text-foreground truncate">
+                                    {service.requestNumber || service.id?.slice(0, 8) || 'N/A'}
+                                  </div>
+                                  <div className="text-muted-foreground truncate">
+                                    {service.containerCode || 'N/A'} • <span className="capitalize">{service.status || 'pending'}</span>
+                                  </div>
+                                  {service.issueDescription && (
+                                    <div className="text-muted-foreground truncate text-[10px] mt-1">
+                                      {service.issueDescription.substring(0, 50)}...
+                                    </div>
+                                  )}
+                                  {service.scheduledDate && (
+                                    <div className="text-muted-foreground text-[10px] mt-1">
+                                      📅 {new Date(service.scheduledDate).toLocaleDateString()}
+                                    </div>
+                                  )}
+                                </div>
+                              </Link>
+                            ))}
+                            {techServices.length > 3 && (
+                              <div className="text-xs text-muted-foreground text-center pt-1">
+                                +{techServices.length - 3} more
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                       <div className="mt-4">
                         <button
                           onClick={() => handleEdit(tech)}
@@ -487,7 +659,11 @@ export default function Technicians() {
             <h3 className="text-lg font-semibold text-foreground mb-3">Third-Party Technicians</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {thirdPartyTechs && (thirdPartyTechs as any[]).length > 0 ? (
-                (thirdPartyTechs as any[]).map((tp: any) => (
+                (thirdPartyTechs as any[]).map((tp: any) => {
+                  const tpTechId = tp.id || tp._id;
+                  const tpServices = assignedServicesData?.[tpTechId];
+                  const tpServiceCount = tpServices?.count ?? tpServices?.services?.length ?? 0;
+                  return (
                   <Card
                     key={tp.id}
                     className="shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-[#FFF1EC] to-[#FFF9F7] cursor-pointer hover:shadow-lg transform hover:-translate-y-1 duration-200"
@@ -538,6 +714,59 @@ export default function Technicians() {
                           {(tp as any).servicesCompleted ?? 0} services
                         </span>
                       </div>
+                      {/* Assigned Services Section */}
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-foreground">Assigned Services</span>
+                          <Badge variant="outline" className="text-xs">
+                            {tpServiceCount} {tpServiceCount === 1 ? 'service' : 'services'}
+                          </Badge>
+                        </div>
+                        {(() => {
+                          const techServices = tpServices?.services;
+                          const hasServices = techServices && Array.isArray(techServices) && techServices.length > 0;
+                          
+                          if (!hasServices) {
+                            return (
+                              <div className="text-xs text-muted-foreground text-center py-2">
+                                No assigned services
+                              </div>
+                            );
+                          }
+                          
+                          return (
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {techServices.slice(0, 3).map((service: any) => (
+                                <Link key={service.id} href={`/service-requests/${service.id}`} className="block">
+                                  <div className="text-xs p-2 bg-muted/50 rounded border border-border hover:bg-muted/70 hover:border-primary transition-colors cursor-pointer">
+                                    <div className="font-medium text-foreground truncate">
+                                      {service.requestNumber || service.id?.slice(0, 8) || 'N/A'}
+                                    </div>
+                                    <div className="text-muted-foreground truncate">
+                                      {service.containerCode || 'N/A'} • <span className="capitalize">{service.status || 'pending'}</span>
+                                    </div>
+                                    {service.issueDescription && (
+                                      <div className="text-muted-foreground truncate text-[10px] mt-1">
+                                        {service.issueDescription.substring(0, 50)}...
+                                      </div>
+                                    )}
+                                    {service.scheduledDate && (
+                                      <div className="text-muted-foreground text-[10px] mt-1">
+                                        📅 {new Date(service.scheduledDate).toLocaleDateString()}
+                                      </div>
+                                    )}
+                                  </div>
+                                </Link>
+                              ))}
+                              {techServices.length > 3 && (
+                                <div className="text-xs text-muted-foreground text-center py-1">
+                                  +{techServices.length - 3} more
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
                       <div className="mt-4">
                         <button
                           onClick={() => setLocation(`/technicians/${tp.id}`)}
@@ -548,7 +777,8 @@ export default function Technicians() {
                       </div>
                     </CardContent>
                   </Card>
-                ))
+                  );
+                })
               ) : (
                 <div className="col-span-full text-center py-6 text-sm text-muted-foreground">
                   No third-party technicians found.

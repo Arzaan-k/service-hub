@@ -27,6 +27,13 @@ export const whatsappRecipientTypeEnum = pgEnum("whatsapp_recipient_type", ["cus
 export const scheduledServiceStatusEnum = pgEnum("scheduled_service_status", ["scheduled", "in_progress", "completed", "rescheduled", "cancelled"]);
 export const feedbackRatingEnum = pgEnum("feedback_rating", ["1", "2", "3", "4", "5"]);
 export const resolutionMethodEnum = pgEnum("resolution_method", ["auto", "service", "diy", "ignored"]);
+export const pmStatusEnum = pgEnum("pm_status_enum", ["UP_TO_DATE", "DUE_SOON", "OVERDUE"]);
+// Technician Travel Planning enums
+export const tripStatusEnum = pgEnum("trip_status", ["planned", "booked", "in_progress", "completed", "cancelled"]);
+export const bookingStatusEnum = pgEnum("booking_status", ["not_started", "tickets_booked", "hotel_booked", "all_confirmed"]);
+export const tripPurposeEnum = pgEnum("trip_purpose", ["pm", "breakdown", "audit", "mixed"]);
+export const tripTaskTypeEnum = pgEnum("trip_task_type", ["pm", "alert", "inspection"]);
+export const tripTaskStatusEnum = pgEnum("trip_task_status", ["pending", "in_progress", "completed", "cancelled"]);
 
 // Users table (matching actual database schema)
 export const users = pgTable("users", {
@@ -130,6 +137,10 @@ export const containers = pgTable("containers", {
   reeferModel: text("reefer_model"), // Reefer unit model name
   imageLinks: text("image_links"), // Links to container images/docs
   masterSheetData: jsonb("master_sheet_data"), // Complete master sheet row data
+  lastPmDate: timestamp("last_pm_date"),
+  nextPmDueDate: timestamp("next_pm_due_date"),
+  pmFrequencyDays: integer("pm_frequency_days").default(90),
+  pmStatus: pmStatusEnum("pm_status").default("UP_TO_DATE"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -480,6 +491,75 @@ export const ragQueries = pgTable("rag_queries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Technician Travel Planning tables
+export const technicianTrips = pgTable("technician_trips", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  technicianId: varchar("technician_id").references(() => technicians.id).notNull(),
+  origin: text("origin").notNull(), // Origin city/location (auto from technician base or configurable)
+  destinationCity: text("destination_city").notNull(), // Destination city/region (e.g., Chennai)
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  dailyWorkingTimeWindow: text("daily_working_time_window"), // Optional: e.g., "10:00-18:00"
+  purpose: tripPurposeEnum("purpose").notNull().default("pm"),
+  notes: text("notes"), // Free text instructions/notes
+  tripStatus: tripStatusEnum("trip_status").notNull().default("planned"),
+  bookingStatus: bookingStatusEnum("booking_status").notNull().default("not_started"),
+  ticketReference: text("ticket_reference"), // PNR, booking ID, links for tickets
+  hotelReference: text("hotel_reference"), // Hotel booking ID, links
+  bookingAttachments: jsonb("booking_attachments"), // Store file uploads/references as JSON
+  createdBy: varchar("created_by").references(() => users.id), // Admin/Scheduler who created the trip
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const technicianTripCosts = pgTable("technician_trip_costs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tripId: varchar("trip_id").references(() => technicianTrips.id).notNull().unique(),
+  travelFare: decimal("travel_fare", { precision: 10, scale: 2 }).default("0.00"),
+  travelFareIsManual: boolean("travel_fare_is_manual").notNull().default(false),
+  stayCost: decimal("stay_cost", { precision: 10, scale: 2 }).default("0.00"),
+  stayCostIsManual: boolean("stay_cost_is_manual").notNull().default(false),
+  dailyAllowance: decimal("daily_allowance", { precision: 10, scale: 2 }).default("0.00"),
+  dailyAllowanceIsManual: boolean("daily_allowance_is_manual").notNull().default(false),
+  localTravelCost: decimal("local_travel_cost", { precision: 10, scale: 2 }).default("0.00"),
+  localTravelCostIsManual: boolean("local_travel_cost_is_manual").notNull().default(false),
+  miscCost: decimal("misc_cost", { precision: 10, scale: 2 }).default("0.00"),
+  miscCostIsManual: boolean("misc_cost_is_manual").notNull().default(false),
+  totalEstimatedCost: decimal("total_estimated_cost", { precision: 10, scale: 2 }).default("0.00"), // Auto-calculated sum
+  currency: text("currency").default("INR").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const technicianTripTasks = pgTable("technician_trip_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tripId: varchar("trip_id").references(() => technicianTrips.id).notNull(),
+  containerId: varchar("container_id").references(() => containers.id).notNull(),
+  siteName: text("site_name"), // Customer/site name
+  customerId: varchar("customer_id").references(() => customers.id),
+  taskType: tripTaskTypeEnum("task_type").notNull().default("pm"),
+  priority: text("priority").default("normal"), // urgent, high, normal, low (reuse service_priority enum values)
+  scheduledDate: timestamp("scheduled_date"), // Specific date within trip range for this task
+  estimatedDurationHours: integer("estimated_duration_hours"), // Estimated hours to complete
+  status: tripTaskStatusEnum("status").notNull().default("pending"),
+  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id), // Link to service request if created
+  alertId: varchar("alert_id").references(() => alerts.id), // Link to alert if task is for alert resolution
+  notes: text("notes"), // Task-specific notes
+  completedAt: timestamp("completed_at"),
+  source: text("source").default('auto').notNull(),
+  isManual: boolean("is_manual").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const locationMultipliers = pgTable("location_multipliers", {
+  city: text("city").primaryKey(),
+  multiplier: decimal("multiplier", { precision: 6, scale: 3 }).default("1.000").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Relations (updated according to PRD)
 export const usersRelations = relations(users, ({ one, many }) => ({
   customer: one(customers, { fields: [users.id], references: [customers.userId] }),
@@ -488,6 +568,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   auditLogs: many(auditLogs),
   createdServiceRequests: many(serviceRequests),
   acknowledgedAlerts: many(alerts),
+  createdTrips: many(technicianTrips),
 }));
 
 export const customersRelations = relations(customers, ({ one, many }) => ({
@@ -504,6 +585,7 @@ export const techniciansRelations = relations(technicians, ({ one, many }) => ({
   serviceRequests: many(serviceRequests),
   scheduledServices: many(scheduledServices),
   feedback: many(feedback),
+  trips: many(technicianTrips),
 }));
 
 export const containersRelations = relations(containers, ({ one, many }) => ({
@@ -511,6 +593,7 @@ export const containersRelations = relations(containers, ({ one, many }) => ({
   alerts: many(alerts),
   metrics: many(containerMetrics),
   serviceRequests: many(serviceRequests),
+  tripTasks: many(technicianTripTasks),
 }));
 
 export const alertsRelations = relations(alerts, ({ one, many }) => ({
@@ -574,6 +657,26 @@ export const ragQueriesRelations = relations(ragQueries, ({ one }) => ({
   unit: one(containers, { fields: [ragQueries.unitId], references: [containers.id] }),
 }));
 
+// Technician Travel Planning Relations
+export const technicianTripsRelations = relations(technicianTrips, ({ one, many }) => ({
+  technician: one(technicians, { fields: [technicianTrips.technicianId], references: [technicians.id] }),
+  createdByUser: one(users, { fields: [technicianTrips.createdBy], references: [users.id] }),
+  costs: one(technicianTripCosts, { fields: [technicianTrips.id], references: [technicianTripCosts.tripId] }),
+  tasks: many(technicianTripTasks),
+}));
+
+export const technicianTripCostsRelations = relations(technicianTripCosts, ({ one }) => ({
+  trip: one(technicianTrips, { fields: [technicianTripCosts.tripId], references: [technicianTrips.id] }),
+}));
+
+export const technicianTripTasksRelations = relations(technicianTripTasks, ({ one }) => ({
+  trip: one(technicianTrips, { fields: [technicianTripTasks.tripId], references: [technicianTrips.id] }),
+  container: one(containers, { fields: [technicianTripTasks.containerId], references: [containers.id] }),
+  customer: one(customers, { fields: [technicianTripTasks.customerId], references: [customers.id] }),
+  serviceRequest: one(serviceRequests, { fields: [technicianTripTasks.serviceRequestId], references: [serviceRequests.id] }),
+  alert: one(alerts, { fields: [technicianTripTasks.alertId], references: [alerts.id] }),
+}));
+
 // Insert schemas (updated according to PRD)
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true, updatedAt: true } as any);
@@ -593,6 +696,10 @@ export const insertInventoryTransactionSchema = createInsertSchema(inventoryTran
 export const insertManualSchema = createInsertSchema(manuals).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true, embedding: true } as any);
 export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: true, createdAt: true } as any);
+// Technician Travel Planning insert schemas
+export const insertTechnicianTripSchema = createInsertSchema(technicianTrips).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertTechnicianTripCostSchema = createInsertSchema(technicianTripCosts).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertTechnicianTripTaskSchema = createInsertSchema(technicianTripTasks).omit({ id: true, createdAt: true, updatedAt: true } as any);
 
 // Types (updated according to PRD)
 export type User = typeof users.$inferSelect;
@@ -631,3 +738,10 @@ export type ManualChunk = typeof manualChunks.$inferSelect;
 export type InsertManualChunk = z.infer<typeof insertManualChunkSchema>;
 export type RagQuery = typeof ragQueries.$inferSelect;
 export type InsertRagQuery = z.infer<typeof insertRagQuerySchema>;
+// Technician Travel Planning types
+export type TechnicianTrip = typeof technicianTrips.$inferSelect;
+export type InsertTechnicianTrip = z.infer<typeof insertTechnicianTripSchema>;
+export type TechnicianTripCost = typeof technicianTripCosts.$inferSelect;
+export type InsertTechnicianTripCost = z.infer<typeof insertTechnicianTripCostSchema>;
+export type TechnicianTripTask = typeof technicianTripTasks.$inferSelect;
+export type InsertTechnicianTripTask = z.infer<typeof insertTechnicianTripTaskSchema>;

@@ -9,11 +9,13 @@ import { Phone, Wrench, MapPin, IndianRupee } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useRoute } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function AssignTechnician() {
   const [, params] = useRoute("/assign-technician/:serviceId");
   const serviceId = (params as any)?.serviceId as string;
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [internalTechs, setInternalTechs] = useState<any[]>([]);
   const [thirdPartyTechs, setThirdPartyTechs] = useState<any[]>([]);
@@ -62,17 +64,52 @@ export default function AssignTechnician() {
 
   const handleAssign = async (technicianId: string, type: "internal" | "thirdparty", name: string) => {
     try {
-      const res = await apiRequest("PATCH", `/api/service-requests/${serviceId}/assign`, { technicianId, technicianType: type });
-      const json = await res.json();
-      if ((res as any).ok) {
-        toast({ title: "Assigned", description: `Service assigned to ${name} successfully` });
-        window.location.href = "/service-requests";
-      } else {
-        toast({ title: "Assignment failed", description: json?.error || "Failed to assign", variant: "destructive" });
+      // Use the unified assignment endpoint that handles both internal and third-party
+      const res = await apiRequest("POST", `/api/assign-service`, { 
+        serviceId, 
+        technicianId, 
+        type 
+      });
+      
+      if (!res.ok) {
+        const json = await res.json();
+        throw new Error(json?.error || json?.message || "Failed to assign");
       }
-    } catch (err) {
+      
+      const json = await res.json();
+      
+      // Invalidate and refetch queries to refresh data immediately
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/technicians"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/technicians/assigned-services-summary"] }),
+        // CRITICAL: Invalidate the technician's assigned services query
+        queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", technicianId] }),
+      ]);
+      
+      // Force refetch the assigned services summary and technician's services
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["/api/technicians/assigned-services-summary"] }),
+        queryClient.refetchQueries({ queryKey: ["/api/service-requests/technician", technicianId] }),
+      ]);
+      
+      toast({ 
+        title: "Assigned", 
+        description: `Service assigned to ${name} successfully` 
+      });
+      
+      // Wait a moment before redirecting to allow the assignment to be saved and UI to update
+      setTimeout(() => {
+        window.location.href = "/service-requests";
+      }, 1000);
+    } catch (err: any) {
       console.error("Error assigning technician:", err);
-      toast({ title: "Error", description: "Error assigning technician", variant: "destructive" });
+      toast({ 
+        title: "Error", 
+        description: err?.message || "Error assigning technician", 
+        variant: "destructive" 
+      });
     }
   };
 

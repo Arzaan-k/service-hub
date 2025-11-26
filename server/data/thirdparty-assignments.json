@@ -33,5 +33,10 @@
     "serviceId": "71c4456f-bbc2-4018-8a8d-0ad6490027c9",
     "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
     "assignedAt": "2025-11-18T10:54:08.193Z"
+  },
+  {
+    "serviceId": "7fb12ae6-abe5-4f4e-98f9-bdac731696e3",
+    "technicianId": "500d8e49-3c66-44df-8149-1fd622df33b4",
+    "assignedAt": "2025-11-26T05:10:16.239Z"
   }
 ]

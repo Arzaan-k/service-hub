@@ -357,6 +357,55 @@ export function formatServiceScheduleMessage(technician: any, services: any[] = 
   return msg;
 }
 
+export function formatTravelPlanMessage(plan: {
+  technicianName: string;
+  origin: string;
+  destination: string;
+  startDate: string | Date;
+  endDate: string | Date;
+  purpose?: string;
+  notes?: string;
+  costs?: any;
+  tasks?: any[];
+}): string {
+  const start = plan.startDate ? new Date(plan.startDate).toLocaleDateString() : 'TBD';
+  const end = plan.endDate ? new Date(plan.endDate).toLocaleDateString() : 'TBD';
+  const totalCost = plan.costs?.totalEstimatedCost
+    ? `₹${parseFloat(plan.costs.totalEstimatedCost).toLocaleString('en-IN')}`
+    : 'N/A';
+  const purpose = (plan.purpose || 'pm').toUpperCase();
+
+  let message = `✈️ Travel Plan for ${plan.technicianName || 'Technician'}\n\n`;
+  message += `📍 Destination: ${plan.destination}\n`;
+  message += `🏠 Origin: ${plan.origin}\n`;
+  message += `📅 Dates: ${start} → ${end}\n`;
+  message += `🎯 Purpose: ${purpose}\n`;
+  message += `💰 Estimated Cost: ${totalCost}\n`;
+  if (plan.notes) {
+    message += `📝 Notes: ${sanitizeContent(plan.notes)}\n`;
+  }
+
+  const tasks = plan.tasks || [];
+  if (tasks.length) {
+    message += `\n📦 Assigned Containers:\n`;
+    tasks.slice(0, 5).forEach((task: any, idx: number) => {
+      const code = task.container?.containerCode || task.containerId || `Task ${idx + 1}`;
+      const site = task.siteName || task.customer?.companyName || 'Site TBD';
+      const type = (task.taskType || 'pm').toUpperCase();
+      const when = task.scheduledDate ? new Date(task.scheduledDate).toLocaleDateString() : 'TBD';
+      message += `• ${code} — ${type} @ ${site} (${when})\n`;
+    });
+    if (tasks.length > 5) {
+      message += `…and ${tasks.length - 5} more tasks.\n`;
+    }
+  } else {
+    message += `\nNo containers/tasks assigned yet.\n`;
+  }
+
+  message += `\nHave a safe trip!`;
+  return message;
+}
+
 export function formatInvoiceMessage(invoice: any, customer: any): string {
   const no = invoice?.invoiceNumber || 'INVOICE';
   const total = invoice?.totalAmount != null ? String(invoice.totalAmount) : 'N/A';
