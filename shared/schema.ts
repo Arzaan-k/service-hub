@@ -251,6 +251,11 @@ export const serviceRequests = pgTable("service_requests", {
   month: text("month"), // AUG, JUL, etc.
   year: integer("year"), // 2023, 2024, etc.
   excelData: jsonb("excel_data"), // Store all Excel data as JSON
+  
+  // Inventory Integration fields (commented out until migration is run)
+  // inventoryOrderId: text("inventory_order_id"), // Order ID from Inventory System
+  // inventoryOrderNumber: text("inventory_order_number"), // Order Number from Inventory System
+  // inventoryOrderCreatedAt: timestamp("inventory_order_created_at"), // When order was created in Inventory System
 });
 
 // Invoices table (enhanced according to PRD)

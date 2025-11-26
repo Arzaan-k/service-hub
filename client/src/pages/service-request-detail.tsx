@@ -75,8 +75,9 @@ export default function ServiceRequestDetail() {
     enabled: !!id,
   });
 
-  const { data: inventory } = useQuery({
+  const { data: inventory } = useQuery<InventoryItem[]>({
     queryKey: ["/api/inventory"],
+    queryFn: async () => (await apiRequest("GET", "/api/inventory")).json(),
     enabled: isInventoryDialogOpen,
   });
 
@@ -166,38 +167,20 @@ export default function ServiceRequestDetail() {
         throw new Error("No parts available to create indent");
       }
 
-      // Parse required parts strings to extract part names and quantities
-      const partsData = data.requiredParts.map((partStr: string) => {
-        // Extract part name and quantity from format "Part Name (quantity)"
-        const match = partStr.match(/^(.+?)\s*\((\d+)\)$/);
-        if (match) {
-          return {
-            partName: match[1].trim(),
-            quantity: parseInt(match[2])
-          };
-        }
-        // If no quantity specified, default to 1
-        return {
-          partName: partStr.trim(),
-          quantity: 1
-        };
-      });
-
-      return await apiRequest("POST", `/api/service-requests/${id}/raise-indent-from-parts`, {
-        parts: partsData
-      });
+      // Call the new inventory integration endpoint
+      return await apiRequest("POST", `/api/service-requests/${id}/request-indent`, {});
     },
     onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests", id] });
       toast({
-        title: "Indent Raised Successfully",
-        description: `Indent ${response.indentNumber} created with ${response.itemCount} items`,
+        title: "Indent Requested Successfully",
+        description: response.message || "Order Created in Inventory System",
       });
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to raise indent",
+        description: error.message || "Failed to request indent",
         variant: "destructive",
       });
     },
@@ -611,26 +594,37 @@ export default function ServiceRequestDetail() {
                         Required Parts / Spares
                       </CardTitle>
                       <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="default"
-                          onClick={() => {
-                            if (req.requiredParts && req.requiredParts.length > 0) {
-                              // Request indent from existing required parts
-                              raiseIndentFromParts.mutate();
-                            } else {
-                              // No parts available, prompt to add parts first
-                              toast({
-                                title: "No Parts Available",
-                                description: "Please add parts using 'Manage Parts' before requesting an indent",
-                                variant: "destructive",
-                              });
-                            }
-                          }}
-                          disabled={raiseIndentFromParts.isPending || !req?.requiredParts || req.requiredParts?.length === 0}
-                        >
-                          {raiseIndentFromParts.isPending ? "Requesting..." : "Request Indent"}
-                        </Button>
+                        {req.resolutionNotes && req.resolutionNotes.includes('[Inventory Order]') ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled
+                            className="cursor-not-allowed"
+                          >
+                            ✓ Order Created (Check Notes)
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              if (req.requiredParts && req.requiredParts.length > 0) {
+                                // Request indent from existing required parts
+                                raiseIndentFromParts.mutate();
+                              } else {
+                                // No parts available, prompt to add parts first
+                                toast({
+                                  title: "No Parts Available",
+                                  description: "Please add parts using 'Manage Parts' before requesting an indent",
+                                  variant: "destructive",
+                                });
+                              }
+                            }}
+                            disabled={raiseIndentFromParts.isPending || !req?.requiredParts || req.requiredParts?.length === 0}
+                          >
+                            {raiseIndentFromParts.isPending ? "Requesting..." : "Request Indent"}
+                          </Button>
+                        )}
                         <Button size="sm" variant="outline" onClick={() => setIsInventoryDialogOpen(true)}>
                           <Plus className="w-4 h-4 mr-2" />
                           Manage Parts

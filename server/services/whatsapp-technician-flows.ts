@@ -340,11 +340,16 @@ export async function startServiceRequest(
     
     // Update service status and record start time
     const startTime = new Date();
-    await storage.updateServiceRequest(serviceId, {
+    const updatedService = await storage.updateServiceRequest(serviceId, {
       status: 'in_progress',
       startTime: startTime,
       actualStartTime: startTime
     });
+    
+    // Broadcast the update
+    if ((global as any).broadcast) {
+      (global as any).broadcast({ type: 'service_request_started', data: updatedService });
+    }
     
     // Add to active services
     await addActiveService(session, serviceId, storage);
@@ -355,8 +360,13 @@ export async function startServiceRequest(
       `✅ Service Started Successfully!\n\n⏱️ Timer is now running...\nStarted at: ${formatTime(startTime)}\n\n${service.requestNumber} is now IN PROGRESS\n\nTo return to menu, send "Hi"`
     );
     
-    // Notify customer
-    await notifyCustomerServiceStarted(service, user, storage);
+    // Notify customer via WhatsApp
+    try {
+      const { customerCommunicationService } = await import('./whatsapp');
+      await customerCommunicationService.notifyServiceRequestUpdate(serviceId, 'started');
+    } catch (notifError) {
+      console.error('[WhatsApp] Failed to send customer notification:', notifError);
+    }
     
   } catch (error) {
     console.error('[WhatsApp] Error starting service:', error);
@@ -639,7 +649,7 @@ export async function completeServiceRequest(
     const durationMinutes = Math.floor(durationMs / 60000);
     
     // Update service request with all completion data
-    await storage.updateServiceRequest(serviceId, {
+    const updatedService = await storage.updateServiceRequest(serviceId, {
       status: 'completed',
       endTime: endTime,
       actualEndTime: endTime,
@@ -650,6 +660,11 @@ export async function completeServiceRequest(
       signedDocumentUrl: signatureMediaId ? `whatsapp://media/${signatureMediaId}` : null,
       vendorInvoiceUrl: invoiceMediaId ? `whatsapp://media/${invoiceMediaId}` : null
     });
+    
+    // Broadcast the completion event
+    if ((global as any).broadcast) {
+      (global as any).broadcast({ type: 'service_request_completed', data: updatedService });
+    }
     
     // Remove from active services
     await removeActiveService(session, serviceId, storage);
@@ -703,8 +718,13 @@ export async function completeServiceRequest(
       ]
     );
     
-    // Notify customer
-    await notifyCustomerServiceCompleted(service, user, duration, storage);
+    // Notify customer via WhatsApp
+    try {
+      const { customerCommunicationService } = await import('./whatsapp');
+      await customerCommunicationService.notifyServiceRequestUpdate(serviceId, 'completed');
+    } catch (notifError) {
+      console.error('[WhatsApp] Failed to send customer notification:', notifError);
+    }
     
   } catch (error) {
     console.error('[WhatsApp] Error completing service:', error);

@@ -56,7 +56,6 @@ interface ServiceRequest {
   scheduledDate?: string;
   actualStartTime?: string;
   actualEndTime?: string;
-  resolutionNotes?: string;
   createdAt: string;
 }
 
@@ -84,20 +83,24 @@ export default function ServiceRequests() {
 
   // Dropdown removed: direct navigation to assign page simplifies UX
 
-  const { data: requests, isLoading } = useQuery({
+  const { data: requests, isLoading } = useQuery<ServiceRequest[]>({
     queryKey: ["/api/service-requests"],
+    queryFn: async () => (await apiRequest("GET", "/api/service-requests")).json()
   });
 
-  const { data: technicians } = useQuery({
+  const { data: technicians } = useQuery<any[]>({
     queryKey: ["/api/technicians"],
+    queryFn: async () => (await apiRequest("GET", "/api/technicians")).json()
   });
 
-  const { data: allContainers } = useQuery({
+  const { data: allContainers } = useQuery<any[]>({
     queryKey: ["/api/containers"],
+    queryFn: async () => (await apiRequest("GET", "/api/containers")).json()
   });
 
-  const { data: allCustomers } = useQuery({
+  const { data: allCustomers } = useQuery<any[]>({
     queryKey: ["/api/customers"],
+    queryFn: async () => (await apiRequest("GET", "/api/customers")).json()
   });
 
   // Dependent filtering: when container is selected, show only its customer; when customer selected, filter containers
