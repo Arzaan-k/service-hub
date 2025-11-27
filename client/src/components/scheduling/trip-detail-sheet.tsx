@@ -83,12 +83,27 @@ export default function TripDetailSheet({ tripId, open, onOpenChange, onUpdate }
 
   const sendPlan = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", `/api/scheduling/travel/trips/${tripId}/send-plan`);
+      const res = await apiRequest("POST", `/api/scheduling/travel/trips/${tripId}/send-plan`);
+      return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Invalidate all relevant queries to refresh technician views
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduling/travel/trips"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduling/travel/trips", tripId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
+      
+      // Invalidate technician-specific queries if we have the technician ID
+      if (trip?.technicianId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", trip.technicianId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/technicians/assigned-services-summary"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+      }
+      
+      onUpdate();
       toast({
         title: "Travel Plan Sent",
-        description: "The travel plan was sent to the technician via WhatsApp.",
+        description: `The travel plan was sent to the technician via WhatsApp. ${data?.pmCount || 0} PM tasks assigned.`,
       });
     },
     onError: (error: any) => {

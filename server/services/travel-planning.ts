@@ -17,7 +17,7 @@ import {
   type TechnicianTripCost,
   type TechnicianTripTask,
 } from "@shared/schema";
-import { eq, and, or, isNull, ilike, inArray, sql } from "drizzle-orm";
+import { eq, and, or, isNull, ilike, inArray, sql, desc } from "drizzle-orm";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const OPEN_ALERT_STATUSES = ["open", "acknowledged"];
@@ -403,41 +403,60 @@ const buildCostInput = (input?: Partial<Record<CostKey, CostField>>) => {
   return normalized;
 };
 
-const calculateCostEstimates = async (
+/**
+ * Calculate cost estimates for a trip
+ * Returns cost breakdown including travelFare, stayCost, dailyAllowance, miscellaneous, and totalCost
+ */
+export const calculateCostEstimates = async (
   technician: Technician,
   destinationCity: string,
   startDate: Date,
   endDate: Date
 ) => {
-  const multiplier = await storage.getLocationMultiplier(destinationCity);
+  const multiplier = await storage.getLocationMultiplier(destinationCity).catch(() => 1);
   const days = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / DAY_IN_MS) + 1);
   const nights = Math.max(1, days - 1);
 
-  const allowances = {
-    hotel: Number(technician.hotelAllowance || 0),
-    food: Number(technician.foodAllowance || 0),
-    local: Number(technician.localTravelAllowance || 0),
-    misc: Number(technician.personalAllowance || 0),
-  };
+  // Use technician allowances, defaulting to 0 if not provided
+  const hotelAllowance = Number(technician.hotelAllowance || 0);
+  const personalAllowance = Number(technician.personalAllowance || 0);
+  const localTravelAllowance = Number(technician.localTravelAllowance || 0);
 
-  const breakdown: Record<CostKey, CostField> = {
-    travelFare: { value: 0, isManual: false },
-    stayCost: { value: roundCurrency(nights * allowances.hotel * multiplier), isManual: false },
-    dailyAllowance: { value: roundCurrency(days * allowances.food * multiplier), isManual: false },
-    localTravelCost: { value: roundCurrency(days * allowances.local * multiplier), isManual: false },
-    miscCost: { value: roundCurrency(days * allowances.misc), isManual: false },
-  };
+  // Calculate costs according to requirements
+  // travelFare = estimated default constant (₹1000) if no distance method exists
+  const travelFare = 1000; // Default constant
+  
+  // stayCost = technician.hotelAllowance * numberOfDays (using nights, no multiplier)
+  const stayCost = roundCurrency(nights * hotelAllowance);
+  
+  // dailyAllowance = technician.personalAllowance * numberOfDays (no multiplier)
+  const dailyAllowance = roundCurrency(days * personalAllowance);
+  
+  // localTravelCost = technician.localTravelAllowance * numberOfDays (with multiplier for location)
+  const localTravelCost = roundCurrency(days * localTravelAllowance * multiplier);
+  
+  // miscellaneous = 0 for now (as per requirements)
+  const miscellaneous = 0;
 
-  const totalEstimatedCost =
-    breakdown.travelFare.value +
-    breakdown.stayCost.value +
-    breakdown.dailyAllowance.value +
-    breakdown.localTravelCost.value +
-    breakdown.miscCost.value;
+  const totalCost = travelFare + stayCost + dailyAllowance + localTravelCost + miscellaneous;
 
+  // Return in the format expected by the API
   return {
-    breakdown,
-    totalEstimatedCost: roundCurrency(totalEstimatedCost),
+    travelFare: roundCurrency(travelFare),
+    stayCost: roundCurrency(stayCost),
+    dailyAllowance: roundCurrency(dailyAllowance),
+    localTravelCost: roundCurrency(localTravelCost),
+    miscellaneous: roundCurrency(miscellaneous),
+    totalCost: roundCurrency(totalCost),
+    // Also return in the old format for backward compatibility
+    breakdown: {
+      travelFare: { value: travelFare, isManual: false },
+      stayCost: { value: stayCost, isManual: false },
+      dailyAllowance: { value: dailyAllowance, isManual: false },
+      localTravelCost: { value: localTravelCost, isManual: false },
+      miscCost: { value: miscellaneous, isManual: false },
+    },
+    totalEstimatedCost: roundCurrency(totalCost),
     currency: "INR",
     multiplier,
     days,
@@ -501,30 +520,36 @@ const scoreTechnician = async (technician: Technician, destinationCity: string, 
 };
 
 const collectCityTaskCandidates = async (destinationCity: string, startDate: Date, endDate: Date): Promise<CityTaskCandidate[]> => {
-  const trimmedCity = destinationCity.trim();
-  if (!trimmedCity) return [];
+  try {
+    const trimmedCity = destinationCity.trim();
+    if (!trimmedCity) return [];
 
-  const pattern = `%${trimmedCity}%`;
+    const pattern = `%${trimmedCity}%`;
 
-  const containerRows = await db
-    .select({
-      id: containers.id,
-      depot: containers.depot,
-      containerCode: containers.containerCode,
-      customerId: containers.currentCustomerId,
-      customerName: customers.companyName,
-    })
-    .from(containers)
-    .leftJoin(customers, eq(containers.currentCustomerId, customers.id))
-    .where(
-      or(
-        ilike(containers.depot, pattern),
-        sql`${containers.currentLocation}::text ILIKE ${pattern}`,
-        sql`${containers.excelMetadata}::text ILIKE ${pattern}`
+    const containerRows = await db
+      .select({
+        id: containers.id,
+        depot: containers.depot,
+        containerCode: containers.containerCode,
+        customerId: containers.currentCustomerId,
+        customerName: customers.companyName,
+        createdAt: containers.createdAt,
+      })
+      .from(containers)
+      .leftJoin(customers, eq(containers.currentCustomerId, customers.id))
+      .where(
+        or(
+          ilike(containers.depot, pattern),
+          sql`${containers.currentLocation}::text ILIKE ${pattern}`,
+          sql`${containers.excelMetadata}::text ILIKE ${pattern}`
+        )
       )
-    );
+      .limit(1000); // Limit to prevent huge queries
 
-  if (!containerRows.length) return [];
+    if (!containerRows.length) {
+      console.log(`[Travel Planning] No containers found for city: ${trimmedCity}`);
+      return [];
+    }
 
   const containerIds = containerRows.map((row) => row.id);
   const selected = new Map<string, CityTaskCandidate>();
@@ -534,10 +559,138 @@ const collectCityTaskCandidates = async (destinationCity: string, startDate: Dat
     selected.set(candidate.containerId, candidate);
   };
 
-  const PM_INTERVAL_DAYS = 180;
+  // PM system integration: Use 90-day threshold (3 months)
+  const PM_THRESHOLD_DAYS = 90;
   const today = new Date();
-  const lastServiceDates = new Map<string, Date>();
+  today.setHours(0, 0, 0, 0);
+  
+  // Compute last PM date from service_requests table
+  // Get MAX(actualEndTime) for completed PM service requests
+  const lastPmDateMap = new Map<string, Date>();
+  
+  try {
+    if (containerIds.length > 0) {
+      const completedPMRequests = await db
+        .select({
+          containerId: serviceRequests.containerId,
+          actualEndTime: serviceRequests.actualEndTime,
+        })
+        .from(serviceRequests)
+        .where(
+          and(
+            inArray(serviceRequests.containerId, containerIds),
+            or(
+              ilike(serviceRequests.issueDescription, '%Preventive Maintenance%'),
+              ilike(serviceRequests.issueDescription, '%PM%'),
+              ilike(serviceRequests.workType, '%PM%')
+            ),
+            inArray(serviceRequests.status, ['completed']),
+            sql`${serviceRequests.actualEndTime} IS NOT NULL`
+          )
+        )
+        .limit(10000); // Safety limit
 
+      // Group by containerId and get the most recent PM date (MAX)
+      completedPMRequests.forEach((req: any) => {
+        if (req.containerId && req.actualEndTime) {
+          try {
+            const existing = lastPmDateMap.get(req.containerId);
+            const currentDate = new Date(req.actualEndTime);
+            if (!existing || currentDate > existing) {
+              lastPmDateMap.set(req.containerId, currentDate);
+            }
+          } catch (dateError) {
+            console.warn(`[Travel Planning] Invalid date for container ${req.containerId}:`, req.actualEndTime);
+          }
+        }
+      });
+    }
+  } catch (pmDateError: any) {
+    console.error('[Travel Planning] Error computing last PM dates:', pmDateError);
+    // Continue with empty map - containers without PM history will use createdAt fallback
+  }
+  
+  // First, check for PM-due containers using computed last PM dates
+  const pmDueContainers: Array<{ containerId: string; daysSinceLastPM: number; priority: string }> = [];
+  
+  for (const container of containerRows) {
+    let needsPM = false;
+    let daysSinceLastPM = 0;
+    let priority = 'HIGH';
+    
+    // Get computed last PM date from service history
+    const computedLastPmDate = lastPmDateMap.get(container.id);
+    
+    if (computedLastPmDate) {
+      // Use computed last PM date
+      const lastPmDate = new Date(computedLastPmDate);
+      lastPmDate.setHours(0, 0, 0, 0);
+      daysSinceLastPM = Math.floor((today.getTime() - lastPmDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysSinceLastPM >= PM_THRESHOLD_DAYS) {
+        needsPM = true;
+        priority = daysSinceLastPM > PM_THRESHOLD_DAYS + 30 ? 'CRITICAL' : 'HIGH';
+      }
+    } else if (container.createdAt) {
+      // If no PM history, check if container is old enough (created > 90 days ago)
+      const createdDate = new Date(container.createdAt);
+      daysSinceLastPM = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysSinceLastPM >= PM_THRESHOLD_DAYS) {
+        needsPM = true;
+        priority = 'HIGH';
+      }
+    }
+    
+    // Also check for existing PM service requests (pending/scheduled)
+    if (needsPM) {
+      const existingPMRequest = await db
+        .select({ id: serviceRequests.id })
+        .from(serviceRequests)
+        .where(
+          and(
+            eq(serviceRequests.containerId, container.id),
+            or(
+              ilike(serviceRequests.issueDescription, '%Preventive Maintenance%'),
+              ilike(serviceRequests.issueDescription, '%PM%')
+            ),
+            inArray(serviceRequests.status, ['pending', 'approved', 'scheduled']),
+            sql`${serviceRequests.actualEndTime} IS NULL`
+          )
+        )
+        .limit(1);
+      
+      // Only add if no existing PM request
+      if (existingPMRequest.length === 0) {
+        pmDueContainers.push({
+          containerId: container.id,
+          daysSinceLastPM,
+          priority,
+        });
+      }
+    }
+  }
+  
+  // Add PM-due containers FIRST (top priority)
+  for (const pmContainer of pmDueContainers) {
+    const container = containerRows.find(c => c.id === pmContainer.containerId);
+    if (!container) continue;
+    
+    const areaName = container.depot || container.customerName || trimmedCity;
+    addCandidate({
+      containerId: container.id,
+      siteName: container.customerName || container.depot || areaName,
+      customerId: container.customerId,
+      taskType: 'pm',
+      priority: pmContainer.priority,
+      scheduledDate: startDate,
+      estimatedDurationHours: 2,
+      notes: `Preventive Maintenance - ${pmContainer.daysSinceLastPM} days since last PM (90-day threshold)`,
+    });
+  }
+  
+  // Fallback: Check service history for containers without PM system data
+  const lastServiceDates = new Map<string, Date>();
   const completedRequests = await db
     .select({
       containerId: serviceRequests.containerId,
@@ -584,17 +737,22 @@ const collectCityTaskCandidates = async (destinationCity: string, startDate: Dat
     // ignore
   }
 
+  // Check remaining containers (not already in PM list) for service history-based PM
   for (const container of containerRows) {
+    // Skip if already added as PM-due
+    if (pmDueContainers.some(pm => pm.containerId === container.id)) continue;
+    
     const lastServiceDate = lastServiceDates.get(container.id);
     let needsPM = false;
     let pmReason = '';
 
     if (!lastServiceDate) {
+      // No service history - might need PM
       needsPM = true;
       pmReason = 'No service history found';
     } else {
       const nextDue = new Date(lastServiceDate);
-      nextDue.setDate(nextDue.getDate() + PM_INTERVAL_DAYS);
+      nextDue.setDate(nextDue.getDate() + PM_THRESHOLD_DAYS);
       if (nextDue <= endDate && nextDue >= startDate) {
         needsPM = true;
         pmReason = `PM due ${nextDue.toISOString().split('T')[0]}`;
@@ -605,7 +763,7 @@ const collectCityTaskCandidates = async (destinationCity: string, startDate: Dat
     }
 
     if (needsPM) {
-      const areaName = container.depot || container.customerName || serviceAreas[0];
+      const areaName = container.depot || container.customerName || trimmedCity;
       addCandidate({
         containerId: container.id,
         siteName: container.customerName || container.depot || areaName,
@@ -685,8 +843,23 @@ const collectCityTaskCandidates = async (destinationCity: string, startDate: Dat
     });
   }
 
-  return Array.from(selected.values());
-};
+    return Array.from(selected.values());
+  } catch (error: any) {
+    console.error('[Travel Planning] Error in collectCityTaskCandidates:', error);
+    console.error('[Travel Planning] Error details:', {
+      destinationCity,
+      startDate,
+      endDate,
+      message: error?.message,
+      stack: error?.stack,
+    });
+    // Return empty array on error rather than crashing
+    return [];
+  }
+}
+
+// Export for use in routes
+export { collectCityTaskCandidates };
 
 export async function generateTripTasksForDestination(tripId: string): Promise<TechnicianTripTask[]> {
   const trip = await storage.getTechnicianTrip(tripId);
@@ -700,9 +873,50 @@ export async function generateTripTasksForDestination(tripId: string): Promise<T
   const existingContainers = new Set(existingTasks.map((task) => task.containerId));
 
   const candidates = await collectCityTaskCandidates(trip.destinationCity, startDate, endDate);
+  
+  // Separate PM tasks from other tasks and prioritize PM
+  const pmTasks = candidates.filter(c => c.taskType === 'pm');
+  const otherTasks = candidates.filter(c => c.taskType !== 'pm');
+  
+  // Sort PM tasks by priority (CRITICAL first, then HIGH)
+  pmTasks.sort((a, b) => {
+    const priorityOrder = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
+    return (priorityOrder[a.priority as keyof typeof priorityOrder] || 99) - 
+           (priorityOrder[b.priority as keyof typeof priorityOrder] || 99);
+  });
+  
+  // Combine: PM tasks first, then other tasks
+  const prioritizedCandidates = [...pmTasks, ...otherTasks];
+  
+  // Distribute tasks across days (max 3 per day)
+  const tasksByDate = new Map<string, CityTaskCandidate[]>();
+  const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / DAY_IN_MS);
+  let currentDate = new Date(startDate);
+  let taskIndex = 0;
+  
+  for (let day = 0; day <= daysDiff && taskIndex < prioritizedCandidates.length; day++) {
+    const dateKey = currentDate.toISOString().split('T')[0];
+    const dayTasks: CityTaskCandidate[] = [];
+    
+    // Add up to 3 tasks per day, prioritizing PM tasks
+    for (let i = 0; i < 3 && taskIndex < prioritizedCandidates.length; i++) {
+      const candidate = prioritizedCandidates[taskIndex];
+      candidate.scheduledDate = new Date(currentDate);
+      dayTasks.push(candidate);
+      taskIndex++;
+    }
+    
+    if (dayTasks.length > 0) {
+      tasksByDate.set(dateKey, dayTasks);
+    }
+    
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
   const created: TechnicianTripTask[] = [];
 
-  for (const candidate of candidates) {
+  // Create tasks in priority order (PM first)
+  for (const candidate of prioritizedCandidates) {
     if (existingContainers.has(candidate.containerId)) continue;
     const task = await storage.createTechnicianTripTask({
       tripId,
@@ -762,8 +976,44 @@ export async function autoPlanTravel(params: AutoPlanInput) {
 
   const costEstimates = await calculateCostEstimates(selected.technician, destinationCity, startDate, endDate);
   const tasks = await collectCityTaskCandidates(destinationCity, startDate, endDate);
+  
+  // Prioritize PM tasks: separate and sort
+  const pmTasks = tasks.filter(t => t.taskType === 'pm');
+  const otherTasks = tasks.filter(t => t.taskType !== 'pm');
+  
+  // Sort PM tasks by priority (CRITICAL first, then HIGH)
+  pmTasks.sort((a, b) => {
+    const priorityOrder: Record<string, number> = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
+    return (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99);
+  });
+  
+  // Distribute tasks across days (max 3 per day), PM tasks first
+  const allTasks = [...pmTasks, ...otherTasks];
+  const tasksByDate = new Map<string, typeof allTasks>();
+  const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / DAY_IN_MS);
+  let currentDate = new Date(startDate);
+  let taskIndex = 0;
+  
+  for (let day = 0; day <= daysDiff && taskIndex < allTasks.length; day++) {
+    const dateKey = currentDate.toISOString().split('T')[0];
+    const dayTasks: typeof allTasks = [];
+    
+    // Add up to 3 tasks per day
+    for (let i = 0; i < 3 && taskIndex < allTasks.length; i++) {
+      const task = allTasks[taskIndex];
+      task.scheduledDate = new Date(currentDate);
+      dayTasks.push(task);
+      taskIndex++;
+    }
+    
+    if (dayTasks.length > 0) {
+      tasksByDate.set(dateKey, dayTasks);
+    }
+    
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
 
-  const formattedTasks = tasks.map((task) => ({
+  const formattedTasks = allTasks.map((task) => ({
     containerId: task.containerId,
     siteName: task.siteName,
     customerId: task.customerId,
@@ -1043,10 +1293,81 @@ export async function savePlannedTrip(payload: SaveTripPayload, userId?: string)
   const costs = await storage.getTechnicianTripCosts(trip.id);
   const tasks = await storage.getTechnicianTripTasks(trip.id);
 
+  // Auto-schedule PM service requests for PM tasks
+  const pmTasks = tasks.filter(t => t.taskType === 'pm');
+  const scheduledPMRequests: string[] = [];
+  
+  for (const pmTask of pmTasks) {
+    try {
+      // Check if service request already exists
+      let serviceRequestId = pmTask.serviceRequestId;
+      
+      if (!serviceRequestId) {
+        // Create PM service request if it doesn't exist
+        const container = await storage.getContainer(pmTask.containerId);
+        if (container && container.currentCustomerId) {
+          const allUsers = await storage.getAllUsers();
+          const adminUser = allUsers.find((u: any) => ['admin', 'super_admin'].includes(u.role?.toLowerCase()));
+          const createdBy = adminUser?.id || allUsers[0]?.id;
+          
+          if (createdBy) {
+            const timestamp = Date.now();
+            const requestNumber = `SR-PM-${timestamp}`;
+            
+            const newRequest = await storage.createServiceRequest({
+              requestNumber: requestNumber,
+              containerId: pmTask.containerId,
+              customerId: container.currentCustomerId,
+              priority: pmTask.priority === 'CRITICAL' ? 'urgent' : 'normal',
+              status: 'pending',
+              issueDescription: `Preventive Maintenance - Container ${container.containerCode || container.id} (90-day threshold)`,
+              requestedAt: new Date(),
+              createdBy: createdBy,
+              workType: 'SERVICE-AT SITE',
+              jobType: 'FOC',
+            });
+            
+            serviceRequestId = newRequest.id;
+            
+            // Update trip task with service request ID
+            await db
+              .update(technicianTripTasks)
+              .set({ serviceRequestId: serviceRequestId })
+              .where(eq(technicianTripTasks.id, pmTask.id));
+          }
+        }
+      }
+      
+      // Schedule the service request
+      if (serviceRequestId) {
+        const scheduledDate = pmTask.scheduledDate ? new Date(pmTask.scheduledDate) : startDate;
+        const scheduledTimeWindow = '09:00-17:00'; // Default time window
+        
+        await db
+          .update(serviceRequests)
+          .set({
+            assignedTechnicianId: payload.technicianId,
+            status: 'scheduled',
+            scheduledDate: scheduledDate,
+            scheduledTimeWindow: scheduledTimeWindow,
+            assignedBy: userId || 'AUTO',
+            assignedAt: new Date(),
+          })
+          .where(eq(serviceRequests.id, serviceRequestId));
+        
+        scheduledPMRequests.push(serviceRequestId);
+      }
+    } catch (error) {
+      console.error(`[Travel Planning] Error scheduling PM service request for task ${pmTask.id}:`, error);
+      // Continue with other tasks even if one fails
+    }
+  }
+
   return {
     trip,
     costs: formatCostRecordForClient(costs),
     tasks,
+    scheduledPMRequests,
   };
 }
 

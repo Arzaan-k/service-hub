@@ -13,21 +13,23 @@ export type AutoPlanFormPayload = {
   technicianId?: string;
 };
 
+type CityOption = { name: string };
+
 type AutoPlanFormProps = {
-  destinations: string[];
+  destinations: CityOption[] | string[];
   technicians: Array<{ id: string; name?: string; employeeCode?: string }>;
   onSubmit: (payload: AutoPlanFormPayload) => void;
   isLoading?: boolean;
 };
 
-const FALLBACK_CITIES = [
-  "Chennai",
-  "Mumbai",
-  "Delhi",
-  "Bengaluru",
-  "Hyderabad",
-  "Pune",
-  "Kolkata",
+const FALLBACK_CITIES: CityOption[] = [
+  { name: "Chennai" },
+  { name: "Mumbai" },
+  { name: "Delhi" },
+  { name: "Bengaluru" },
+  { name: "Hyderabad" },
+  { name: "Pune" },
+  { name: "Kolkata" },
 ];
 
 export function AutoPlanForm({
@@ -36,12 +38,27 @@ export function AutoPlanForm({
   onSubmit,
   isLoading,
 }: AutoPlanFormProps) {
+  // Normalize destinations to CityOption format
   const cities = useMemo(() => {
-    const merged = new Set<string>([...FALLBACK_CITIES, ...(destinations || [])]);
-    return Array.from(merged).sort();
+    const normalized: CityOption[] = (destinations || []).map(d => 
+      typeof d === 'string' ? { name: d } : d
+    );
+    const merged = new Map<string, CityOption>();
+    
+    // Add fallback cities
+    FALLBACK_CITIES.forEach(city => merged.set(city.name, city));
+    
+    // Add destinations (overwrites fallbacks if duplicate)
+    normalized.forEach(city => {
+      if (city.name && city.name.trim()) {
+        merged.set(city.name.trim(), city);
+      }
+    });
+    
+    return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [destinations]);
 
-  const [destinationCity, setDestinationCity] = useState(cities[0] || "");
+  const [destinationCity, setDestinationCity] = useState(cities[0]?.name || "");
   const [customCity, setCustomCity] = useState("");
   const [useCustomCity, setUseCustomCity] = useState(false);
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -54,13 +71,13 @@ export function AutoPlanForm({
 
   useEffect(() => {
     if (!useCustomCity && cities.length > 0 && !destinationCity) {
-      setDestinationCity(cities[0]);
+      setDestinationCity(cities[0]?.name || "");
     }
   }, [cities, destinationCity, useCustomCity]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const fallbackCity = cities[0] || "";
+    const fallbackCity = cities[0]?.name || "";
     const payloadCity = (useCustomCity ? customCity.trim() : destinationCity || fallbackCity).trim();
     if (!payloadCity) return;
     onSubmit({
@@ -103,8 +120,8 @@ export function AutoPlanForm({
               </SelectTrigger>
               <SelectContent>
                 {cities.map((city) => (
-                  <SelectItem key={city} value={city}>
-                    {city}
+                  <SelectItem key={city.name} value={city.name}>
+                    {city.name}
                   </SelectItem>
                 ))}
                 <SelectItem value="__custom">Other (type manually)</SelectItem>

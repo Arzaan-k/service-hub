@@ -50,7 +50,7 @@ import {
   type InsertTechnicianTripTask,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, gte, sql, isNull, ilike, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, gte, sql, isNull, ilike, inArray, notInArray } from "drizzle-orm";
 import { Pool } from '@neondatabase/serverless';
 
 export interface IStorage {
@@ -715,6 +715,9 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(serviceRequests)
       .where(and(
+        isNull(serviceRequests.assignedTechnicianId),
+        inArray(serviceRequests.status, ['pending', 'scheduled']),
+        notInArray(serviceRequests.status, ['completed', 'cancelled', 'in_progress']),
         isNull(serviceRequests.actualEndTime),
         isNull(serviceRequests.actualStartTime)
       ))

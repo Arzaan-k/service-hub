@@ -217,6 +217,9 @@ export const serviceRequests = pgTable("service_requests", {
   customerId: varchar("client_id").references(() => customers.id).notNull(), // Using client_id from existing DB
   alertId: varchar("alert_id").references(() => alerts.id),
   assignedTechnicianId: varchar("assigned_technician_id").references(() => technicians.id),
+  // Assignment audit fields (from existing DB columns)
+  assignedBy: text("assigned_by"),
+  assignedAt: timestamp("assigned_at"),
   priority: servicePriorityEnum("priority").notNull().default("normal"),
   status: serviceStatusEnum("status").notNull().default("pending"),
   issueDescription: text("issue_description").notNull(),

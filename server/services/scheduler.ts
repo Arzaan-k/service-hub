@@ -429,158 +429,281 @@ export class SchedulerService {
   }
 
   /**
-   * Smart Auto-Assign for Internal Technicians
+   * Get job count for a technician on a specific date (for bucket capacity planning)
+   */
+  private async getJobCountForDate(technicianId: string, date: Date): Promise<number> {
+    try {
+      const dateStr = date.toISOString().split('T')[0];
+      const schedule = await storage.getTechnicianSchedule(technicianId, dateStr);
+      
+      // Count only active jobs (not completed/cancelled) scheduled for this date
+      const activeJobs = schedule.filter((req: any) => {
+        const status = (req.status || '').toLowerCase();
+        return !['completed', 'cancelled'].includes(status) && !req.actualEndTime;
+      });
+      
+      return activeJobs.length;
+    } catch (error) {
+      console.error(`[AutoAssign] Error getting job count for tech ${technicianId} on ${date.toISOString()}:`, error);
+      return 0;
+    }
+  }
+
+  /**
+   * Find next available date for a technician (bucket capacity: 3 jobs per day)
+   * Starts from today and moves forward until finding a day with < 3 jobs
+   */
+  private async findNextAvailableDate(technicianId: string, startDate: Date = new Date()): Promise<Date> {
+    const maxJobsPerDay = 3;
+    let currentDate = new Date(startDate);
+    currentDate.setHours(0, 0, 0, 0);
+    
+    // Look up to 30 days ahead
+    for (let i = 0; i < 30; i++) {
+      const jobCount = await this.getJobCountForDate(technicianId, currentDate);
+      if (jobCount < maxJobsPerDay) {
+        return currentDate;
+      }
+      // Move to next day
+      currentDate = new Date(currentDate);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // If no slot found in 30 days, return the 30th day anyway (better than failing)
+    return currentDate;
+  }
+
+  /**
+   * Smart Auto-Assign for Internal Technicians with Bucket-Based Capacity Planning
    * 
-   * Assigns all unassigned pending/approved requests to internal technicians
-   * using balanced load distribution and distance optimization.
+   * Implements "Fairness" logic with capacity buckets:
+   * - Each technician gets up to 3 jobs per day
+   * - Starts scheduling from Today
+   * - If today is full, automatically spills over to Tomorrow, then next day, etc.
+   * - Uses round-robin distribution among internal technicians
    * 
    * Rules:
-   * - Only INTERNAL technicians (third-party as fallback only)
-   * - Only requests with status IN ['pending','approved'] AND assignedTechnicianId IS NULL
-   * - Score = (currentActiveTasks * 3) + (distanceFromBase * 0.5)
-   * - Sort by priority first, then assign to lowest score
-   * - Update workload after each assignment
+   * - Only INTERNAL technicians (category = 'internal')
+   * - Only requests with status IN ['pending','approved','scheduled'] AND assignedTechnicianId IS NULL
+   * - Bucket capacity: 3 jobs per day per technician
+   * - Date spillover: Automatically finds next available date if today is full
    */
   async smartAutoAssignPending(): Promise<{
     success: boolean;
-    assigned: Array<{ requestId: string; techId: string }>;
+    assigned: Array<{ requestId: string; techId: string; scheduledDate: string }>;
     skipped: Array<{ requestId: string; reason: string }>;
     distributionSummary: Array<{ techId: string; countAssigned: number; totalActive: number }>;
   }> {
     try {
       console.log('[AutoAssign] Starting auto-assign for pending requests (internal technicians only)');
 
-      // 1. Get all internal technicians who are active and available
+      // 1. Get all INTERNAL technicians (regardless of status - all internal techs can take assignments)
       const allTechnicians = await storage.getAllTechnicians();
-      const internalTechs = allTechnicians.filter((tech: any) => {
-        // Exclude third-party technicians
-        return (!tech.type || tech.type !== 'thirdparty') && 
-               (tech.status === 'available' || tech.status === 'on_duty');
-      });
+      
+      console.log(`[AutoAssign] Total technicians in database: ${allTechnicians.length}`);
+      if (allTechnicians.length > 0) {
+        console.log(`[AutoAssign] Sample technician categories:`, 
+          allTechnicians.slice(0, 5).map((t: any) => ({ 
+            id: t.id, 
+            category: t.category || '(null)', 
+            status: t.status || '(null)' 
+          }))
+        );
+      }
+      
+      // First, try to find explicitly marked internal technicians
+      let internalTechs = allTechnicians
+        .filter((tech: any) => {
+          // Identify internal vs third-party using category field
+          const category = (tech.category || '').toLowerCase();
+          const isThirdParty = category === 'third-party' || category === 'thirdparty';
+          const isInternal = category === 'internal';
+          // Include ALL internal technicians regardless of status
+          return isInternal && !isThirdParty;
+        })
+        // Stable ordering so round-robin is deterministic
+        .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
 
-      console.log(`[AutoAssign] Internal techs considered:`, internalTechs.map((t: any) => ({ id: t.id, name: t.name || t.employeeCode })));
+      // Fallback: If no explicitly marked internal techs, treat all non-third-party techs as internal
+      if (internalTechs.length === 0) {
+        console.log('[AutoAssign] No explicitly marked internal technicians found. Using fallback: treating all non-third-party technicians as internal.');
+        internalTechs = allTechnicians
+          .filter((tech: any) => {
+            const category = (tech.category || '').toLowerCase();
+            const isThirdParty = category === 'third-party' || category === 'thirdparty';
+            // Exclude only third-party, include everything else (including null/undefined category)
+            return !isThirdParty;
+          })
+          .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+        console.log(`[AutoAssign] Fallback found ${internalTechs.length} technicians (non-third-party)`);
+      }
+
+      console.log(
+        `[AutoAssign] Internal techs considered (all statuses):`,
+        internalTechs.map((t: any) => ({ 
+          id: t.id, 
+          name: t.name || t.employeeCode,
+          status: t.status,
+          category: t.category || '(no category - treated as internal)'
+        }))
+      );
 
       if (internalTechs.length === 0) {
-        return {
-          success: false,
-          assigned: [],
-          skipped: [],
-          distributionSummary: [],
-        };
+        const err: any = new Error('No technicians available for assignment. Please ensure technicians exist in the database and are not marked as third-party.');
+        err.code = 'NO_INTERNAL_TECHNICIANS';
+        err.status = 400;
+        throw err;
       }
 
-      // 2. Get all unassigned pending/approved requests
+      if (!allTechnicians || allTechnicians.length === 0) {
+        const err: any = new Error('No technicians found in database');
+        err.code = 'NO_TECHNICIANS_FOUND';
+        err.status = 400;
+        throw err;
+      }
+
+      // 2. Get all unassigned requests in allowed statuses
       const allRequests = await storage.getAllServiceRequests();
-      const unassignedRequests = allRequests.filter((req: any) => {
+      if (!allRequests) {
+        const err: any = new Error('Failed to fetch service requests from database');
+        err.code = 'FETCH_REQUESTS_FAILED';
+        err.status = 500;
+        throw err;
+      }
+
+      // Use the same filter as getPendingServiceRequests: pending or scheduled, not completed/cancelled/in_progress
+      const allowedStatuses = new Set(['pending', 'scheduled']);
+      const excludedStatuses = new Set(['completed', 'cancelled', 'in_progress']);
+      let unassignedRequests = allRequests.filter((req: any) => {
+        if (!req || !req.id) return false;
         const status = (req.status || '').toLowerCase();
-        return (status === 'pending' || status === 'approved') && 
-               !req.assignedTechnicianId;
+        return (
+          !req.assignedTechnicianId &&
+          allowedStatuses.has(status) &&
+          !excludedStatuses.has(status) &&
+          !req.actualStartTime &&
+          !req.actualEndTime
+        );
       });
 
-      console.log(`[AutoAssign] Pending SRs:`, unassignedRequests.map((r: any) => ({ id: r.id, number: r.requestNumber })));
+      // Sort by requestedAt so distribution is fair but predictable
+      unassignedRequests = unassignedRequests.sort((a: any, b: any) => {
+        const aTime = a.requestedAt ? new Date(a.requestedAt).getTime() : 0;
+        const bTime = b.requestedAt ? new Date(b.requestedAt).getTime() : 0;
+        return aTime - bTime;
+      });
+
+      console.log(
+        `[AutoAssign] Unassigned SRs considered:`,
+        unassignedRequests.map((r: any) => ({ id: r.id, number: r.requestNumber, status: r.status }))
+      );
 
       if (unassignedRequests.length === 0) {
-        return {
-          success: true,
-          assigned: [],
-          skipped: [],
-          distributionSummary: []
-        };
+        const err: any = new Error('No unassigned service requests found. All requests are already assigned or in progress.');
+        err.code = 'NO_UNASSIGNED_SERVICE_REQUESTS';
+        err.status = 400;
+        throw err;
       }
 
-      // 3. Compute current load map from DB for internal techs
-      const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'];
-      const loadMap: Record<string, number> = {};
-      
-      for (const tech of internalTechs) {
-        const techId = tech.id;
-        const activeServices = await storage.getServiceRequestsByTechnician(techId, true);
-        loadMap[techId] = activeServices.length;
-      }
+      // 3. Initialize bucket tracking and today's date
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-      console.log(`[AutoAssign] Current load per tech:`, loadMap);
-
-      // 4. Assign each request to the technician with lowest current load
-      const assigned: Array<{ requestId: string; techId: string }> = [];
+      // 4. Round-robin assign each request with bucket capacity planning (3 jobs/day per tech)
+      const assigned: Array<{ requestId: string; techId: string; scheduledDate: string }> = [];
       const skipped: Array<{ requestId: string; reason: string }> = [];
       const assignmentsByTech: Record<string, number> = {}; // Track new assignments per tech
+      let techIndex = 0;
 
       for (const request of unassignedRequests) {
         try {
-          // Find technician with lowest load
-          let selectedTechId: string | null = null;
-          let minLoad = Infinity;
-
-          for (const tech of internalTechs) {
-            const techId = tech.id;
-            const currentLoad = loadMap[techId] || 0;
-            if (currentLoad < minLoad) {
-              minLoad = currentLoad;
-              selectedTechId = techId;
-            }
-          }
+          const selectedTech = internalTechs[techIndex];
+          const selectedTechId = selectedTech?.id;
 
           if (!selectedTechId) {
             skipped.push({
               requestId: request.id,
-              reason: 'No available technicians'
+              reason: 'No available technicians in round-robin pool',
             });
             continue;
           }
 
-          // Assign the request
-          const scheduledDate = request.scheduledDate ? new Date(request.scheduledDate) : new Date();
+          // Advance round-robin pointer for next iteration
+          techIndex = (techIndex + 1) % internalTechs.length;
+
+          // Find next available date for this technician (bucket capacity: 3 jobs/day)
+          const scheduledDate = await this.findNextAvailableDate(selectedTechId, today);
           const scheduledTimeWindow = request.scheduledTimeWindow || 'ASAP';
-          
-          // Update DB with assignment
+
+          // Update DB with assignment (including assignment audit fields)
           const { db } = await import('../db');
           const { serviceRequests } = await import('@shared/schema');
           const { eq } = await import('drizzle-orm');
-          
-          await db.update(serviceRequests)
+
+          await db
+            .update(serviceRequests)
             .set({
               assignedTechnicianId: selectedTechId,
+              assignedBy: 'AUTO',
+              assignedAt: new Date(),
               status: 'scheduled',
               scheduledDate: scheduledDate,
               scheduledTimeWindow: scheduledTimeWindow,
-            })
+            } as any)
             .where(eq(serviceRequests.id, request.id));
 
           // Update tracking
+          const dateStr = scheduledDate.toISOString().split('T')[0];
           assigned.push({
             requestId: request.id,
-            techId: selectedTechId
+            techId: selectedTechId,
+            scheduledDate: dateStr,
           });
-          
-          loadMap[selectedTechId] = (loadMap[selectedTechId] || 0) + 1; // Increment load for next assignment
+
           assignmentsByTech[selectedTechId] = (assignmentsByTech[selectedTechId] || 0) + 1;
+
+          console.log(
+            `[AutoAssign] Assigned ${request.requestNumber} to tech ${selectedTechId} on ${dateStr}`
+          );
 
           // Send WhatsApp notification
           try {
             const { customerCommunicationService } = await import('./whatsapp');
             await customerCommunicationService.notifyServiceRequestUpdate(request.id, 'assigned');
           } catch (notifError) {
-            console.error(`[AutoAssign] Failed to send WhatsApp notification for request ${request.id}:`, notifError);
+            console.error(
+              `[AutoAssign] Failed to send WhatsApp notification for request ${request.id}:`,
+              notifError
+            );
           }
-
         } catch (error: any) {
           console.error(`[AutoAssign] Error processing request ${request.id}:`, error);
           skipped.push({
             requestId: request.id,
-            reason: error.message || 'Processing failed'
+            reason: error.message || 'Processing failed',
           });
         }
       }
 
-      // 5. Build distribution summary
+      // 5. Compute final load map for summary (total active jobs per tech)
+      const loadMap: Record<string, number> = {};
+      for (const tech of internalTechs) {
+        const techId = tech.id;
+        const activeServices = await storage.getServiceRequestsByTechnician(techId, true);
+        loadMap[techId] = activeServices.filter((sr: any) => !sr.actualEndTime).length;
+      }
+
+      // 6. Build distribution summary
       const distributionSummary = internalTechs.map((tech: any) => {
         const techId = tech.id;
         const techName = tech.name || tech.employeeCode || techId;
         return {
           technicianId: techId,
+          techId: techId, // Keep both for compatibility
           name: techName,
           newAssignments: assignmentsByTech[techId] || 0,
-          totalActive: loadMap[techId] || 0
+          countAssigned: assignmentsByTech[techId] || 0, // Keep both for compatibility
+          totalActive: loadMap[techId] || 0,
         };
       });
 
@@ -591,16 +714,20 @@ export class SchedulerService {
         success: true,
         assigned,
         skipped,
-        distributionSummary: distributionSummary.map((s: any) => ({
-          techId: s.technicianId,
-          countAssigned: s.newAssignments,
-          totalActive: s.totalActive
-        }))
+        distributionSummary,
       };
 
     } catch (error: any) {
       console.error('[AutoAssign] Fatal error in smartAutoAssignPending:', error);
-      throw error;
+      // Re-throw with proper error structure if it already has code/status
+      if (error.code && error.status) {
+        throw error;
+      }
+      // Otherwise wrap in generic error
+      const wrappedError: any = new Error(error.message || 'Auto-assignment failed');
+      wrappedError.code = error.code || 'AUTO_ASSIGN_FAILED';
+      wrappedError.status = error.status || 500;
+      throw wrappedError;
     }
   }
   async generateDailySchedules(date: Date = new Date()) {

@@ -763,40 +763,111 @@ export default function TechnicianProfile() {
                 
                 return assigned.length > 0 ? (
                   <div className="space-y-3">
-                    {assigned.map((r: any) => (
-                      <Link key={r.id} href={`/service-requests/${r.id}`}>
-                        <div className="rounded-md border p-3 hover:bg-accent hover:border-primary transition-colors cursor-pointer">
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="font-medium text-primary hover:underline">SR #{r.requestNumber}</div>
-                            <Badge className={
-                              r.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                              r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                              r.status === 'pending' ? 'bg-orange-100 text-orange-800' :
-                              r.status === 'approved' ? 'bg-green-100 text-green-800' :
-                              r.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
-                              r.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                              'bg-gray-100 text-gray-800'
-                            }>
-                              {r.status}
-                            </Badge>
-                          </div>
-                          <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
-                          {r.status === 'in_progress' && r.actualStartTime && (
-                            <div className="mt-2">
-                              <ElapsedTime startTime={r.actualStartTime} />
+                    {assigned.map((r: any) => {
+                      // Check if this is a PM Travel task
+                      const isPMTravel = r.excelData?.techBookingSource === 'auto_pm_travel' || 
+                                        r.excelData?.purpose === 'PM' ||
+                                        (r.issueDescription?.toLowerCase().includes('preventive maintenance') && r.excelData?.travelTripId);
+                      const bookingStatus = r.excelData?.bookingStatus;
+                      const isReadOnly = isPMTravel; // PM Travel tasks are read-only
+                      
+                      return (
+                        <div key={r.id} className={`rounded-md border p-3 ${isReadOnly ? 'bg-muted/30' : 'hover:bg-accent hover:border-primary transition-colors'} ${isReadOnly ? '' : 'cursor-pointer'}`}>
+                          {!isReadOnly ? (
+                            <Link href={`/service-requests/${r.id}`}>
+                              <div>
+                                <div className="flex items-center justify-between text-sm">
+                                  <div className="font-medium text-primary hover:underline">SR #{r.requestNumber}</div>
+                                  <div className="flex items-center gap-2">
+                                    {isPMTravel && (
+                                      <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-400/30">
+                                        PM
+                                      </Badge>
+                                    )}
+                                    {bookingStatus === 'confirmed' && (
+                                      <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-400/30">
+                                        Confirmed
+                                      </Badge>
+                                    )}
+                                    <Badge className={
+                                      r.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                                      r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                                      r.status === 'pending' ? 'bg-orange-100 text-orange-800' :
+                                      r.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                      r.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                                      r.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                      'bg-gray-100 text-gray-800'
+                                    }>
+                                      {r.status}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
+                                {r.status === 'in_progress' && r.actualStartTime && (
+                                  <div className="mt-2">
+                                    <ElapsedTime startTime={r.actualStartTime} />
+                                  </div>
+                                )}
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {r.scheduledDate && `Scheduled: ${formatDate(r.scheduledDate)}`}
+                                  {r.scheduledTimeWindow && ` (${r.scheduledTimeWindow})`}
+                                  {!r.scheduledDate && <span className="text-orange-600">Not yet scheduled</span>}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  Priority: {r.priority} | Container: {r.container?.containerCode || r.containerId}
+                                </div>
+                              </div>
+                            </Link>
+                          ) : (
+                            <div>
+                              <div className="flex items-center justify-between text-sm">
+                                <div className="font-medium">SR #{r.requestNumber}</div>
+                                <div className="flex items-center gap-2">
+                                  {isPMTravel && (
+                                    <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-400/30">
+                                      PM
+                                    </Badge>
+                                  )}
+                                  {bookingStatus === 'confirmed' && (
+                                    <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-400/30">
+                                      Confirmed
+                                    </Badge>
+                                  )}
+                                  <Badge className={
+                                    r.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                                    r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                                    r.status === 'pending' ? 'bg-orange-100 text-orange-800' :
+                                    r.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                    r.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                                    r.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }>
+                                    {r.status}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
+                              {r.status === 'in_progress' && r.actualStartTime && (
+                                <div className="mt-2">
+                                  <ElapsedTime startTime={r.actualStartTime} />
+                                </div>
+                              )}
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {r.scheduledDate && `Scheduled: ${formatDate(r.scheduledDate)}`}
+                                {r.scheduledTimeWindow && ` (${r.scheduledTimeWindow})`}
+                                {!r.scheduledDate && <span className="text-orange-600">Not yet scheduled</span>}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Priority: {r.priority} | Container: {r.container?.containerCode || r.containerId}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1 italic">
+                                PM Travel Task - Read Only
+                              </div>
                             </div>
                           )}
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {r.scheduledDate && `Scheduled: ${formatDate(r.scheduledDate)}`}
-                            {r.scheduledTimeWindow && ` (${r.scheduledTimeWindow})`}
-                            {!r.scheduledDate && <span className="text-orange-600">Not yet scheduled</span>}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Priority: {r.priority} | Container: {r.container?.containerCode || r.containerId}
-                          </div>
                         </div>
-                      </Link>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="space-y-2">

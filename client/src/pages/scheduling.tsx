@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -11,8 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { getCurrentUser } from "@/lib/auth";
+import { websocket } from "@/lib/websocket";
 import {
   Calendar,
   Clock,
@@ -96,6 +99,16 @@ export default function Scheduling() {
   );
   const [activeTab, setActiveTab] = useState("daily");
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [pmAlert, setPmAlert] = useState<{
+    containerId: string;
+    containerCode: string;
+    daysSinceLastPM: number;
+    serviceRequestId: string;
+    requestNumber: string;
+    message: string;
+    action: string;
+  } | null>(null);
+  const [showPmDialog, setShowPmDialog] = useState(false);
 
   const { data: serviceRequests, isLoading } = useQuery({
     queryKey: ["/api/service-requests"],
@@ -129,9 +142,21 @@ export default function Scheduling() {
       try {
         const res = await apiRequest("GET", "/api/containers/cities");
         if (!res.ok) throw new Error("Failed to fetch cities");
-        return await res.json();
+        const data = await res.json();
+        // Ensure data is in the expected format: array of { name: string }
+        return Array.isArray(data) ? data.map((item: any) => 
+          typeof item === 'string' ? { name: item } : item
+        ) : [];
       } catch {
-        return ["Chennai", "Mumbai", "Delhi", "Bengaluru", "Hyderabad", "Pune", "Kolkata"];
+        return [
+          { name: "Chennai" },
+          { name: "Mumbai" },
+          { name: "Delhi" },
+          { name: "Bengaluru" },
+          { name: "Hyderabad" },
+          { name: "Pune" },
+          { name: "Kolkata" }
+        ];
       }
     },
     enabled: activeTab === "travel",
@@ -139,6 +164,21 @@ export default function Scheduling() {
 
   const [autoPlanParams, setAutoPlanParams] = useState<AutoPlanFormPayload | null>(null);
   const [autoPlanData, setAutoPlanData] = useState<AutoPlanResult | null>(null);
+  const [pmPlanData, setPmPlanData] = useState<{
+    techId: string;
+    city: string;
+    range: { start: string; end: string };
+    pmCount: number;
+    dailyPlan: Array<{ date: string; tasks: Array<{ id: string; type: string; containerId: string; siteName?: string; serviceRequestId?: string | null }> }>;
+    costs?: {
+      travelFare?: { value: number | string };
+      stayCost?: { value: number | string };
+      dailyAllowance?: { value: number | string };
+      localTravelCost?: { value: number | string };
+      miscCost?: { value: number | string };
+      totalEstimatedCost?: number | string;
+    };
+  } | null>(null);
   const [costDraft, setCostDraft] = useState<CostState | null>(null);
   const [taskDraft, setTaskDraft] = useState<TaskDraft[]>([]);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState<string | null>(null);
@@ -147,36 +187,91 @@ export default function Scheduling() {
 
   const autoPlanMutation = useMutation({
     mutationFn: async (payload: AutoPlanFormPayload) => {
-      const res = await apiRequest("POST", "/api/travel/auto-plan", payload);
+      // Use new PM-first endpoint
+      const res = await apiRequest("POST", "/api/scheduling/plan-trip", {
+        city: payload.destinationCity,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        technicianId: payload.technicianId,
+      });
       if (!res.ok) {
-        const message = await res.text();
-        throw new Error(message || "Failed to auto-plan travel");
+        const errorText = await res.text();
+        let errorMessage = "Failed to auto-plan travel";
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorJson.details || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
       return await res.json();
     },
     onSuccess: (data, variables) => {
       setAutoPlanParams(variables);
-      setAutoPlanData(data);
-      setCostDraft(data.costs);
-      setTaskDraft(data.tasks);
-      setSelectedTechnicianId(
-        data.technician?.id ||
-          variables.technicianId ||
-          data.technicianSuggestions?.find((s: any) => s.available)?.id ||
-          data.technicianSuggestions?.[0]?.id ||
-          null
-      );
+      setPmPlanData(data);
+      setSelectedTechnicianId(data.techId || variables.technicianId || null);
       setPlanPurpose("pm");
       setPlanNotes("");
       toast({
         title: "Auto plan ready",
-        description: "Review the technician, costs, and tasks before saving the trip.",
+        description: `Found ${data.pmCount} PM tasks. Review and confirm to send to technician.`,
       });
     },
     onError: (error: any) => {
       toast({
         title: "Auto plan failed",
         description: error?.message || "Unable to auto-plan travel. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const confirmTripMutation = useMutation({
+    mutationFn: async () => {
+      if (!pmPlanData || !pmPlanData.techId) {
+        throw new Error("Plan not ready");
+      }
+      const res = await apiRequest("POST", "/api/scheduling/confirm-trip", {
+        techId: pmPlanData.techId,
+        plan: pmPlanData,
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        let errorMessage = "Failed to confirm trip";
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorJson.details || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Trip confirmed and sent to technician!",
+        description: `PM trip assigned with ${data.scheduledPMRequests?.length || pmPlanData?.pmCount || 0} PM tasks.`,
+      });
+      setPmPlanData(null);
+      setAutoPlanParams(null);
+      setSelectedTechnicianId(null);
+      // Refresh queries to update technician views immediately
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduling/travel/trips"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/assigned-services-summary"] });
+      if (pmPlanData?.techId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", pmPlanData.techId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to confirm trip",
+        description: error?.message || "Unable to confirm and send trip.",
         variant: "destructive",
       });
     },
@@ -263,6 +358,12 @@ export default function Scheduling() {
   const runOptimization = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/scheduling/run");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to run auto-assignment" }));
+        const error: any = new Error(errorData.error || "Failed to run auto-assignment");
+        error.response = { data: errorData };
+        throw error;
+      }
       return await response.json();
     },
     onSuccess: (data) => {
@@ -277,12 +378,16 @@ export default function Scheduling() {
       
       if (assignedCount > 0) {
         // Show success notification with distribution summary
-        const distributionInfo = data?.distributionSummary?.length > 0
-          ? `\nDistribution: ${data.distributionSummary.map((d: any) => `${d.countAssigned} to tech ${d.techId.slice(0, 8)}`).join(', ')}`
+        const distributionInfo = data?.distributionSummary?.length > 0 || data?.byTechnician?.length > 0
+          ? `\nDistribution: ${(data.distributionSummary || data.byTechnician || []).map((d: any) => {
+              const count = d.newAssignments || d.countAssigned || 0;
+              const name = d.name || d.technicianId?.slice(0, 8) || d.techId?.slice(0, 8) || 'tech';
+              return count > 0 ? `${count} to ${name}` : null;
+            }).filter(Boolean).join(', ')}`
           : '';
         
         toast({
-          title: "Auto-Assignment Complete",
+          title: "Successfully auto-assigned requests.",
           description: `Assigned ${assignedCount} request${assignedCount === 1 ? '' : 's'}${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}${distributionInfo}`,
         });
       } else if (totalCount > 0) {
@@ -301,10 +406,17 @@ export default function Scheduling() {
         });
       }
     },
-    onError: () => {
+    onError: (error: any) => {
+      const errorMessage = error?.response?.data?.error || error?.message || "Failed to run auto-assignment";
+      const errorCode = error?.response?.data?.code;
+      
       toast({
         title: "Auto-Scheduling Failed",
-        description: "Failed to run auto-assignment",
+        description: errorCode === 'NO_INTERNAL_TECHNICIANS' 
+          ? "No internal technicians available. Please ensure technicians have category = 'internal' and are available."
+          : errorCode === 'NO_UNASSIGNED_SERVICE_REQUESTS'
+          ? "No unassigned requests found. All requests are already assigned."
+          : errorMessage,
         variant: "destructive",
       });
     },
@@ -333,6 +445,90 @@ export default function Scheduling() {
   const handleRunOptimization = () => {
     // Run immediately without confirmation
     runOptimization.mutate();
+  };
+
+  // Manual PM check mutation
+  const runPMCheck = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/pm/check");
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "PM Check Completed",
+        description: data.message || `Found ${data.count || 0} container(s) needing preventive maintenance`,
+        variant: data.count > 0 ? "default" : "default",
+      });
+      // Refresh service requests to show any new PM tickets
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "PM Check Failed",
+        description: error?.message || "Failed to run preventive maintenance check",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Listen for PM alerts via WebSocket
+  useEffect(() => {
+    if (!canSchedule) return; // Only admins/coordinators see PM alerts
+
+    const handlePMAlert = (data: any) => {
+      console.log('[Scheduling] Received PM alert:', data);
+      setPmAlert({
+        containerId: data.containerId,
+        containerCode: data.containerCode,
+        daysSinceLastPM: data.daysSinceLastPM,
+        serviceRequestId: data.serviceRequestId,
+        requestNumber: data.requestNumber,
+        message: data.message || `⚠️ MAINTENANCE ALERT: Container ${data.containerCode} has reached its 90-day limit.`,
+        action: data.action || "Move to Maintenance Bay",
+      });
+      setShowPmDialog(true);
+      
+      // Show toast notification
+      toast({
+        title: "Preventive Maintenance Alert",
+        description: `Container ${data.containerCode} needs preventive maintenance`,
+        variant: "destructive",
+      });
+
+      // Refresh service requests to show the new PM ticket
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
+    };
+
+    websocket.on("pm_alert", handlePMAlert);
+
+    return () => {
+      websocket.off("pm_alert", handlePMAlert);
+    };
+  }, [canSchedule, queryClient, toast]);
+
+  // Handle PM alert acknowledgment
+  const handlePmAcknowledged = async () => {
+    if (!pmAlert) return;
+
+    try {
+      // Optionally update container location to "Maintenance" if needed
+      // For now, just close the dialog and refresh data
+      setShowPmDialog(false);
+      setPmAlert(null);
+      
+      // Refresh service requests
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
+      
+      toast({
+        title: "PM Alert Acknowledged",
+        description: `Service request ${pmAlert.requestNumber} has been created for Container ${pmAlert.containerCode}`,
+      });
+    } catch (error) {
+      console.error("Error acknowledging PM alert:", error);
+    }
   };
 
   // Filter service requests by selected date and group by technician
@@ -421,6 +617,7 @@ export default function Scheduling() {
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
                     className="px-3 py-2 input-soft rounded-lg text-sm"
+                    title="Select date to view schedule"
                   />
                   {canSchedule && (
                     <>
@@ -428,6 +625,7 @@ export default function Scheduling() {
                         onClick={handleRunOptimization}
                         disabled={runOptimization.isPending}
                         className="gap-2"
+                        title="Auto-assign all pending requests (dates determined automatically)"
                       >
                         <Sparkles className="h-4 w-4" />
                         {runOptimization.isPending ? "Auto-Assigning..." : "Auto-Assign Pending"}
@@ -440,6 +638,16 @@ export default function Scheduling() {
                       >
                         <RefreshCw className="h-4 w-4" />
                         {sendSchedules.isPending ? "Sending..." : "Send Schedules"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => runPMCheck.mutate()}
+                        disabled={runPMCheck.isPending}
+                        className="gap-2"
+                        title="Check for containers needing preventive maintenance (90+ days since last PM)"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                        {runPMCheck.isPending ? "Checking..." : "Check PM"}
                       </Button>
                     </>
                   )}
@@ -651,11 +859,135 @@ export default function Scheduling() {
                 />
               )}
 
-              {!autoPlanData && !autoPlanMutation.isPending && !autoPlanMutation.isError && (
+              {!pmPlanData && !autoPlanMutation.isPending && !autoPlanMutation.isError && (
                 <Card>
                   <CardContent className="p-6 text-sm text-muted-foreground">
-                    Run the auto planner above to see technician recommendations, estimated costs, and PM tasks.
-                    The UI will always show the latest result, along with alerts if something is missing.
+                    Run the auto planner above to see PM tasks and daily schedule.
+                    The system will automatically prioritize PM tasks and distribute them across travel days.
+                  </CardContent>
+                </Card>
+              )}
+
+              {pmPlanData && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span>Planned Trip</span>
+                      <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-400/30">
+                        {pmPlanData.pmCount} PM Tasks
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-muted-foreground">City</Label>
+                        <p className="font-medium">{pmPlanData.city}</p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground">Technician</Label>
+                        <p className="font-medium">
+                          {technicians?.find((t: any) => t.id === pmPlanData.techId)?.name || 
+                           technicians?.find((t: any) => t.id === pmPlanData.techId)?.employeeCode || 
+                           "Selected Technician"}
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground">Start Date</Label>
+                        <p className="font-medium">
+                          {new Date(pmPlanData.range.start).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground">End Date</Label>
+                        <p className="font-medium">
+                          {new Date(pmPlanData.range.end).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+
+                    {(pmPlanData as any).costs && (
+                      <div className="mt-4 border rounded-lg p-4 bg-muted/50">
+                        <Label className="text-muted-foreground mb-3 block">Cost Breakdown</Label>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Travel Fare:</span>
+                            <p className="font-medium">₹{Number((pmPlanData as any).costs.travelFare?.value || 0).toLocaleString('en-IN')}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Stay Cost:</span>
+                            <p className="font-medium">₹{Number((pmPlanData as any).costs.stayCost?.value || 0).toLocaleString('en-IN')}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Daily Allowance:</span>
+                            <p className="font-medium">₹{Number((pmPlanData as any).costs.dailyAllowance?.value || 0).toLocaleString('en-IN')}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Local Travel:</span>
+                            <p className="font-medium">₹{Number((pmPlanData as any).costs.localTravelCost?.value || 0).toLocaleString('en-IN')}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Miscellaneous:</span>
+                            <p className="font-medium">₹{Number((pmPlanData as any).costs.miscCost?.value || 0).toLocaleString('en-IN')}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Total Estimated Cost:</span>
+                            <p className="font-bold text-lg">₹{Number((pmPlanData as any).costs.totalEstimatedCost || 0).toLocaleString('en-IN')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4">
+                      <Label className="text-muted-foreground mb-2 block">Daily Schedule</Label>
+                      <div className="space-y-2">
+                        {pmPlanData.dailyPlan.map((day, idx) => (
+                          <div key={idx} className="border rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium">
+                                {new Date(day.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                              </span>
+                              <Badge variant="outline">{day.tasks.length} tasks</Badge>
+                            </div>
+                            <div className="space-y-1">
+                              {day.tasks.map((task, taskIdx) => (
+                                <div key={taskIdx} className="flex items-center gap-2 text-sm">
+                                  <Badge 
+                                    variant={task.type === 'PM' ? 'default' : 'secondary'}
+                                    className={task.type === 'PM' ? 'bg-orange-500/20 text-orange-400 border-orange-400/30' : ''}
+                                  >
+                                    {task.type === 'PM' ? '🛠 Preventive Maintenance' : 'BREAKDOWN'}
+                                  </Badge>
+                                  <span className="text-muted-foreground">
+                                    {task.siteName || `Container ${task.containerId.substring(0, 8)}`}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-4">
+                      <Button
+                        onClick={() => confirmTripMutation.mutate()}
+                        disabled={confirmTripMutation.isPending}
+                        className="flex-1 gap-2"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        {confirmTripMutation.isPending ? "Confirming..." : "Confirm & Send"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setPmPlanData(null);
+                          setAutoPlanParams(null);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}
@@ -889,6 +1221,61 @@ export default function Scheduling() {
               }}
             />
           )}
+
+          {/* PM Alert Dialog */}
+          <Dialog open={showPmDialog} onOpenChange={setShowPmDialog}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-orange-500" />
+                  Preventive Maintenance Alert
+                </DialogTitle>
+                <DialogDescription>
+                  {pmAlert?.message || "A container requires preventive maintenance"}
+                </DialogDescription>
+              </DialogHeader>
+              {pmAlert && (
+                <div className="space-y-4 py-4">
+                  <div className="rounded-lg border p-4 bg-orange-50 dark:bg-orange-950/20">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">Container:</span>
+                        <span className="font-bold">{pmAlert.containerCode}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">Days Since Last PM:</span>
+                        <Badge variant="destructive">{pmAlert.daysSinceLastPM} days</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">Service Request:</span>
+                        <span className="text-sm font-mono">{pmAlert.requestNumber}</span>
+                      </div>
+                      <div className="mt-3 pt-3 border-t">
+                        <p className="text-sm text-muted-foreground">
+                          <strong>Required Action:</strong> {pmAlert.action}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowPmDialog(false);
+                    setPmAlert(null);
+                  }}
+                >
+                  Close
+                </Button>
+                <Button onClick={handlePmAcknowledged}>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Acknowledge
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </main>
     </div>

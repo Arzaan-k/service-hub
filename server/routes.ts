@@ -625,6 +625,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get list of unique cities from containers
+  app.get("/api/containers/cities", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { db } = await import('./db');
+      const { containers } = await import('@shared/schema');
+      const { sql } = await import('drizzle-orm');
+      
+      // Query distinct cities from containers using multiple sources
+      // Extract from: currentLocation->>'city', depot (first part before comma), or currentLocation->>'address' parsing
+      const city_rows = await db.execute(sql`
+        SELECT DISTINCT 
+          COALESCE(
+            NULLIF(TRIM(c.current_location->>'city'), ''),
+            NULLIF(TRIM(SPLIT_PART(c.depot, ',', 1)), ''),
+            NULLIF(TRIM(REGEXP_REPLACE(c.depot, '^([^,]+).*', '\\1')), '')
+          ) AS city_name
+        FROM containers c
+        WHERE COALESCE(
+          NULLIF(TRIM(c.current_location->>'city'), ''),
+          NULLIF(TRIM(SPLIT_PART(c.depot, ',', 1)), ''),
+          NULLIF(TRIM(REGEXP_REPLACE(c.depot, '^([^,]+).*', '\\1')), '')
+        ) IS NOT NULL
+        AND COALESCE(
+          NULLIF(TRIM(c.current_location->>'city'), ''),
+          NULLIF(TRIM(SPLIT_PART(c.depot, ',', 1)), ''),
+          NULLIF(TRIM(REGEXP_REPLACE(c.depot, '^([^,]+).*', '\\1')), '')
+        ) != ''
+        LIMIT 100
+      `);
+      
+      // Extract unique city names, filter out empty/null values and company names
+      const cities_set = new Set<string>();
+      const exclude_patterns = /^(Ajinomoto|Ola Cell|Company|Customer|Corporation|Limited|Ltd|Pvt|Private|Inc)/i;
+      
+      for (const row of city_rows.rows) {
+        const city = (row as any).city_name?.trim();
+        if (city && city.length > 0 && !exclude_patterns.test(city) && city.length < 50) {
+          cities_set.add(city);
+        }
+      }
+      
+      // Convert to array of objects with name property, sorted alphabetically
+      const cities_list = Array.from(cities_set)
+        .sort((a, b) => a.localeCompare(b))
+        .map(city => ({ name: city }));
+      
+      // Return in the expected format
+      res.json(cities_list.length > 0 ? cities_list : [
+        { name: "Chennai" },
+        { name: "Mumbai" },
+        { name: "Delhi" },
+        { name: "Bengaluru" },
+        { name: "Hyderabad" },
+        { name: "Pune" },
+        { name: "Kolkata" }
+      ]);
+    } catch (error: any) {
+      console.error("[API] Error fetching cities:", error);
+      // Return fallback cities on error
+      res.json([
+        { name: "Chennai" },
+        { name: "Mumbai" },
+        { name: "Delhi" },
+        { name: "Bengaluru" },
+        { name: "Hyderabad" },
+        { name: "Pune" },
+        { name: "Kolkata" }
+      ]);
+    }
+  });
+
   app.get("/api/containers/:id", authenticateUser, async (req, res) => {
     try {
       const container = await storage.getContainer(req.params.id);
@@ -911,12 +982,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Service Request routes - specific routes first
-  app.get("/api/service-requests/pending", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
+  app.get("/api/service-requests/pending", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
       const requests = await storage.getPendingServiceRequests();
-      res.json(requests);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch pending requests" });
+      
+      // Normalize output with additional fields
+      const normalized = (Array.isArray(requests) ? requests : []).map((r: any) => {
+        const status = (r.status || '').toLowerCase();
+        const issueDesc = (r.issueDescription || '').toLowerCase();
+        const isPM = issueDesc.includes('preventive maintenance') || 
+                    issueDesc.includes('pm') ||
+                    (r.excelData as any)?.purpose === 'PM' ||
+                    (r.excelData as any)?.techBookingSource === 'auto_pm_travel';
+        
+        // Check if it's a third-party request (exclude from auto-assign)
+        const isThirdParty = (r.excelData as any)?.thirdPartyTechnicianId || false;
+        const canAutoAssign = !isThirdParty && 
+                             status !== 'cancelled' && 
+                             status !== 'in_progress' &&
+                             status !== 'completed' &&
+                             !r.assignedTechnicianId;
+        
+        return {
+          ...r,
+          status: status,
+          isPM: isPM,
+          canAutoAssign: canAutoAssign,
+        };
+      });
+      
+      res.json(normalized);
+    } catch (error: any) {
+      console.error("[API] Error fetching pending service requests:", error);
+      console.error("[API] Error stack:", error?.stack);
+      res.status(500).json({ 
+        error: "Failed to fetch pending requests", 
+        details: error?.message || String(error),
+        ...(process.env.NODE_ENV === 'development' && { stack: error?.stack })
+      });
     }
   });
 
@@ -3336,6 +3439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { schedulerService } = await import('./services/scheduler');
 
       // Use smart auto-assign for internal technicians
+      // The scheduler now has built-in fallback logic, so this should work
       const result = await schedulerService.smartAutoAssignPending();
 
       console.log(`[API] Smart auto-assign complete: ${result.assigned.length} assigned, ${result.skipped.length} skipped`);
@@ -3356,12 +3460,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get technicians to map IDs to names
       const allTechnicians = await storage.getAllTechnicians();
       const byTechnician = result.distributionSummary.map((s: any) => {
-        const tech = allTechnicians.find((t: any) => t.id === s.techId);
+        const tech = allTechnicians.find((t: any) => t.id === s.technicianId || t.id === s.techId);
         return {
-          technicianId: s.techId,
-          name: tech?.name || tech?.employeeCode || s.techId,
-          newAssignments: s.countAssigned,
-          totalActive: s.totalActive
+          technicianId: s.technicianId || s.techId,
+          name: tech?.name || tech?.employeeCode || s.name || s.technicianId || s.techId,
+          newAssignments: s.newAssignments || s.countAssigned || 0,
+          totalActive: s.totalActive || 0
         };
       });
 
@@ -3369,9 +3473,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: result.success,
         assignedCount: result.assigned.length,
         byTechnician: byTechnician,
+        distributionSummary: result.distributionSummary, // Keep for backward compatibility
         assigned: result.assigned,
         skipped: result.skipped,
-        distributionSummary: result.distributionSummary, // Keep for backward compatibility
         message: result.success 
           ? `Successfully assigned ${result.assigned.length} requests${result.skipped.length > 0 ? `, ${result.skipped.length} skipped` : ''}`
           : "Auto-assignment failed"
@@ -3379,10 +3483,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('[API] Auto-assignment error:', error);
       console.error('[API] Error stack:', error?.stack);
-      res.status(500).json({ 
-        error: "Failed to run auto-assignment", 
+
+      // Surface known scheduler business-rule errors as 400 with specific codes
+      if (error?.status === 400 && error?.code) {
+        return res.status(400).json({
+          error: error.message || "Auto-assignment validation error",
+          code: error.code,
+        });
+      }
+
+      res.status(500).json({
+        error: "Failed to run auto-assignment",
         details: error?.message || String(error),
         stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      });
+    }
+  });
+
+  // Preventive Maintenance endpoints
+  app.post("/api/pm/check", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+    try {
+      console.log('[API] Manual PM check requested');
+      const { runPMCheckAndNotify } = await import('./services/preventive-maintenance');
+      const result = await runPMCheckAndNotify();
+      
+      res.json({
+        success: true,
+        message: `PM check completed. Found ${result.count} container(s) needing preventive maintenance.`,
+        alerts: result.alerts,
+        count: result.count,
+      });
+    } catch (error: any) {
+      console.error('[API] PM check error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to run PM check",
+        details: error?.message || String(error),
+      });
+    }
+  });
+
+  // Temporary endpoint to fix technician data (set category = 'internal' and status = 'active')
+  // This is a one-time fix endpoint - can be removed after use
+  app.post("/api/fix-technician-data", authenticateUser, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      console.log('[API] Fix technician data request received');
+      
+      const { db } = await import('./db');
+      const { technicians } = await import('@shared/schema');
+      const { sql } = await import('drizzle-orm');
+
+      // First, get count of all technicians
+      const allTechs = await db.select().from(technicians);
+      const totalCount = allTechs.length;
+
+      if (totalCount === 0) {
+        return res.status(404).json({
+          success: false,
+          error: "No technicians found in database",
+          updated: 0,
+          total: 0
+        });
+      }
+
+      // Update all technicians to set category = 'internal' and status = 'active'
+      // Using raw SQL to handle the category field which might not be in the schema
+      // Note: This uses parameterized query to prevent SQL injection
+      await db.execute(sql`
+        UPDATE technicians
+        SET category = 'internal', status = 'active'
+        WHERE id IS NOT NULL
+      `);
+
+      // Verify the update by checking updated technicians
+      const updatedTechs = await db.select().from(technicians);
+      const updatedCount = updatedTechs.length;
+
+      console.log(`[API] Fixed technician data: ${updatedCount} technicians updated`);
+
+      res.json({
+        success: true,
+        message: `Successfully updated ${updatedCount} technician(s) to category = 'internal' and status = 'active'`,
+        updated: updatedCount,
+        total: totalCount
+      });
+    } catch (error: any) {
+      console.error('[API] Fix technician data error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fix technician data",
+        details: error?.message || String(error),
+        updated: 0,
+        total: 0
       });
     }
   });
@@ -3638,6 +3830,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Start scheduler
   startScheduler();
+
+  // Start Preventive Maintenance checker (runs daily at midnight)
+  (async () => {
+    try {
+      const { startPMChecker } = await import('./services/preventive-maintenance');
+      startPMChecker();
+    } catch (error) {
+      console.error('[Routes] Failed to start PM checker:', error);
+    }
+  })();
 
   // Customer routes
   app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
@@ -3976,6 +4178,436 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/scheduling/plan-trip - New PM-first travel planning endpoint
+  app.post("/api/scheduling/plan-trip", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { city, startDate, endDate, technicianId } = req.body;
+      
+      if (!city || !startDate || !endDate) {
+        return res.status(400).json({ error: "city, startDate, endDate are required" });
+      }
+
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return res.status(400).json({ error: "Invalid date format" });
+      }
+      if (end < start) {
+        return res.status(400).json({ error: "endDate must be after startDate" });
+      }
+
+      // Get all technicians
+      const allTechnicians = await storage.getAllTechnicians();
+      
+      // If technicianId is provided, try to use that specific technician
+      let selectedTechnician = null;
+      if (technicianId) {
+        selectedTechnician = allTechnicians.find((t: any) => t.id === technicianId);
+        if (!selectedTechnician) {
+          return res.status(400).json({ error: `Technician with ID ${technicianId} not found` });
+        }
+      } else {
+        // Auto-select: prefer internal technicians, but fall back to any available
+        const internalTechnicians = allTechnicians.filter((t: any) => 
+          (t.category?.toLowerCase() === 'internal' || !t.category) && 
+          ['available', 'active', 'idle', 'on_duty'].includes(t.status?.toLowerCase())
+        );
+        
+        if (internalTechnicians.length > 0) {
+          selectedTechnician = internalTechnicians[0];
+        } else {
+          // Fallback: use any technician with active status
+          const availableTechnicians = allTechnicians.filter((t: any) => 
+            ['available', 'active', 'idle', 'on_duty'].includes(t.status?.toLowerCase())
+          );
+          
+          if (availableTechnicians.length === 0) {
+            return res.status(400).json({ 
+              error: "No available technicians found. Please ensure technicians are marked as 'available', 'active', 'idle', or 'on_duty'." 
+            });
+          }
+          
+          selectedTechnician = availableTechnicians[0];
+        }
+      }
+
+      if (!selectedTechnician) {
+        return res.status(400).json({ error: "Unable to select a technician" });
+      }
+
+      // Auto-calculate cost breakdown
+      const { calculateCostEstimates } = await import('./services/travel-planning');
+      const costEstimates = await calculateCostEstimates(selectedTechnician, city, start, end);
+      
+      // Format costs in the expected structure
+      const costs = {
+        travelFare: costEstimates.travelFare,
+        stayCost: costEstimates.stayCost,
+        dailyAllowance: costEstimates.dailyAllowance,
+        localTravelCost: costEstimates.localTravelCost,
+        miscellaneous: costEstimates.miscellaneous,
+        totalCost: costEstimates.totalCost,
+        // Keep backward compatibility
+        breakdown: costEstimates.breakdown,
+        totalEstimatedCost: costEstimates.totalEstimatedCost,
+        currency: costEstimates.currency,
+      };
+
+      // Get PM-due containers and other tasks for the city
+      let allTasks: any[] = [];
+      try {
+        const { collectCityTaskCandidates } = await import('./services/travel-planning');
+        allTasks = await collectCityTaskCandidates(city, start, end);
+      } catch (taskError: any) {
+        console.error("[API] Error collecting city task candidates:", taskError);
+        // Continue with empty tasks array rather than failing completely
+        allTasks = [];
+      }
+
+      // Separate PM tasks from breakdown tasks
+      const pmTasks = allTasks.filter(t => t.taskType === 'pm');
+      const breakdownTasks = allTasks.filter(t => t.taskType !== 'pm');
+
+      // Sort PM tasks by priority (CRITICAL first)
+      pmTasks.sort((a, b) => {
+        const priorityOrder: Record<string, number> = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
+        return (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99);
+      });
+
+      // Combine: PM first, then breakdown
+      const prioritizedTasks = [...pmTasks, ...breakdownTasks];
+
+      // Distribute tasks across days (max 3 per day)
+      const dailyPlan: Array<{ date: string; tasks: Array<{ id: string; type: string; containerId: string; siteName?: string; serviceRequestId?: string }> }> = [];
+      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      let currentDate = new Date(start);
+      let taskIndex = 0;
+
+      for (let day = 0; day <= daysDiff && taskIndex < prioritizedTasks.length; day++) {
+        const dateKey = currentDate.toISOString().split('T')[0];
+        const dayTasks: Array<{ id: string; type: string; containerId: string; siteName?: string; serviceRequestId?: string }> = [];
+
+        // Add up to 3 tasks per day
+        for (let i = 0; i < 3 && taskIndex < prioritizedTasks.length; i++) {
+          const task = prioritizedTasks[taskIndex];
+          dayTasks.push({
+            id: task.serviceRequestId || task.alertId || `task-${task.containerId}-${day}-${i}`,
+            type: task.taskType === 'pm' ? 'PM' : 'BREAKDOWN',
+            containerId: task.containerId,
+            siteName: task.siteName,
+            serviceRequestId: task.serviceRequestId || null,
+          });
+          taskIndex++;
+        }
+
+        if (dayTasks.length > 0) {
+          dailyPlan.push({ date: dateKey, tasks: dayTasks });
+        }
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      res.json({
+        techId: selectedTechnician.id,
+        city: city,
+        range: {
+          start: start.toISOString(),
+          end: end.toISOString(),
+        },
+        pmCount: pmTasks.length,
+        dailyPlan: dailyPlan,
+        costs: costs, // Auto-calculated costs
+      });
+    } catch (error: any) {
+      console.error("[API] Error in plan-trip:", error);
+      console.error("[API] Error stack:", error?.stack);
+      const errorMessage = error?.message || String(error);
+      res.status(500).json({ 
+        error: "Failed to auto-plan travel", 
+        details: errorMessage,
+        // Include more context for debugging
+        ...(process.env.NODE_ENV === 'development' && { stack: error?.stack })
+      });
+    }
+  });
+
+  // POST /api/scheduling/confirm-trip - Confirm trip and assign PM tasks
+  app.post("/api/scheduling/confirm-trip", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { techId, plan } = req.body;
+
+      if (!techId || !plan) {
+        return res.status(400).json({ error: "techId and plan are required" });
+      }
+
+      const technician = await storage.getTechnician(techId);
+      if (!technician) {
+        return res.status(400).json({ error: "Technician not found" });
+      }
+
+      const startDate = new Date(plan.range.start);
+      const endDate = new Date(plan.range.end);
+
+      // Create trip using savePlannedTrip
+      const { savePlannedTrip } = await import('./services/travel-planning');
+      
+      // Convert dailyPlan to tasks format and collect PM service request IDs
+      const tasks: any[] = [];
+      const pmServiceRequestIds: string[] = [];
+      
+      for (const day of plan.dailyPlan || []) {
+        for (const task of day.tasks || []) {
+          tasks.push({
+            containerId: task.containerId,
+            taskType: task.type === 'PM' ? 'pm' : 'inspection',
+            priority: task.type === 'PM' ? 'HIGH' : 'MEDIUM',
+            scheduledDate: day.date,
+            estimatedDurationHours: 2,
+            siteName: task.siteName,
+            serviceRequestId: task.serviceRequestId || null,
+            source: 'auto',
+            isManual: false,
+          });
+          
+          // Track PM service request IDs for assignment
+          if (task.type === 'PM' && task.serviceRequestId) {
+            pmServiceRequestIds.push(task.serviceRequestId);
+          }
+        }
+      }
+
+      // Use costs from plan if provided, otherwise auto-calculate
+      let costs = plan.costs;
+      if (!costs || !costs.totalCost) {
+        const { calculateCostEstimates } = await import('./services/travel-planning');
+        const costEstimates = await calculateCostEstimates(technician, plan.city, startDate, endDate);
+        costs = {
+          travelFare: costEstimates.travelFare,
+          stayCost: costEstimates.stayCost,
+          dailyAllowance: costEstimates.dailyAllowance,
+          localTravelCost: costEstimates.localTravelCost,
+          miscellaneous: costEstimates.miscellaneous,
+          totalCost: costEstimates.totalCost,
+          breakdown: costEstimates.breakdown,
+          totalEstimatedCost: costEstimates.totalEstimatedCost,
+          currency: costEstimates.currency,
+        };
+      }
+
+      // Convert costs to the format expected by savePlannedTrip
+      // If costs.breakdown exists, use it; otherwise construct from the new format
+      const costInput = costs?.breakdown || {
+        travelFare: { value: Number(costs?.travelFare || 1000), isManual: false },
+        stayCost: { value: Number(costs?.stayCost || 0), isManual: false },
+        dailyAllowance: { value: Number(costs?.dailyAllowance || 0), isManual: false },
+        localTravelCost: { value: Number(costs?.localTravelCost || 0), isManual: false },
+        miscCost: { value: Number(costs?.miscellaneous || 0), isManual: false },
+      };
+
+      const result = await savePlannedTrip({
+        technicianId: techId,
+        destinationCity: plan.city,
+        startDate: startDate,
+        endDate: endDate,
+        purpose: 'pm',
+        costs: costInput,
+        tasks: tasks,
+        currency: costs.currency || 'INR',
+      }, req.user?.id);
+
+      // Update trip booking status to 'all_confirmed' after tasks are assigned
+      if (result.trip?.id) {
+        try {
+          await storage.updateTechnicianTrip(result.trip.id, {
+            bookingStatus: 'all_confirmed',
+          });
+        } catch (tripUpdateError: any) {
+          console.error(`[API] Error updating trip booking status:`, tripUpdateError);
+        }
+      }
+
+      // Auto-assign PM service requests that don't have serviceRequestId yet
+      const assignedPMRequests: string[] = [];
+      for (const day of plan.dailyPlan || []) {
+        for (const task of day.tasks || []) {
+          if (task.type === 'PM' && !task.serviceRequestId) {
+            // Create PM service request if it doesn't exist
+            try {
+              const container = await storage.getContainer(task.containerId);
+              if (container && container.currentCustomerId) {
+                const allUsers = await storage.getAllUsers();
+                const adminUser = allUsers.find((u: any) => ['admin', 'super_admin'].includes(u.role?.toLowerCase()));
+                const createdBy = adminUser?.id || allUsers[0]?.id;
+                
+                if (createdBy) {
+                  const timestamp = Date.now();
+                  const requestNumber = `SR-PM-${timestamp}`;
+                  
+                  const newRequest = await storage.createServiceRequest({
+                    requestNumber: requestNumber,
+                    containerId: task.containerId,
+                    customerId: container.currentCustomerId,
+                    priority: 'normal',
+                    status: 'pending',
+                    issueDescription: `Preventive Maintenance - Container ${container.containerCode || container.id} (90-day threshold)`,
+                    requestedAt: new Date(),
+                    createdBy: createdBy,
+                    workType: 'SERVICE-AT SITE',
+                    jobType: 'FOC',
+                  });
+                  
+                  // Schedule it and set booking status
+                  const scheduledDate = new Date(day.date);
+                  const { sql } = await import('drizzle-orm');
+                  const bookingMetadata = {
+                    bookingStatus: 'confirmed',
+                    techBookingSource: 'auto_pm_travel',
+                    purpose: 'PM',
+                    travelTripId: result.trip.id,
+                  };
+                  await db
+                    .update(serviceRequests)
+                    .set({
+                      assignedTechnicianId: techId,
+                      status: 'scheduled',
+                      scheduledDate: scheduledDate,
+                      scheduledTimeWindow: '09:00-17:00',
+                      assignedBy: req.user?.id || 'AUTO',
+                      assignedAt: new Date(),
+                      // Store booking status and metadata in excelData field
+                      excelData: sql`COALESCE(${serviceRequests.excelData}, '{}'::jsonb) || ${JSON.stringify(bookingMetadata)}::jsonb`,
+                    })
+                    .where(eq(serviceRequests.id, newRequest.id));
+                  
+                  assignedPMRequests.push(newRequest.id);
+                }
+              }
+            } catch (createError: any) {
+              console.error(`[API] Error creating PM service request for container ${task.containerId}:`, createError);
+            }
+          } else if (task.type === 'PM' && task.serviceRequestId) {
+            // Update existing PM service request
+            try {
+              const scheduledDate = new Date(day.date);
+              const { sql } = await import('drizzle-orm');
+              // Preserve existing status if already scheduled/in_progress, otherwise set to scheduled
+              const existingRequest = await db
+                .select({ status: serviceRequests.status })
+                .from(serviceRequests)
+                .where(eq(serviceRequests.id, task.serviceRequestId))
+                .limit(1);
+              
+              const newStatus = existingRequest[0]?.status === 'in_progress' 
+                ? 'in_progress' 
+                : (existingRequest[0]?.status === 'scheduled' ? 'scheduled' : 'scheduled');
+              
+              const bookingMetadata = {
+                bookingStatus: 'confirmed',
+                techBookingSource: 'auto_pm_travel',
+                purpose: 'PM',
+                travelTripId: result.trip.id,
+              };
+              
+              await db
+                .update(serviceRequests)
+                .set({
+                  assignedTechnicianId: techId,
+                  status: newStatus,
+                  scheduledDate: scheduledDate,
+                  scheduledTimeWindow: '09:00-17:00',
+                  assignedBy: req.user?.id || 'AUTO',
+                  assignedAt: new Date(),
+                  // Store booking status and metadata in excelData field
+                  excelData: sql`COALESCE(${serviceRequests.excelData}, '{}'::jsonb) || ${JSON.stringify(bookingMetadata)}::jsonb`,
+                })
+                .where(eq(serviceRequests.id, task.serviceRequestId));
+              
+              assignedPMRequests.push(task.serviceRequestId);
+            } catch (updateError: any) {
+              console.error(`[API] Error updating PM service request ${task.serviceRequestId}:`, updateError);
+            }
+          }
+        }
+      }
+
+      // Send WhatsApp notification
+      let notification = null;
+      try {
+        notification = await sendTravelPlanToTechnician(result.trip.id, req.user?.id);
+      } catch (notifError: any) {
+        console.error("Error sending WhatsApp:", notifError);
+      }
+
+      // Broadcast WebSocket event
+      if (typeof (global as any).broadcast === 'function') {
+        const broadcast = (global as any).broadcast;
+        const tech = await storage.getTechnician(techId).catch(() => null);
+        const technicianUserId = tech?.userId;
+        
+        const pmCount = assignedPMRequests.length || plan.pmCount || 0;
+        const startDateStr = startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        const endDateStr = endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        
+        broadcast({
+          type: 'service_request_assigned',
+          timestamp: new Date().toISOString(),
+          data: {
+            technicianId: techId,
+            tripId: result.trip.id,
+            pmTasksCount: pmCount,
+            message: `✈️ Travel Trip Assigned for PM in ${plan.city}. Dates: ${startDateStr} - ${endDateStr}. Assigned Tasks: ${pmCount}.`,
+          },
+        }, technicianUserId || undefined);
+      }
+
+      // Invalidate pending requests cache since PM tasks are now assigned
+      if (typeof (global as any).broadcast === 'function') {
+        const broadcast = (global as any).broadcast;
+        broadcast({
+          type: 'pending_requests_updated',
+          timestamp: new Date().toISOString(),
+          data: {
+            assignedCount: assignedPMRequests.length,
+          },
+        });
+      }
+
+      // Get the saved trip with costs
+      const savedCosts = await storage.getTechnicianTripCosts(result.trip.id).catch(() => null);
+      
+      res.status(201).json({
+        success: true,
+        trip: {
+          ...result.trip,
+          bookingStatus: 'all_confirmed',
+          purpose: 'PM',
+        },
+        cost: costs ? {
+          travelFare: costs.travelFare,
+          stayCost: costs.stayCost,
+          dailyAllowance: costs.dailyAllowance,
+          localTravelCost: costs.localTravelCost,
+          miscellaneous: costs.miscellaneous,
+          totalCost: costs.totalCost,
+        } : (savedCosts ? {
+          travelFare: parseFloat(savedCosts.travelFare?.toString() || '0'),
+          stayCost: parseFloat(savedCosts.stayCost?.toString() || '0'),
+          dailyAllowance: parseFloat(savedCosts.dailyAllowance?.toString() || '0'),
+          localTravelCost: parseFloat(savedCosts.localTravelCost?.toString() || '0'),
+          miscellaneous: parseFloat(savedCosts.miscCost?.toString() || '0'),
+          totalCost: parseFloat(savedCosts.totalEstimatedCost?.toString() || '0'),
+        } : null),
+        scheduledPMRequests: assignedPMRequests,
+        notifications: notification ? { whatsapp: notification } : null,
+        message: "Trip confirmed and sent to technician!",
+      });
+    } catch (error: any) {
+      console.error("[API] Error in confirm-trip:", error);
+      console.error("[API] Error stack:", error?.stack);
+      res.status(500).json({ error: "Failed to confirm trip", details: error?.message });
+    }
+  });
+
   app.post("/api/travel/auto-plan", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
     try {
       const { technicianId, destinationCity, startDate, endDate } = req.body;
@@ -4081,13 +4713,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/travel/trips", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
     try {
       const result = await savePlannedTrip(req.body, req.user?.id);
-      const notification = await sendTravelPlanToTechnician(result.trip.id, req.user?.id);
+      
+      // Send WhatsApp notification
+      let notification = null;
+      try {
+        notification = await sendTravelPlanToTechnician(result.trip.id, req.user?.id);
+      } catch (notifError: any) {
+        console.error("Error sending travel plan to technician:", notifError);
+        // Don't fail the whole request if notification fails
+      }
+      
+      // Broadcast WebSocket event to refresh technician view
+      if (typeof (global as any).broadcast === 'function' && result.trip.technicianId) {
+        const broadcast = (global as any).broadcast;
+        const tech = await storage.getTechnician(result.trip.technicianId).catch(() => null);
+        const technicianUserId = tech?.userId;
+        
+        broadcast({
+          type: 'service_request_assigned',
+          timestamp: new Date().toISOString(),
+          data: {
+            technicianId: result.trip.technicianId,
+            tripId: result.trip.id,
+            pmTasksCount: result.scheduledPMRequests?.length || 0,
+          },
+        }, technicianUserId || undefined);
+      }
+      
       res.status(201).json({
         success: true,
         trip: result.trip,
         costs: result.costs,
         tasks: result.tasks,
-        notifications: { whatsapp: notification },
+        scheduledPMRequests: result.scheduledPMRequests || [],
+        notifications: notification ? { whatsapp: notification } : null,
       });
     } catch (error: any) {
       console.error("Error saving travel trip:", error);
@@ -4264,18 +4923,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const costs = await storage.getTechnicianTripCosts(trip.id);
     const rawTasks = await storage.getTechnicianTripTasks(trip.id);
     const enrichedTasks = await enrichTripTasks(rawTasks);
-
-    const message = formatTravelPlanMessage({
-      technicianName: (technician as any).name || technicianUser?.name || "Technician",
-      origin: trip.origin,
-      destination: trip.destinationCity,
-      startDate: trip.startDate,
-      endDate: trip.endDate,
-      purpose: trip.purpose,
-      notes: trip.notes,
-      costs,
-      tasks: enrichedTasks,
-    });
+    
+    // Count PM tasks
+    const pmTasks = rawTasks.filter(t => t.taskType === 'pm');
+    const pmCount = pmTasks.length;
+    
+    // Format dates
+    const startDateStr = new Date(trip.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const endDateStr = new Date(trip.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    
+    // Get total cost from trip costs
+    const totalCostValue = costs?.totalEstimatedCost 
+      ? parseFloat(costs.totalEstimatedCost.toString()).toLocaleString('en-IN')
+      : 'N/A';
+    
+    const taskCount = rawTasks.length;
+    
+    // Create PM-specific message if PM tasks exist
+    let message: string;
+    if (pmCount > 0) {
+      const loginUrl = process.env.FRONTEND_URL || 'https://your-domain.com';
+      const techName = (technician as any).name || technicianUser?.name || "Technician";
+      
+      message = `✈️ Trip Assigned: ${trip.destinationCity} ${startDateStr} → ${endDateStr}. ${taskCount} PM tasks. Total Estimate: ₹${totalCostValue}\n\n` +
+        `👨‍🔧 Technician: ${techName}\n` +
+        `📍 City: ${trip.destinationCity}\n` +
+        `📅 Dates: ${startDateStr} → ${endDateStr}\n` +
+        `🔧 Total PM Tasks: ${pmCount}\n\n` +
+        `🧾 Assigned Tasks:\n`;
+      
+      // Add PM task details
+      const pmTaskDetails: string[] = [];
+      for (const task of enrichedTasks.slice(0, 10)) {
+        const container = task.container;
+        const containerCode = container?.containerCode || task.containerId?.substring(0, 8) || 'N/A';
+        const srNumber = task.serviceRequest?.requestNumber || 'PM Job';
+        pmTaskDetails.push(`${srNumber} – ${containerCode} – PM`);
+      }
+      
+      message += pmTaskDetails.join('\n');
+      if (enrichedTasks.length > 10) {
+        message += `\n...and ${enrichedTasks.length - 10} more tasks`;
+      }
+      
+      message += `\n\n💰 Total Estimate: ₹${totalCostValue}\n\n` +
+        `🔗 View Tasks:\n${loginUrl}/technician/my-tasks`;
+    } else {
+      // Use standard message for non-PM trips
+      message = formatTravelPlanMessage({
+        technicianName: (technician as any).name || technicianUser?.name || "Technician",
+        origin: trip.origin,
+        destination: trip.destinationCity,
+        startDate: trip.startDate,
+        endDate: trip.endDate,
+        purpose: trip.purpose,
+        notes: trip.notes,
+        costs,
+        tasks: enrichedTasks,
+      });
+    }
 
     await sendTextMessage(technicianPhone, message);
     await storage.createAuditLog({
@@ -4535,16 +5241,199 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // POST /api/scheduling/travel/trips/:id/send-plan - Send travel plan summary via WhatsApp
+  // POST /api/scheduling/travel/trips/:id/send-plan - Send travel plan summary via WhatsApp and assign PM tasks
   app.post("/api/scheduling/travel/trips/:id/send-plan", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
     try {
-      const notification = await sendTravelPlanToTechnician(req.params.id, req.user?.id);
-      res.json({ message: "Travel plan sent to technician", to: notification.to });
+      const { db } = await import('./db');
+      const { serviceRequests } = await import('@shared/schema');
+      const { eq, sql } = await import('drizzle-orm');
+      
+      const trip = await storage.getTechnicianTrip(req.params.id);
+      if (!trip) {
+        return res.status(404).json({ error: "Trip not found" });
+      }
+
+      if (!trip.technicianId) {
+        return res.status(400).json({ error: "Trip does not have an assigned technician" });
+      }
+
+      const technician = await storage.getTechnician(trip.technicianId);
+      if (!technician) {
+        return res.status(404).json({ error: "Technician not found" });
+      }
+
+      // Get all trip tasks
+      const tripTasks = await storage.getTechnicianTripTasks(req.params.id);
+      
+      // Count PM vs other tasks
+      const pmTasks = tripTasks.filter(t => t.taskType === 'pm');
+      const otherTasks = tripTasks.filter(t => t.taskType !== 'pm');
+      const pmCount = pmTasks.length;
+      const otherCount = otherTasks.length;
+      
+      // Auto-assign PM service requests
+      const assignedPMRequests: string[] = [];
+      for (const task of tripTasks) {
+        if (task.taskType === 'pm' && task.serviceRequestId) {
+          // Update existing PM service request
+          try {
+            const scheduledDate = task.scheduledDate ? new Date(task.scheduledDate) : new Date(trip.startDate);
+            // Preserve existing status if already scheduled/in_progress, otherwise set to scheduled
+            const existingRequest = await db
+              .select({ status: serviceRequests.status })
+              .from(serviceRequests)
+              .where(eq(serviceRequests.id, task.serviceRequestId))
+              .limit(1);
+            
+            const currentStatus = existingRequest[0]?.status?.toLowerCase() || 'pending';
+            const newStatus = currentStatus === 'in_progress' 
+              ? 'in_progress' 
+              : (currentStatus === 'scheduled' ? 'scheduled' : 'scheduled');
+            
+            const bookingMetadata = {
+              bookingStatus: 'confirmed',
+              techBookingSource: 'auto_pm_travel',
+              purpose: 'PM',
+              travelTripId: trip.id,
+            };
+            
+            await db
+              .update(serviceRequests)
+              .set({
+                assignedTechnicianId: trip.technicianId,
+                status: newStatus,
+                scheduledDate: scheduledDate,
+                scheduledTimeWindow: '09:00-17:00',
+                assignedBy: req.user?.id || 'AUTO',
+                assignedAt: new Date(),
+                // Store booking status and metadata in excelData field
+                excelData: sql`COALESCE(${serviceRequests.excelData}, '{}'::jsonb) || ${JSON.stringify(bookingMetadata)}::jsonb`,
+              })
+              .where(eq(serviceRequests.id, task.serviceRequestId));
+            
+            assignedPMRequests.push(task.serviceRequestId);
+          } catch (updateError: any) {
+            console.error(`[API] Error updating PM service request ${task.serviceRequestId}:`, updateError);
+          }
+        } else if (task.taskType === 'pm' && !task.serviceRequestId && task.containerId) {
+          // Create PM service request if it doesn't exist
+          try {
+            const container = await storage.getContainer(task.containerId);
+            if (container && container.currentCustomerId) {
+              const allUsers = await storage.getAllUsers();
+              const adminUser = allUsers.find((u: any) => ['admin', 'super_admin'].includes(u.role?.toLowerCase()));
+              const createdBy = adminUser?.id || allUsers[0]?.id;
+              
+              if (createdBy) {
+                const timestamp = Date.now();
+                const requestNumber = `SR-PM-${timestamp}`;
+                const scheduledDate = task.scheduledDate ? new Date(task.scheduledDate) : new Date(trip.startDate);
+                
+                const newRequest = await storage.createServiceRequest({
+                  requestNumber: requestNumber,
+                  containerId: task.containerId,
+                  customerId: container.currentCustomerId,
+                  priority: 'normal',
+                  status: 'scheduled',
+                  issueDescription: `Preventive Maintenance - Container ${container.containerCode || container.id} (90-day threshold)`,
+                  requestedAt: new Date(),
+                  createdBy: createdBy,
+                  workType: 'SERVICE-AT SITE',
+                  jobType: 'FOC',
+                  assignedTechnicianId: trip.technicianId,
+                  scheduledDate: scheduledDate,
+                  scheduledTimeWindow: '09:00-17:00',
+                  assignedBy: req.user?.id || 'AUTO',
+                  assignedAt: new Date(),
+                  excelData: {
+                    bookingStatus: 'confirmed',
+                    techBookingSource: 'auto_pm_travel',
+                    purpose: 'PM',
+                    travelTripId: trip.id,
+                  },
+                });
+                
+                assignedPMRequests.push(newRequest.id);
+              }
+            }
+          } catch (createError: any) {
+            console.error(`[API] Error creating PM service request for container ${task.containerId}:`, createError);
+          }
+        }
+      }
+
+      // Update trip booking status to 'sent' and trip_status to 'confirmed'
+      try {
+        await storage.updateTechnicianTrip(req.params.id, {
+          bookingStatus: 'all_confirmed',
+          tripStatus: 'confirmed',
+        });
+      } catch (tripUpdateError: any) {
+        console.error(`[API] Error updating trip booking status:`, tripUpdateError);
+      }
+
+      // Send WhatsApp notification using existing helper
+      const technicianUser = technician.userId ? await storage.getUser(technician.userId).catch(() => null) : null;
+      const technicianPhone =
+        (technician as any).phone ||
+        (technician as any).whatsappNumber ||
+        (technicianUser as any)?.whatsappNumber ||
+        (technicianUser as any)?.phoneNumber;
+
+      if (technicianPhone) {
+        try {
+          const startDateStr = new Date(trip.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          const endDateStr = new Date(trip.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          
+          const whatsappMessage = `✈️ New Trip Assigned\n\n` +
+            `City: ${trip.destinationCity}\n` +
+            `Dates: ${startDateStr} – ${endDateStr}\n` +
+            `Total tasks: ${pmCount} (PM) + ${otherCount} (other).\n` +
+            `Please check your app for details.`;
+          
+          const { sendTextMessage } = await import('./services/whatsapp');
+          await sendTextMessage(technicianPhone, whatsappMessage);
+          
+          console.log(`[API] WhatsApp sent to ${technicianPhone} for trip ${trip.id}`);
+        } catch (whatsappError: any) {
+          console.error(`[API] Error sending WhatsApp:`, whatsappError);
+          // Don't fail the whole request if WhatsApp fails
+        }
+      }
+      
+      // Broadcast WebSocket event to refresh technician views
+      if (typeof (global as any).broadcast === 'function') {
+        const broadcast = (global as any).broadcast;
+        const technicianUserId = technician.userId;
+        
+        const startDateStr = new Date(trip.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        const endDateStr = new Date(trip.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        
+        broadcast({
+          type: 'service_request_assigned',
+          timestamp: new Date().toISOString(),
+          data: {
+            technicianId: trip.technicianId,
+            tripId: trip.id,
+            pmTasksCount: pmCount,
+            message: `✈️ Travel Trip Assigned for PM in ${trip.destinationCity}. Dates: ${startDateStr} - ${endDateStr}. Assigned Tasks: ${pmCount}.`,
+          },
+        }, technicianUserId || undefined);
+      }
+
+      res.json({ 
+        success: true,
+        message: "Travel plan sent to technician", 
+        assignedPMRequests: assignedPMRequests.length,
+        pmCount: pmCount,
+        otherCount: otherCount,
+      });
     } catch (error: any) {
       console.error("Error sending travel plan:", error);
+      console.error("Error stack:", error?.stack);
       const message = error?.message || "Failed to send travel plan";
       const status = error?.statusCode || (message.toLowerCase().includes("not found") ? 404 : 500);
-      res.status(status).json({ error: status === 500 ? "Failed to send travel plan" : message });
+      res.status(status).json({ error: status === 500 ? "Failed to send travel plan" : message, details: error?.message });
     }
   });
 
