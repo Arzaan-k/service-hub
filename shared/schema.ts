@@ -34,6 +34,8 @@ export const bookingStatusEnum = pgEnum("booking_status", ["not_started", "ticke
 export const tripPurposeEnum = pgEnum("trip_purpose", ["pm", "breakdown", "audit", "mixed"]);
 export const tripTaskTypeEnum = pgEnum("trip_task_type", ["pm", "alert", "inspection"]);
 export const tripTaskStatusEnum = pgEnum("trip_task_status", ["pending", "in_progress", "completed", "cancelled"]);
+// Courier tracking enums
+export const courierShipmentStatusEnum = pgEnum("courier_shipment_status", ["pending", "in_transit", "out_for_delivery", "delivered", "failed", "cancelled", "returned"]);
 
 // Users table (matching actual database schema)
 export const users = pgTable("users", {
@@ -138,10 +140,10 @@ export const containers = pgTable("containers", {
   reeferModel: text("reefer_model"), // Reefer unit model name
   imageLinks: text("image_links"), // Links to container images/docs
   masterSheetData: jsonb("master_sheet_data"), // Complete master sheet row data
-  lastPmDate: timestamp("last_pm_date"),
-  nextPmDueDate: timestamp("next_pm_due_date"),
-  pmFrequencyDays: integer("pm_frequency_days").default(90),
-  pmStatus: pmStatusEnum("pm_status").default("UP_TO_DATE"),
+  // lastPmDate: timestamp("last_pm_date"),
+  // nextPmDueDate: timestamp("next_pm_due_date"),
+  // pmFrequencyDays: integer("pm_frequency_days").default(90),
+  // pmStatus: pmStatusEnum("pm_status").default("UP_TO_DATE"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -219,8 +221,8 @@ export const serviceRequests = pgTable("service_requests", {
   alertId: varchar("alert_id").references(() => alerts.id),
   assignedTechnicianId: varchar("assigned_technician_id").references(() => technicians.id),
   // Assignment audit fields (from existing DB columns)
-  assignedBy: text("assigned_by"),
-  assignedAt: timestamp("assigned_at"),
+  // assignedBy: text("assigned_by"),
+  // assignedAt: timestamp("assigned_at"),
   priority: servicePriorityEnum("priority").notNull().default("normal"),
   status: serviceStatusEnum("status").notNull().default("pending"),
   issueDescription: text("issue_description").notNull(),
@@ -289,6 +291,28 @@ export const serviceReportPdfs = pgTable("service_report_pdfs", {
   emailedAt: timestamp("emailed_at"),
   emailRecipients: text("email_recipients").array(),
   status: varchar("status").default('generated'), // 'generated', 'emailed', 'failed'
+});
+
+// Courier Shipments table - Track spare parts shipments
+export const courierShipments = pgTable("courier_shipments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
+  awbNumber: text("awb_number").notNull().unique(), // Air Waybill Number / Tracking Number
+  courierName: text("courier_name").notNull(), // Auto-detected or manually entered (Delhivery, BlueDart, DTDC, etc.)
+  courierCode: text("courier_code"), // Courier code from Ship24 API
+  shipmentDescription: text("shipment_description"), // What's being shipped
+  origin: text("origin"), // Shipping from location
+  destination: text("destination"), // Shipping to location
+  estimatedDeliveryDate: timestamp("estimated_delivery_date"),
+  actualDeliveryDate: timestamp("actual_delivery_date"),
+  status: courierShipmentStatusEnum("status").default("pending").notNull(),
+  currentLocation: text("current_location"), // Last known location
+  trackingHistory: jsonb("tracking_history"), // Full tracking history from API
+  lastTrackedAt: timestamp("last_tracked_at"), // When we last fetched tracking data
+  rawApiResponse: jsonb("raw_api_response"), // Store full API response for debugging
+  addedBy: varchar("added_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // Invoices table (enhanced according to PRD)
@@ -651,6 +675,12 @@ export const serviceRequestsRelations = relations(serviceRequests, ({ one, many 
   feedback: one(feedback, { fields: [serviceRequests.id], references: [feedback.serviceRequestId] }),
   createdBy: one(users, { fields: [serviceRequests.createdBy], references: [users.id] }),
   scheduledServices: many(scheduledServices),
+  courierShipments: many(courierShipments),
+}));
+
+export const courierShipmentsRelations = relations(courierShipments, ({ one }) => ({
+  serviceRequest: one(serviceRequests, { fields: [courierShipments.serviceRequestId], references: [serviceRequests.id] }),
+  addedByUser: one(users, { fields: [courierShipments.addedBy], references: [users.id] }),
 }));
 
 export const invoicesRelations = relations(invoices, ({ one }) => ({
@@ -724,6 +754,7 @@ export const insertTechnicianSchema = createInsertSchema(technicians).omit({ id:
 export const insertContainerSchema = createInsertSchema(containers).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true, createdAt: true } as any);
 export const insertServiceRequestSchema = createInsertSchema(serviceRequests).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertCourierShipmentSchema = createInsertSchema(courierShipments).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertFeedbackSchema = createInsertSchema(feedback).omit({ id: true, createdAt: true } as any);
 export const insertScheduledServiceSchema = createInsertSchema(scheduledServices).omit({ id: true, createdAt: true, updatedAt: true } as any);
@@ -754,6 +785,8 @@ export type Alert = typeof alerts.$inferSelect;
 export type InsertAlert = z.infer<typeof insertAlertSchema>;
 export type ServiceRequest = typeof serviceRequests.$inferSelect;
 export type InsertServiceRequest = z.infer<typeof insertServiceRequestSchema>;
+export type CourierShipment = typeof courierShipments.$inferSelect;
+export type InsertCourierShipment = z.infer<typeof insertCourierShipmentSchema>;
 export type Invoice = typeof invoices.$inferSelect;
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Feedback = typeof feedback.$inferSelect;

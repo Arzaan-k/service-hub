@@ -107,8 +107,6 @@ export default function Technicians() {
       });
       return data;
     },
-    refetchInterval: 30000, // Refetch every 30 seconds
-    refetchIntervalInBackground: true,
     staleTime: 0, // Always consider stale to allow immediate refetch
     refetchInterval: 10_000, // Refetch every 10 seconds
     refetchIntervalInBackground: true,

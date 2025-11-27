@@ -2513,6 +2513,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== COURIER TRACKING ROUTES ====================
+
+  // Get all courier shipments for a service request
+  app.get("/api/service-requests/:id/courier-shipments", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const serviceRequestId = req.params.id;
+      const shipments = await storage.getCourierShipmentsByServiceRequest(serviceRequestId);
+      res.json(shipments);
+    } catch (error: any) {
+      console.error("[COURIER] Error fetching courier shipments:", error);
+      res.status(500).json({ error: "Failed to fetch courier shipments" });
+    }
+  });
+
+  // Add a new courier shipment to track
+  app.post("/api/service-requests/:id/courier-shipments", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const serviceRequestId = req.params.id;
+      const { awbNumber, courierName, shipmentDescription, origin, destination } = req.body;
+
+      if (!awbNumber || !courierName) {
+        return res.status(400).json({ error: "AWB number and courier name are required" });
+      }
+
+      // Check if AWB already exists
+      const existing = await storage.getCourierShipmentByAwb(awbNumber);
+      if (existing) {
+        return res.status(400).json({ error: "This AWB number is already being tracked" });
+      }
+
+      // Track the shipment using courier tracking service
+      const { trackShipment } = await import('./services/courierTracking');
+      const trackingResult = await trackShipment(awbNumber);
+
+      // Create courier shipment record
+      const shipment = await storage.createCourierShipment({
+        serviceRequestId,
+        awbNumber,
+        courierName: trackingResult.courierName || courierName,
+        courierCode: trackingResult.courierCode,
+        shipmentDescription,
+        origin: trackingResult.origin || origin,
+        destination: trackingResult.destination || destination,
+        estimatedDeliveryDate: trackingResult.estimatedDeliveryDate ? new Date(trackingResult.estimatedDeliveryDate) : undefined,
+        actualDeliveryDate: trackingResult.actualDeliveryDate ? new Date(trackingResult.actualDeliveryDate) : undefined,
+        status: trackingResult.status,
+        currentLocation: trackingResult.currentLocation,
+        trackingHistory: trackingResult.trackingHistory,
+        lastTrackedAt: new Date(),
+        rawApiResponse: trackingResult.rawResponse,
+        addedBy: req.user!.id,
+      });
+
+      console.log(`[COURIER] Added shipment ${awbNumber} to service request ${serviceRequestId}`);
+      res.json(shipment);
+    } catch (error: any) {
+      console.error("[COURIER] Error adding courier shipment:", error);
+      res.status(500).json({ error: error.message || "Failed to add courier shipment" });
+    }
+  });
+
+  // Refresh tracking data for a specific shipment
+  app.post("/api/courier-shipments/:id/refresh", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const shipmentId = req.params.id;
+      const shipment = await storage.getCourierShipment(shipmentId);
+
+      if (!shipment) {
+        return res.status(404).json({ error: "Courier shipment not found" });
+      }
+
+      // Track the shipment to get latest data
+      const { trackShipment } = await import('./services/courierTracking');
+      const trackingResult = await trackShipment(shipment.awbNumber);
+
+      // Update shipment with latest tracking data
+      const updated = await storage.updateCourierShipment(shipmentId, {
+        status: trackingResult.status,
+        currentLocation: trackingResult.currentLocation,
+        estimatedDeliveryDate: trackingResult.estimatedDeliveryDate ? new Date(trackingResult.estimatedDeliveryDate) : undefined,
+        actualDeliveryDate: trackingResult.actualDeliveryDate ? new Date(trackingResult.actualDeliveryDate) : undefined,
+        trackingHistory: trackingResult.trackingHistory,
+        lastTrackedAt: new Date(),
+        rawApiResponse: trackingResult.rawResponse,
+      });
+
+      console.log(`[COURIER] Refreshed tracking for ${shipment.awbNumber}`);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[COURIER] Error refreshing shipment:", error);
+      res.status(500).json({ error: error.message || "Failed to refresh shipment tracking" });
+    }
+  });
+
+  // Delete a courier shipment
+  app.delete("/api/courier-shipments/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const shipmentId = req.params.id;
+      await storage.deleteCourierShipment(shipmentId);
+      console.log(`[COURIER] Deleted shipment ${shipmentId}`);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[COURIER] Error deleting shipment:", error);
+      res.status(500).json({ error: "Failed to delete courier shipment" });
+    }
+  });
+
+  // Get list of supported courier services
+  app.get("/api/couriers/supported", authenticateUser, async (_req, res) => {
+    try {
+      const { getSupportedCouriers } = await import('./services/courierTracking');
+      const couriers = getSupportedCouriers();
+      res.json(couriers);
+    } catch (error) {
+      console.error("[COURIER] Error fetching supported couriers:", error);
+      res.status(500).json({ error: "Failed to fetch supported couriers" });
+    }
+  });
+
+  // ==================== END COURIER TRACKING ROUTES ====================
+
   // Technician routes
   // Summary of assigned services for all technicians (optimized single call)
   // Uses DB as source of truth - assignedTechnicianId field on service_requests

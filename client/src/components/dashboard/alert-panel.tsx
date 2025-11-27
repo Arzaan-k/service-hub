@@ -105,21 +105,21 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-card/40 backdrop-blur-2xl border border-border rounded-[2rem] p-6 relative overflow-hidden">
+    <div className="h-full w-full flex flex-col bg-card/40 backdrop-blur-2xl border border-border rounded-xl lg:rounded-[2rem] p-4 lg:p-6 relative overflow-hidden">
       {/* Glass effect overlay */}
       <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent opacity-40 pointer-events-none" />
 
       {/* Content */}
       <div className="relative z-10 h-full flex flex-col">
         {/* Header - Fixed */}
-        <div className="flex items-center justify-between mb-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-500/10 rounded-xl">
-              <i className="fas fa-exclamation-triangle text-red-500 text-lg"></i>
+        <div className="flex items-center justify-between mb-3 lg:mb-4 shrink-0">
+          <div className="flex items-center gap-2 lg:gap-3">
+            <div className="p-1.5 lg:p-2 bg-red-500/10 rounded-lg lg:rounded-xl">
+              <i className="fas fa-exclamation-triangle text-red-500 text-base lg:text-lg"></i>
             </div>
             <div>
-              <h3 className="text-xl font-bold text-foreground tracking-tight">Active Alerts</h3>
-              <p className="text-xs text-muted-foreground">{filteredAndSortedAlerts.length} of {alerts.length} alerts</p>
+              <h3 className="text-lg lg:text-xl font-bold text-foreground tracking-tight">Active Alerts</h3>
+              <p className="text-[10px] lg:text-xs text-muted-foreground">{filteredAndSortedAlerts.length} of {alerts.length} alerts</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -136,8 +136,8 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
 
         {/* Filters - Fixed */}
         {showFilters && (
-          <div className="mb-4 p-3 bg-white/5 rounded-lg border border-white/10 space-y-3 shrink-0">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="mb-3 lg:mb-4 p-3 bg-white/5 rounded-lg border border-white/10 space-y-3 shrink-0">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input
@@ -193,7 +193,7 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
         )}
 
         {/* Alert List - Scrollable, takes remaining space */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 lg:pr-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
           {filteredAndSortedAlerts.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">
@@ -215,10 +215,10 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
                 return (
                   <div
                     key={alert.id}
-                    className={`p-4 ${colors.bg} border ${colors.border} rounded-lg transition-all hover:scale-[1.01] duration-200 cursor-pointer`}
+                    className={`p-3 lg:p-4 ${colors.bg} border ${colors.border} rounded-lg transition-all hover:scale-[1.01] duration-200 cursor-pointer`}
                     onClick={() => container && setLocation(`/containers/${container.id}`)}
                   >
-                    <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start justify-between mb-2 lg:mb-3">
                       <div className="flex items-center gap-2">
                         <Badge
                           className={`${colors.badge} text-white text-[10px] font-bold uppercase tracking-wider border-0`}
@@ -232,9 +232,9 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
                       <div className={`w-2 h-2 ${colors.badge} rounded-full animate-pulse`}></div>
                     </div>
 
-                    <h4 className={`text-sm font-bold ${colors.text} mb-2 leading-tight`}>{alert.title}</h4>
+                    <h4 className={`text-sm font-bold ${colors.text} mb-1 lg:mb-2 leading-tight`}>{alert.title}</h4>
 
-                    <div className="flex items-center gap-1.5 mb-3">
+                    <div className="flex items-center gap-1.5 mb-2 lg:mb-3">
                       <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50"></div>
                       <span className="text-xs font-mono text-muted-foreground">
                         {container?.containerCode || "Unknown"}
@@ -247,12 +247,12 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
                       )}
                     </div>
 
-                    <div className="text-xs text-foreground/90 leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5">
+                    <div className="text-xs text-foreground/90 leading-relaxed bg-white/5 p-2 lg:p-3 rounded-lg border border-white/5">
                       {alert.description}
                     </div>
 
                     {alert.aiClassification && (
-                      <div className="mt-3 p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                      <div className="mt-2 lg:mt-3 p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
                         <div className="flex items-center gap-1.5 mb-1">
                           <i className="fas fa-robot text-indigo-500 text-xs"></i>
                           <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">AI Analysis</span>
