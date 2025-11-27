@@ -1,3 +1,4 @@
+import { useLocation, Redirect } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
@@ -5,13 +6,14 @@ import Header from "@/components/layout/header";
 import KPICards from "@/components/dashboard/kpi-cards";
 import FleetMap from "@/components/dashboard/fleet-map";
 import AlertPanel from "@/components/dashboard/alert-panel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ServiceRequestsPanel from "@/components/dashboard/service-requests-panel";
 import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
 import TechnicianSchedule from "@/components/dashboard/technician-schedule";
 import ContainerLookup from "@/components/dashboard/container-lookup";
 import ErrorBoundary from "@/components/error-boundary";
 import { websocket } from "@/lib/websocket";
-import { getAuthToken, useAuth } from "@/lib/auth";
+import { getAuthToken, useAuth, getCurrentUser } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function Dashboard() {
@@ -19,7 +21,29 @@ export default function Dashboard() {
   const authToken = getAuthToken();
   const { user } = useAuth();
 
-  const { data: stats = {} } = useQuery<any>({ 
+  // CRITICAL SECURITY: Role-based access control for Dashboard
+  // Only admin, coordinator, and super_admin should see this full dashboard
+  const userRole = (user?.role || getCurrentUser()?.role || "client").toLowerCase();
+  console.log(`[DASHBOARD] User role check: ${userRole}`);
+
+  if (userRole === "technician") {
+    console.log(`[DASHBOARD] Technician detected, redirecting to /my-profile`);
+    return <Redirect to="/my-profile" />;
+  }
+
+  if (userRole === "client") {
+    console.log(`[DASHBOARD] Client detected, redirecting to /client-dashboard`);
+    return <Redirect to="/client-dashboard" />;
+  }
+
+  // Only allow admin, coordinator, super_admin, and senior_technician to view this dashboard
+  if (!["admin", "coordinator", "super_admin", "senior_technician"].includes(userRole)) {
+    console.log(`[DASHBOARD] Unauthorized role: ${userRole}, redirecting to login`);
+    return <Redirect to="/login" />;
+  }
+
+
+  const { data: stats = {} } = useQuery<any>({
     queryKey: ["/api/dashboard/stats"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/dashboard/stats");
@@ -54,7 +78,7 @@ export default function Dashboard() {
     refetchInterval: 60000, // 1 minute
   });
 
-  const { data: serviceRequests = [] } = useQuery<any[]>({ 
+  const { data: serviceRequests = [] } = useQuery<any[]>({
     queryKey: ["/api/service-requests"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/service-requests");
@@ -95,7 +119,7 @@ export default function Dashboard() {
               : c
           );
         });
-      } catch {}
+      } catch { }
     };
 
     // Live updates when server identifies the container directly
@@ -111,7 +135,7 @@ export default function Dashboard() {
               : c
           );
         });
-      } catch {}
+      } catch { }
     };
 
     const onAlertCreated = () => {
@@ -134,18 +158,18 @@ export default function Dashboard() {
           return prev.map((c: any) =>
             c.id === containerId
               ? {
-                  ...c,
-                  locationLat: latitude?.toString(),
-                  locationLng: longitude?.toString(),
-                  temperature,
-                  powerStatus,
-                  lastUpdateTimestamp: payload.timestamp,
-                  currentLocation: latitude && longitude ? {
-                    ...(c.currentLocation || {}),
-                    lat: parseFloat(latitude),
-                    lng: parseFloat(longitude),
-                  } : c.currentLocation
-                }
+                ...c,
+                locationLat: latitude?.toString(),
+                locationLng: longitude?.toString(),
+                temperature,
+                powerStatus,
+                lastUpdateTimestamp: payload.timestamp,
+                currentLocation: latitude && longitude ? {
+                  ...(c.currentLocation || {}),
+                  lat: parseFloat(latitude),
+                  lng: parseFloat(longitude),
+                } : c.currentLocation
+              }
               : c
           );
         });
@@ -194,55 +218,105 @@ export default function Dashboard() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col min-h-screen">
         <Header title="Fleet Dashboard" />
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* KPI Cards */}
+        <div className="flex-1 p-4 lg:p-6 space-y-4 lg:space-y-6">
+          {/* KPI Cards - Now Horizontal Slider on Mobile */}
           <div className="min-w-0">
             <KPICards stats={stats} />
           </div>
 
+          {/* Mobile View: Tabbed Interface */}
+          <div className="lg:hidden">
+            <Tabs defaultValue="overview" className="w-full">
+              <TabsList className="grid w-full grid-cols-4 mb-4 bg-white/5 border border-white/10">
+                <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+                <TabsTrigger value="alerts" className="text-xs">Alerts</TabsTrigger>
+                <TabsTrigger value="service" className="text-xs">Service</TabsTrigger>
+                <TabsTrigger value="manage" className="text-xs">Manage</TabsTrigger>
+              </TabsList>
 
-          {/* Map & Alerts & Fleet Stats */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ height: '600px', minHeight: '600px', maxHeight: '600px', overflow: 'visible' }}>
-            <div className="lg:col-span-2" style={{ height: '600px' }}>
-              <ErrorBoundary>
-                  <FleetMap containers={containers || []} />
-              </ErrorBoundary>
+              <TabsContent value="overview" className="space-y-4">
+                <div className="h-[350px] rounded-xl overflow-hidden border border-white/10 shadow-lg">
+                  <ErrorBoundary>
+                    <FleetMap containers={containers || []} />
+                  </ErrorBoundary>
+                </div>
+                <ErrorBoundary>
+                  <ContainerFleetStats containers={containers || []} />
+                </ErrorBoundary>
+              </TabsContent>
+
+              <TabsContent value="alerts">
+                <div className="h-[500px]">
+                  <ErrorBoundary>
+                    <AlertPanel alerts={alerts || []} containers={containers || []} />
+                  </ErrorBoundary>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="service" className="space-y-4">
+                <ErrorBoundary>
+                  <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} />
+                </ErrorBoundary>
+                <ErrorBoundary>
+                  <TechnicianSchedule technicians={technicians || []} />
+                </ErrorBoundary>
+              </TabsContent>
+
+              <TabsContent value="manage">
+                <ErrorBoundary>
+                  <ContainerLookup containers={containers || []} />
+                </ErrorBoundary>
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          {/* Desktop View: Grid Layout */}
+          <div className="hidden lg:block space-y-6">
+            {/* Map & Alerts & Fleet Stats */}
+            <div className="grid grid-cols-3 gap-6 h-[600px]">
+              <div className="col-span-2 h-full min-h-0">
+                <ErrorBoundary>
+                  <div className="h-full">
+                    <FleetMap containers={containers || []} />
+                  </div>
+                </ErrorBoundary>
+              </div>
+              <div className="h-full min-h-0">
+                <ErrorBoundary>
+                  <div className="h-full">
+                    <AlertPanel alerts={alerts || []} containers={containers || []} />
+                  </div>
+                </ErrorBoundary>
+              </div>
             </div>
-            <div style={{ height: '600px' }}>
+
+            {/* Service Requests & Fleet Overview */}
+            <div className="grid grid-cols-2 gap-6 items-stretch">
               <ErrorBoundary>
-                <div style={{ height: '100%' }}>
-                  <AlertPanel alerts={alerts || []} containers={containers || []} />
+                <div className="h-full min-w-0">
+                  <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} />
+                </div>
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <div className="h-full min-w-0">
+                  <ContainerFleetStats containers={containers || []} />
                 </div>
               </ErrorBoundary>
             </div>
-          </div>
 
-          {/* Service Requests & Fleet Overview */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-            <ErrorBoundary>
-              <div className="h-full min-w-0">
-                <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} />
+            {/* Technician Schedule & Container Lookup */}
+            <div className="grid grid-cols-3 gap-6 items-stretch">
+              <div className="col-span-2">
+                <ErrorBoundary>
+                  <TechnicianSchedule technicians={technicians || []} />
+                </ErrorBoundary>
               </div>
-            </ErrorBoundary>
-            <ErrorBoundary>
-              <div className="h-full min-w-0">
-                <ContainerFleetStats containers={containers || []} />
-              </div>
-            </ErrorBoundary>
-          </div>
-
-          {/* Technician Schedule & Container Lookup */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-            <div className="lg:col-span-2">
               <ErrorBoundary>
-                <TechnicianSchedule technicians={technicians || []} />
+                <ContainerLookup containers={containers || []} />
               </ErrorBoundary>
             </div>
-            <ErrorBoundary>
-              <ContainerLookup containers={containers || []} />
-            </ErrorBoundary>
           </div>
         </div>
       </main>

@@ -42,7 +42,14 @@ export default function Login() {
   const loginMutation = useMutation({
     mutationFn: async (data: { email: string; password: string }) => {
       const res = await apiRequest("POST", "/api/auth/login", data);
-      return await res.json();
+      const result = await res.json();
+
+      // If password reset is required, throw error to trigger onError
+      if (result.requiresPasswordReset) {
+        throw new Error("PASSWORD_RESET_REQUIRED:" + JSON.stringify(result));
+      }
+
+      return result;
     },
     onSuccess: (data) => {
       saveAuth(data.token, data.user);
@@ -50,15 +57,70 @@ export default function Login() {
         title: "Success",
         description: "Logged in successfully",
       });
-      setLocation("/");
+
+      // Role-based redirect - CRITICAL SECURITY FIX
+      const userRole = (data.user?.role || "client").toLowerCase();
+      console.log(`[LOGIN] User role: ${userRole}, redirecting appropriately...`);
+
+      if (userRole === "technician" || userRole === "senior_technician") {
+        // Technicians and Senior Technicians go to main dashboard
+        setLocation("/");
+      } else if (userRole === "admin" || userRole === "super_admin" || userRole === "coordinator") {
+        // Admins go to main dashboard
+        setLocation("/");
+      } else if (userRole === "amc") {
+        // AMC users go to containers page (their main access point)
+        setLocation("/containers");
+      } else {
+        // Clients go to their own dashboard with all their data
+        setLocation("/client-dashboard");
+      }
     },
     onError: (error: Error) => {
+      console.log('[LOGIN] Error received:', error.message);
+
+      // Check if this is a password reset required error
+      try {
+        // The error message format is "403: {json_response}"
+        const errorParts = error.message.split(': ');
+        console.log('[LOGIN] Error parts:', errorParts);
+
+        if (errorParts.length >= 2) {
+          const statusCode = errorParts[0];
+          const jsonStr = errorParts.slice(1).join(': ');
+          console.log('[LOGIN] Status code:', statusCode);
+          console.log('[LOGIN] JSON string:', jsonStr);
+
+          if (statusCode === '403') {
+            const errorData = JSON.parse(jsonStr);
+            console.log('[LOGIN] Parsed error data:', errorData);
+
+            if (errorData.requiresPasswordReset) {
+              console.log('[LOGIN] Password reset required, redirecting...');
+              // Temporarily save auth data so the force reset page can access it
+              saveAuth(errorData.user.id, errorData.user);
+              toast({
+                title: "Welcome!",
+                description: "Please set a new password to continue",
+              });
+              setLocation("/force-password-reset");
+              return;
+            }
+          }
+        }
+      } catch (parseError) {
+        console.log('[LOGIN] JSON parsing failed:', parseError);
+        // If parsing fails, continue with normal error handling
+      }
+
+      // Default error handling
+      console.log('[LOGIN] Using default error handling');
       toast({
         title: "Error",
         description: error.message,
         variant: "destructive",
       });
-    },
+    }
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -109,29 +171,29 @@ export default function Login() {
   });
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+    <div className="min-h-screen flex items-center justify-center p-4 lg:p-6 bg-background">
       <div className="w-full max-w-md">
         {/* Login Card */}
-        <div className="bg-card border border-border rounded-2xl p-8 shadow-2xl">
+        <div className="bg-card border border-border rounded-2xl p-6 lg:p-8 shadow-2xl">
           {/* Logo & Title */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-accent mb-4">
-              <i className="fas fa-ship text-2xl text-white"></i>
+          <div className="text-center mb-6 lg:mb-8">
+            <div className="inline-flex items-center justify-center w-12 h-12 lg:w-16 lg:h-16 rounded-2xl bg-gradient-to-br from-primary to-accent mb-4">
+              <i className="fas fa-ship text-xl lg:text-2xl text-white"></i>
             </div>
-            <h1 className="text-2xl font-bold text-foreground mb-2">Container Service Management</h1>
-            <p className="text-muted-foreground text-sm">Secure phone-based authentication</p>
+            <h1 className="text-xl lg:text-2xl font-bold text-foreground mb-2">Container Service Management</h1>
+            <p className="text-muted-foreground text-xs lg:text-sm">Secure phone-based authentication</p>
           </div>
 
-            {/* Email + Password Login */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Email + Password Login */}
+          <form onSubmit={handleSubmit} className="space-y-4 lg:space-y-6">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
+              <label className="block text-xs lg:text-sm font-medium text-foreground mb-1.5 lg:mb-2">
                 <i className="fas fa-envelope mr-2 text-primary"></i>Email
               </label>
               <input
                 type="email"
                 placeholder="john@example.com"
-                className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+                className="w-full px-4 py-2.5 lg:py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all text-sm"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 data-testid="input-email"
@@ -139,13 +201,13 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
+              <label className="block text-xs lg:text-sm font-medium text-foreground mb-1.5 lg:mb-2">
                 <i className="fas fa-lock mr-2 text-primary"></i>Password
               </label>
               <input
                 type="password"
                 placeholder="••••••••"
-                className="w-full px-4 py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-4 py-2.5 lg:py-3 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary text-sm"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 data-testid="input-password"
@@ -155,7 +217,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loginMutation.isPending}
-              className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+              className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50 text-sm lg:text-base"
               data-testid="button-submit"
             >
               {loginMutation.isPending ? (
@@ -169,7 +231,7 @@ export default function Login() {
 
           {/* Sign Up Link */}
           <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs lg:text-sm text-muted-foreground">
               Don't have an account?{" "}
               <button
                 onClick={() => setLocation("/signup")}
@@ -178,19 +240,19 @@ export default function Login() {
                 Create Account
               </button>
               <span className="mx-2">•</span>
-              <button onClick={()=>setForgotOpen(true)} className="text-primary hover:underline font-medium">Forgot password?</button>
+              <button onClick={() => setForgotOpen(true)} className="text-primary hover:underline font-medium">Forgot password?</button>
             </p>
           </div>
 
           {/* Security Notice */}
-          <div className="mt-6 p-4 bg-warning/10 border border-warning/20 rounded-lg">
+          <div className="mt-6 p-3 lg:p-4 bg-warning/10 border border-warning/20 rounded-lg">
             <div className="flex items-start gap-3">
               <i className="fas fa-shield-alt text-warning mt-0.5"></i>
               <div>
-                <p className="text-sm font-medium text-warning-foreground mb-1">
+                <p className="text-xs lg:text-sm font-medium text-warning-foreground mb-1">
                   🔐 Security Reminder
                 </p>
-                <p className="text-xs text-warning-foreground">
+                <p className="text-[10px] lg:text-xs text-warning-foreground">
                   <strong>⚠️ Important:</strong> Please change your password after first login for security.
                   Use a strong password with uppercase, lowercase, numbers, and special characters.
                 </p>
@@ -199,11 +261,11 @@ export default function Login() {
           </div>
 
           {/* Security Notice */}
-          <div className="mt-6 p-4 bg-muted/50 rounded-lg border border-border">
+          <div className="mt-4 lg:mt-6 p-3 lg:p-4 bg-muted/50 rounded-lg border border-border">
             <div className="flex items-start gap-3">
               <i className="fas fa-shield-alt text-success mt-0.5"></i>
               <div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[10px] lg:text-xs text-muted-foreground">
                   <strong className="text-foreground">Secure Authentication:</strong> All users are verified via phone
                   number. WhatsApp messages validated against database before processing.
                 </p>
@@ -219,11 +281,11 @@ export default function Login() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Email Address</label>
-                <Input placeholder="john@example.com" value={fpEmail} onChange={(e)=>setFpEmail(e.target.value)} />
+                <Input placeholder="john@example.com" value={fpEmail} onChange={(e) => setFpEmail(e.target.value)} />
               </div>
               <div className="flex gap-3 pt-2">
-                <button className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-foreground" onClick={()=>{setForgotOpen(false); setFpEmail("");}}>Cancel</button>
-                <button className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium" onClick={()=>forgotMutation.mutate({ email: fpEmail })} disabled={forgotMutation.isPending}>{forgotMutation.isPending ? 'Sending...' : 'Send OTP'}</button>
+                <button className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-foreground" onClick={() => { setForgotOpen(false); setFpEmail(""); }}>Cancel</button>
+                <button className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium" onClick={() => forgotMutation.mutate({ email: fpEmail })} disabled={forgotMutation.isPending}>{forgotMutation.isPending ? 'Sending...' : 'Send OTP'}</button>
               </div>
             </div>
           </div>
@@ -236,15 +298,15 @@ export default function Login() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Email Address</label>
-                <Input placeholder="john@example.com" value={rpEmail} onChange={(e)=>setRpEmail(e.target.value)} disabled />
+                <Input placeholder="john@example.com" value={rpEmail} onChange={(e) => setRpEmail(e.target.value)} disabled />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">OTP Code</label>
-                <Input placeholder="123456" value={rpCode} onChange={(e)=>setRpCode(e.target.value)} />
+                <Input placeholder="123456" value={rpCode} onChange={(e) => setRpCode(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">New Password</label>
-                <Input placeholder="••••••••" type="password" value={rpPassword} onChange={(e)=>setRpPassword(e.target.value)} />
+                <Input placeholder="••••••••" type="password" value={rpPassword} onChange={(e) => setRpPassword(e.target.value)} />
                 {rpPassword && (
                   <div className="text-xs">
                     {validatePassword(rpPassword) ? (
@@ -267,8 +329,8 @@ export default function Login() {
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-foreground" onClick={()=>{setResetOpen(false); setRpEmail(""); setRpCode(""); setRpPassword("");}}>Cancel</button>
-                <button className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium" onClick={()=>resetMutation.mutate({ email: rpEmail, code: rpCode, newPassword: rpPassword })} disabled={resetMutation.isPending}>{resetMutation.isPending ? 'Resetting...' : 'Reset Password'}</button>
+                <button className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-foreground" onClick={() => { setResetOpen(false); setRpEmail(""); setRpCode(""); setRpPassword(""); }}>Cancel</button>
+                <button className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium" onClick={() => resetMutation.mutate({ email: rpEmail, code: rpCode, newPassword: rpPassword })} disabled={resetMutation.isPending}>{resetMutation.isPending ? 'Resetting...' : 'Reset Password'}</button>
               </div>
             </div>
           </div>

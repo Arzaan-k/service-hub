@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Edit, Key, Mail, User, Users, Plus, Send } from 'lucide-react';
@@ -228,9 +228,9 @@ export default function AdminUserManagement() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col min-h-screen">
         <Header title="User Management" />
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 p-6 space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-500/10 rounded-xl">
@@ -257,6 +257,8 @@ export default function AdminUserManagement() {
                   <SelectItem value="all">All Roles</SelectItem>
                   <SelectItem value="super_admin">Super Admin</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="senior_technician">Senior Technician</SelectItem>
+                  <SelectItem value="amc">AMC</SelectItem>
                   <SelectItem value="coordinator">Coordinator</SelectItem>
                   <SelectItem value="technician">Technician</SelectItem>
                   <SelectItem value="client">Client</SelectItem>
@@ -451,7 +453,9 @@ export default function AdminUserManagement() {
                     <SelectContent>
                       <SelectItem value="client">Client</SelectItem>
                       <SelectItem value="technician">Technician</SelectItem>
+                      <SelectItem value="senior_technician">Senior Technician</SelectItem>
                       <SelectItem value="coordinator">Coordinator</SelectItem>
+                      <SelectItem value="amc">AMC</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -500,10 +504,10 @@ export default function AdminUserManagement() {
                   <div className="flex items-start gap-2">
                     <i className="fas fa-shield-alt text-warning mt-0.5"></i>
                     <div>
-                      <p className="text-sm font-medium text-warning-foreground mb-1">
+                      <p className="text-sm font-medium text-yellow-800 mb-1">
                         ⚠️ This action will:
                       </p>
-                      <ul className="text-xs text-warning-foreground space-y-1 ml-4">
+                      <ul className="text-xs text-yellow-800/90 space-y-1 ml-4">
                         <li>• Generate a new secure password</li>
                         <li>• Send login credentials via email</li>
                         <li>• Invalidate the current password</li>

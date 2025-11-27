@@ -9,6 +9,7 @@ import { isAuthenticated, getCurrentUser, initTestAuth } from "./lib/auth";
 import Login from "@/pages/login";
 import SignUp from "@/pages/signup";
 import Dashboard from "@/pages/dashboard";
+import ClientDashboard from "@/pages/client-dashboard";
 import Containers from "@/pages/containers";
 import ContainerDetail from "@/pages/container-detail";
 import Alerts from "@/pages/alerts";
@@ -30,24 +31,26 @@ import RagChat from "@/pages/rag-chat";
 import TechnicianMyProfile from "@/pages/technician-my-profile";
 import ServiceHistory from "@/pages/service-history";
 import Manuals from "@/pages/manuals";
+import ForcePasswordReset from "@/pages/force-password-reset";
+import ResetPassword from "@/pages/reset-password";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
     return <Redirect to="/login" />;
   }
-  
+
   // Role-based access control
   if (roles && roles.length > 0) {
     const user = getCurrentUser();
     const userRole = (user?.role || "client").toLowerCase();
     const allowedRoles = roles.map(r => r.toLowerCase());
-    
+
     if (!allowedRoles.includes(userRole)) {
       // Redirect to dashboard if user doesn't have required role
       return <Redirect to="/" />;
     }
   }
-  
+
   return <Component />;
 }
 
@@ -56,14 +59,19 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/signup" component={SignUp} />
+      <Route path="/force-password-reset" component={ForcePasswordReset} />
+      <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/client-dashboard">
+        {() => <ProtectedRoute component={ClientDashboard} roles={["client"]} />}
+      </Route>
       <Route path="/">
         {() => <ProtectedRoute component={Dashboard} />}
       </Route>
       <Route path="/containers">
-        {() => <ProtectedRoute component={Containers} />}
+        {() => <ProtectedRoute component={Containers} roles={["admin", "coordinator", "super_admin", "technician", "senior_technician", "client", "amc"]} />}
       </Route>
       <Route path="/containers/:id">
-        {() => <ProtectedRoute component={ContainerDetail} />}
+        {() => <ProtectedRoute component={ContainerDetail} roles={["admin", "coordinator", "super_admin", "technician", "senior_technician", "client", "amc"]} />}
       </Route>
       <Route path="/alerts">
         {() => <ProtectedRoute component={Alerts} />}
@@ -75,7 +83,7 @@ function Router() {
         {() => <ProtectedRoute component={ServiceRequestDetail} />}
       </Route>
       <Route path="/assign-technician/:serviceId">
-        {() => <ProtectedRoute component={AssignTechnician} roles={["admin","coordinator","super_admin"]} />}
+        {() => <ProtectedRoute component={AssignTechnician} roles={["admin", "coordinator", "super_admin"]} />}
       </Route>
       <Route path="/technicians">
         {() => <ProtectedRoute component={Technicians} roles={["admin", "coordinator", "super_admin"]} />}
@@ -90,17 +98,17 @@ function Router() {
         {() => <ProtectedRoute component={WhatsAppHub} roles={["admin", "coordinator", "technician", "client", "super_admin"]} />}
       </Route>
       <Route path="/clients">
-        {() => <ProtectedRoute component={Clients} roles={["admin", "coordinator", "super_admin"]} />}
+        {() => <ProtectedRoute component={Clients} roles={["admin", "coordinator", "super_admin", "amc", "senior_technician"]} />}
       </Route>
       <Route path="/clients/:id">
-        {() => <ProtectedRoute component={ClientProfile} roles={["admin", "coordinator", "super_admin"]} />}
+        {() => <ProtectedRoute component={ClientProfile} roles={["admin", "coordinator", "super_admin", "senior_technician"]} />}
       </Route>
       <Route path="/my-profile">
         {() => {
           const user = getCurrentUser();
           const role = (user?.role || "client").toLowerCase();
-          if (role === "technician") {
-            return <ProtectedRoute component={TechnicianMyProfile} roles={["technician"]} />;
+          if (role === "technician" || role === "senior_technician") {
+            return <ProtectedRoute component={TechnicianMyProfile} roles={["technician", "senior_technician"]} />;
           } else {
             return <ProtectedRoute component={ClientProfile} roles={["client", "admin", "coordinator", "super_admin"]} />;
           }
@@ -123,9 +131,6 @@ function Router() {
       </Route>
       <Route path="/rag-chat">
         {() => <ProtectedRoute component={RagChat} />}
-      </Route>
-      <Route path="/admin/manuals">
-        {() => <ProtectedRoute component={AdminManualUpload} roles={["admin", "super_admin"]} />}
       </Route>
       <Route path="/service-history">
         {() => <ProtectedRoute component={ServiceHistory} />}

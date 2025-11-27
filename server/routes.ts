@@ -33,6 +33,7 @@ import { RagAdapter } from "./services/ragAdapter";
 import { runDiagnosis } from "./services/ragGraph";
 import { DocumentProcessor } from "./services/documentProcessor";
 import { vectorStore } from "./services/vectorStore";
+import { filterContainersByRole, sanitizeContainerForRole, sanitizeClientForRole } from "./services/roleAccess";
 import multer from 'multer';
 import { generateJobOrderNumber } from './utils/jobOrderGenerator';
 import { db } from './db';
@@ -274,19 +275,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { email, password } = req.body;
 
+      console.log(`[LOGIN] Attempting login for email: ${email}`);
+
       if (!email || !password) {
         return res.status(400).json({ error: "Email and password required" });
       }
 
       const user = await storage.getUserByEmail(email);
-      if (!user) return res.status(401).json({ error: "Invalid credentials" });
+      if (!user) {
+        console.log(`[LOGIN] User not found for email: ${email}`);
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      console.log(`[LOGIN] User found: ${user.id}, requiresPasswordReset: ${user.requiresPasswordReset}, emailVerified: ${user.emailVerified}`);
+      console.log(`[LOGIN] User password hash exists: ${!!user.password}, length: ${user.password?.length || 0}`);
+      console.log(`[LOGIN] Password hash preview: ${user.password?.substring(0, 10)}...`);
 
       const { comparePasswords } = await import('./services/auth');
+      console.log(`[LOGIN] Attempting password comparison for password: ${password.substring(0, 3)}...`);
       const ok = await comparePasswords(password, user.password || '');
-      if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+      console.log(`[LOGIN] Password comparison result: ${ok}`);
+
+      if (!ok) {
+        console.log(`[LOGIN] Password mismatch for user: ${user.id}`);
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
 
       if (!user.emailVerified) {
         return res.status(403).json({ error: "Email not verified" });
+      }
+
+      // Check if password reset is required (for new clients)
+      if (user.requiresPasswordReset) {
+        return res.status(403).json({
+          error: "Password reset required",
+          requiresPasswordReset: true,
+          user: { id: user.id, email: user.email, name: user.name }
+        });
       }
 
       // Temporary token compatibility using user.id
@@ -383,6 +408,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post('/api/auth/force-password-reset', async (req, res) => {
+    try {
+      const { userId, newPassword } = req.body;
+      if (!userId || !newPassword) return res.status(400).json({ error: 'User ID and newPassword required' });
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      const { hashPassword } = await import('./services/auth');
+      const passwordHash = await hashPassword(newPassword);
+
+      // Update user with new password and clear the reset flag
+      await storage.updateUser(userId, {
+        password: passwordHash,
+        emailVerified: true,
+        requiresPasswordReset: false
+      } as any);
+
+      // Return updated user data with token
+      res.json({
+        user: { ...user, requiresPasswordReset: false },
+        token: user.id // Temporary token compatibility
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to reset password' });
+    }
+  });
+
   // Email OTP verification
   app.post('/api/auth/verify-email', async (req, res) => {
     try {
@@ -425,6 +478,167 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ error: 'Resend failed' });
+    }
+  });
+
+  // ============================================================================
+  // SECURE PASSWORD RESET WITH TOKEN-BASED FLOW
+  // ============================================================================
+
+  /**
+   * Validates a password reset token
+   * Public endpoint - no auth required
+   * Returns user info if token is valid
+   */
+  app.get('/api/auth/validate-reset-token', async (req, res) => {
+    try {
+      const { token } = req.query;
+
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({
+          valid: false,
+          error: 'Token is required'
+        });
+      }
+
+      const { validateResetToken } = await import('./services/auth');
+      const tokenRecord = await validateResetToken(token);
+
+      if (!tokenRecord) {
+        return res.status(400).json({
+          valid: false,
+          error: 'Invalid, expired, or already used token'
+        });
+      }
+
+      // Get user info to show in the reset form
+      const user = await storage.getUser(tokenRecord.userId);
+      if (!user) {
+        return res.status(404).json({
+          valid: false,
+          error: 'User not found'
+        });
+      }
+
+      res.json({
+        valid: true,
+        userId: user.id,
+        email: user.email,
+        name: user.name
+      });
+    } catch (error) {
+      console.error('[PASSWORD RESET] Token validation error:', error);
+      res.status(500).json({
+        valid: false,
+        error: 'Failed to validate token'
+      });
+    }
+  });
+
+  /**
+   * Resets password using a valid token
+   * Public endpoint - no auth required
+   * Sets new password and marks token as used
+   */
+  app.post('/api/auth/reset-password-with-token', async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || !newPassword) {
+        return res.status(400).json({
+          error: 'Token and new password are required'
+        });
+      }
+
+      // Validate password strength
+      if (newPassword.length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters' });
+      }
+      if (!/[A-Z]/.test(newPassword)) {
+        return res.status(400).json({ error: 'Password must contain at least one uppercase letter' });
+      }
+      if (!/[a-z]/.test(newPassword)) {
+        return res.status(400).json({ error: 'Password must contain at least one lowercase letter' });
+      }
+      if (!/[0-9]/.test(newPassword)) {
+        return res.status(400).json({ error: 'Password must contain at least one number' });
+      }
+      if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword)) {
+        return res.status(400).json({ error: 'Password must contain at least one special character' });
+      }
+
+      const { validateResetToken, hashPassword, markTokenAsUsed, logSecurityEvent } = await import('./services/auth');
+
+      // Validate token
+      const tokenRecord = await validateResetToken(token);
+      if (!tokenRecord) {
+        return res.status(400).json({
+          error: 'Invalid, expired, or already used token'
+        });
+      }
+
+      // Get user
+      const user = await storage.getUser(tokenRecord.userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Hash new password
+      console.log(`[PASSWORD RESET] Hashing new password for user ${user.email}`);
+      const passwordHash = await hashPassword(newPassword);
+      console.log(`[PASSWORD RESET] Password hashed, length: ${passwordHash.length}, preview: ${passwordHash.substring(0, 20)}...`);
+
+      // Update user with new password
+      console.log(`[PASSWORD RESET] Updating user ${tokenRecord.userId} with new password and email verification`);
+      const updatedUser = await storage.updateUser(tokenRecord.userId, {
+        password: passwordHash,
+        emailVerified: true, // Email is verified by using the token
+        requiresPasswordReset: false // Password has been set
+      });
+      console.log(`[PASSWORD RESET] User updated. Email verified: ${updatedUser.emailVerified}, Requires reset: ${updatedUser.requiresPasswordReset}`);
+
+      // Verify the update worked by comparing passwords
+      const { comparePasswords } = await import('./services/auth');
+      const verifyHash = await comparePasswords(newPassword, updatedUser.password || '');
+      console.log(`[PASSWORD RESET] Password verification check: ${verifyHash ? 'PASS ✅' : 'FAIL ❌'}`);
+
+      if (!verifyHash) {
+        console.error(`[PASSWORD RESET] ⚠️ WARNING: Password update may have failed! Hash mismatch detected.`);
+      }
+
+      // Mark token as used
+      const crypto = await import('crypto');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      await markTokenAsUsed(tokenHash);
+
+      // Log security event
+      await logSecurityEvent(
+        tokenRecord.userId,
+        'password_set_via_token',
+        tokenRecord.createdBy,
+        {
+          email: user.email,
+          resetRequestedBy: tokenRecord.createdBy ? 'admin' : 'self',
+          ipAddress: req.ip,
+          verificationPassed: verifyHash
+        },
+        req.ip
+      );
+
+      console.log(`[PASSWORD RESET] Password successfully reset for user ${user.email}`);
+
+      res.json({
+        success: true,
+        message: 'Password updated successfully. You can now login with your new password.',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name
+        }
+      });
+    } catch (error) {
+      console.error('[PASSWORD RESET] Password reset error:', error);
+      res.status(500).json({ error: 'Failed to reset password' });
     }
   });
 
@@ -576,7 +790,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update user with new password
       await storage.updateUser(userId, {
         password: passwordHash,
-        emailVerified: false // Reset verification
+        emailVerified: true, // Keep verified - we're sending to their confirmed email
+        requiresPasswordReset: true // Force password reset on next login
       });
 
       // Send credentials via email
@@ -743,33 +958,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[SERVER] /api/containers user:', req.user?.id, 'role:', req.user?.role);
       const role = (req.user?.role || '').toLowerCase();
       const isPrivileged = ["admin", "coordinator", "super_admin"].includes(role);
-      console.log('[SERVER] /api/containers isPrivileged:', isPrivileged);
+      console.log('[SERVER] /api/containers isPrivileged:', isPrivileged, 'role:', role);
 
-      if (!isPrivileged) {
-        console.log('[SERVER] /api/containers user is not privileged, returning all containers for testing');
-        // Temporarily return all containers for non-privileged users to test pagination
-        const containers = await storage.getAllContainers();
-        console.log('[SERVER] /api/containers returning all containers for non-privileged user:', containers.length);
-        // Optional pagination: only apply if query includes limit or offset
-        const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
-        const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
-        console.log('[SERVER] /api/containers hasLimit:', hasLimit, 'hasOffset:', hasOffset);
-        if (hasLimit || hasOffset) {
-          const { limit, offset } = paginationSchema.parse(req.query);
-          console.log('[SERVER] /api/containers applying pagination - limit:', limit, 'offset:', offset);
-          res.setHeader('x-total-count', String(containers.length));
-          const paginatedResult = containers.slice(offset, offset + limit);
-          console.log('[SERVER] /api/containers returning paginated result length:', paginatedResult.length);
-          return res.json(paginatedResult);
+      // Fetch all containers
+      let containers = await storage.getAllContainers();
+      console.log('[SERVER] /api/containers total containers before filtering:', containers.length);
+
+      // Apply role-based filtering
+      // Senior Technician: Only reefer (refrigerated) containers with IoT enabled (deployed)
+      // AMC: Only sold containers
+      // Client: Their assigned containers
+      if (role === 'senior_technician' || role === 'amc') {
+        containers = filterContainersByRole(containers, role);
+        console.log('[SERVER] /api/containers after role filtering (' + role + '):', containers.length);
+      } else if (!isPrivileged && role === 'client') {
+        // Client sees only their containers
+        const customer = await storage.getCustomerByUserId(req.user.id);
+        if (customer) {
+          containers = containers.filter(c => c.currentCustomerId === customer.id);
+          console.log('[SERVER] /api/containers filtered for client:', containers.length);
+        } else {
+          containers = [];
         }
-        console.log('[SERVER] /api/containers returning full list for non-privileged user');
-        res.json(containers);
-        return;
       }
 
-      console.log('[SERVER] /api/containers fetching all containers');
-      const containers = await storage.getAllContainers();
-      console.log('[SERVER] /api/containers total containers:', containers.length);
+      // Sanitize container data based on role (AMC gets limited fields)
+      containers = containers.map(c => sanitizeContainerForRole(c, role));
 
       // Optional pagination: only apply if query includes limit or offset
       const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
@@ -1803,7 +2017,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if order already exists (look in notes until migration is run)
       if (serviceRequest.resolutionNotes && serviceRequest.resolutionNotes.includes('[Inventory Order]')) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Indent already requested for this service request. Check service notes for order details."
         });
       }
@@ -1842,8 +2056,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if inventory integration is configured
       if (!inventoryService.isConfigured()) {
-        return res.status(503).json({ 
-          error: "Inventory system integration not configured. Please add INVENTORY_API_URL, INVENTORY_API_KEY, and INVENTORY_API_SECRET to .env file" 
+        return res.status(503).json({
+          error: "Inventory system integration not configured. Please add INVENTORY_API_URL, INVENTORY_API_KEY, and INVENTORY_API_SECRET to .env file"
         });
       }
 
@@ -1858,15 +2072,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       if (!orderResult.success) {
-        return res.status(500).json({ 
-          error: orderResult.error || "Failed to create order in Inventory System" 
+        return res.status(500).json({
+          error: orderResult.error || "Failed to create order in Inventory System"
         });
       }
 
       // Store order info in service request notes (until database migration is run)
       const orderInfo = `\n\n[Inventory Order]\nOrder ID: ${orderResult.orderId}\nOrder Number: ${orderResult.orderNumber}\nCreated: ${new Date().toISOString()}`;
       const updatedNotes = (serviceRequest.resolutionNotes || '') + orderInfo;
-      
+
       const updatedRequest = await storage.updateServiceRequest(req.params.id, {
         resolutionNotes: updatedNotes
       });
@@ -1912,10 +2126,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: result.error || "Failed to create indent" });
       }
 
-      res.json(result);
-    } catch (error) {
-      console.error("Error requesting indent:", error);
-      res.status(500).json({ error: "Failed to request indent" });
+      res.json({
+        success: true,
+        message: "Indent Requested Successfully — Order Created in Inventory System",
+        orderId: result.orderId,
+        orderNumber: result.orderNumber
+      });
+    } catch (error: any) {
+      console.error("[Inventory Integration] Error requesting indent:", error);
+      res.status(500).json({
+        error: error.message || "Failed to request indent"
+      });
     }
   });
 
@@ -2702,7 +2923,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let user;
       let isExistingUser = false;
 
-      // Check if user with this phone number already exists
+      // CRITICAL: Check if user with this phone number OR email already exists
+      // Technicians and Clients must have SEPARATE accounts for security
       if (phoneNumber) {
         const existingUserByPhone = await storage.getUserByPhoneNumber(phoneNumber);
         if (existingUserByPhone) {
@@ -2731,21 +2953,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return res.json(updatedTechnician);
           }
 
-          // User exists but is not a technician - allow them to be both client and technician
-          // Update user info but keep their existing role (they can be both)
-          console.log(`[CREATE TECHNICIAN] Found existing user ${existingUserByPhone.id}, adding technician role (can be both client and technician)`);
-          const userUpdates: any = { isActive: true };
-          if (technicianData.name) userUpdates.name = technicianData.name;
-          if (email) userUpdates.email = email;
-          // Don't change role - user can be both client and technician
-          user = await storage.updateUser(existingUserByPhone.id, userUpdates);
-          isExistingUser = true;
-          console.log("User updated:", user);
+          // ❌ SECURITY: Phone number already exists for a different user (client/other role)
+          // Do NOT reuse accounts - maintain separate authentication for technicians and clients
+          console.error(`[CREATE TECHNICIAN] ❌ Phone number ${phoneNumber} already in use by user ${existingUserByPhone.id} with role: ${existingUserByPhone.role}`);
+          return res.status(400).json({
+            error: "Phone number already registered",
+            details: `This phone number is already registered ${existingUserByPhone.role === 'client' ? 'as a client' : 'in the system'}. Technicians must have unique phone numbers. Please use a different phone number.`
+          });
         }
       }
 
-      // If no user found by phone, check by email
-      if (!user && email) {
+      // Check by email - same logic
+      if (email) {
         const existingUserByEmail = await storage.getUserByEmail(email);
         if (existingUserByEmail) {
           // Check if this user already has a technician record
@@ -2773,37 +2992,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return res.json(updatedTechnician);
           }
 
-          // User exists but is not a technician - allow them to be both client and technician
-          console.log(`[CREATE TECHNICIAN] Found existing user ${existingUserByEmail.id} by email, adding technician role (can be both client and technician)`);
-          const userUpdates: any = { isActive: true };
-          if (technicianData.name) userUpdates.name = technicianData.name;
-          if (phoneNumber) userUpdates.phoneNumber = phoneNumber;
-          // Don't change role - user can be both client and technician
-          user = await storage.updateUser(existingUserByEmail.id, userUpdates);
-          isExistingUser = true;
-          console.log("User updated:", user);
+          // ❌ SECURITY: Email already exists for a different user (client/other role)
+          // Do NOT reuse accounts - maintain separate authentication for technicians and clients
+          console.error(`[CREATE TECHNICIAN] ❌ Email ${email} already in use by user ${existingUserByEmail.id} with role: ${existingUserByEmail.role}`);
+          return res.status(400).json({
+            error: "Email already registered",
+            details: `This email is already registered ${existingUserByEmail.role === 'client' ? 'as a client' : 'in the system'}. Technicians must have unique email addresses. Please use a different email.`
+          });
         }
       }
 
-      // If no existing user found, create a new one
-      if (!user) {
-        const { hashPassword } = await import('./services/auth');
-        const defaultPassword = await hashPassword('ChangeMe@123');
+      // ✅ No existing user found - create a NEW technician account
+      console.log("[TECHNICIAN CREATION] Creating new user for technician...");
 
-        console.log("Creating new user for technician...");
-        // Set role to technician, but user can also be a client if needed
-        user = await storage.createUser({
-          phoneNumber: phoneNumber,
-          name: technicianData.name,
-          email: email,
-          password: defaultPassword,
-          role: "technician", // Default to technician, but can be changed later
-          isActive: true,
-          whatsappVerified: false,
-          emailVerified: false,
-        });
-        console.log("User created:", user);
-      }
+      // Determine role: senior_technician or technician
+      const technicianRole = technicianData.role === 'senior_technician' ? 'senior_technician' : 'technician';
+
+      // Create user WITHOUT a password - will be set via secure reset link
+      user = await storage.createUser({
+        phoneNumber: phoneNumber,
+        name: technicianData.name,
+        email: email,
+        password: null, // No password yet - will be set via reset link
+        role: technicianRole, // ✅ CRITICAL: Set role as technician or senior_technician
+        isActive: true,
+        whatsappVerified: true, // Admin-created, trusted
+        emailVerified: false, // Will be verified when they set password
+        requiresPasswordReset: false, // Not applicable - they haven't set a password yet
+      });
+      console.log(`[TECHNICIAN CREATION] ✅ Created new technician user ${user.id} with role: ${user.role}`);
+      isExistingUser = false; // Mark as new user for email sending
 
       // Generate employee code
       const employeeCode = `TECH-${Date.now().toString().slice(-6)}`;
@@ -2827,8 +3045,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("Technician created:", technician);
       console.log(`[CREATE TECHNICIAN] ✅ Technician created for user ${user.id}. User can be both client and technician.`);
 
+      // Generate password reset token and send welcome email for NEW users with email
+      let resetLinkSent = false;
+      let resetLink = '';
+      let emailError = '';
+
+      console.log(`[TECHNICIAN CREATION] Email check: isExistingUser=${isExistingUser}, user.email=${user.email || 'NONE'}`);
+
+      if (!isExistingUser && user.email) {
+        console.log(`[TECHNICIAN CREATION] Generating password reset token for new technician ${user.email}`);
+
+        try {
+          const {
+            createPasswordResetToken,
+            sendWelcomeEmailWithResetLink,
+            logSecurityEvent
+          } = await import('./services/auth');
+
+          const adminUser = (req as any).user;
+
+          // Generate secure reset token
+          const { token, tokenRecord } = await createPasswordResetToken(
+            user.id,
+            adminUser?.id,
+            req.ip,
+            req.headers['user-agent']
+          );
+
+          // Build reset link
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+          resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+          // Send welcome email with password setup link
+          const emailResult = await sendWelcomeEmailWithResetLink(user, token);
+
+          if (emailResult.success) {
+            resetLinkSent = true;
+            console.log(`[TECHNICIAN CREATION] ✅ Welcome email sent to ${user.email}`);
+          } else {
+            emailError = emailResult.error || 'Email delivery failed';
+            console.log(`[TECHNICIAN CREATION] ⚠️ Email failed: ${emailError}`);
+            console.log(`[TECHNICIAN CREATION] 🔗 Password setup link: ${resetLink}`);
+          }
+
+          // Log security event
+          await logSecurityEvent(
+            user.id,
+            'technician_created',
+            adminUser?.id,
+            { email: user.email, phone: phoneNumber, technician_id: technician.id },
+            req.ip
+          );
+        } catch (error) {
+          console.error('[TECHNICIAN CREATION] Error sending credentials:', error);
+          emailError = error instanceof Error ? error.message : 'Unknown error';
+        }
+      }
+
       broadcast({ type: "technician_created", data: technician });
-      res.json(technician);
+
+      // Include password setup info in response
+      res.json({
+        ...technician,
+        userCreated: !isExistingUser,
+        resetLinkSent,
+        resetLink: !resetLinkSent ? resetLink : undefined, // Only show link if email failed
+        emailError: emailError || undefined
+      });
     } catch (error) {
       console.error("Technician creation error:", error);
       console.error("Error details:", {
@@ -2912,59 +3195,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log(`[DELETE TECHNICIAN] Found technician: ${technicianId}, userId: ${existing.userId}`);
+      // Get user name for preservation
+      const user = await storage.getUser(existing.userId);
+      const technicianName = user?.name || 'Deleted Technician';
+      console.log(`[DELETE TECHNICIAN] Found technician: ${technicianId}, userId: ${existing.userId}, name: ${technicianName}`);
 
       // Check for active service requests assigned to this technician
-      try {
-        const { db } = await import('./db');
-        const { serviceRequests } = await import('@shared/schema');
-        const { eq, and, ne, or, isNull } = await import('drizzle-orm');
-
-        // Get all service requests for this technician
-        const allServiceRequests = await db
-          .select()
-          .from(serviceRequests)
-          .where(eq(serviceRequests.assignedTechnicianId, technicianId));
-
-        // Filter out completed and cancelled statuses
-        const trulyActive = allServiceRequests.filter(
-          sr => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
-        );
-
-        if (trulyActive.length > 0) {
-          console.log(`[DELETE TECHNICIAN] Cannot delete: ${trulyActive.length} active service requests found`);
-          const requestNumbers = trulyActive.map(sr => sr.requestNumber).slice(0, 5).join(', ');
-          const moreText = trulyActive.length > 5 ? ` and ${trulyActive.length - 5} more` : '';
-          return res.status(400).json({
-            error: "Cannot delete technician",
-            details: `This technician has ${trulyActive.length} active service request(s) (${requestNumbers}${moreText}). Please reassign or complete them first.`
-          });
-        }
-      } catch (queryError: any) {
-        console.error(`[DELETE TECHNICIAN] Error checking service requests:`, queryError);
-        // Don't block deletion if query fails - log and continue
-        console.warn(`[DELETE TECHNICIAN] Continuing with deletion despite query error`);
-      }
-
-      // Soft delete: mark user inactive and remove technician row
-      try {
-        console.log(`[DELETE TECHNICIAN] Marking user inactive: ${existing.userId}`);
-        await storage.updateUser(existing.userId, { isActive: false } as any);
-      } catch (userError: any) {
-        console.error(`[DELETE TECHNICIAN] Error updating user:`, userError);
-        // Continue with technician deletion even if user update fails
-        console.warn(`[DELETE TECHNICIAN] Continuing with technician deletion despite user update error`);
-      }
-
-      console.log(`[DELETE TECHNICIAN] Deleting technician record: ${technicianId}`);
       const { db } = await import('./db');
-      const { technicians } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
+      const { serviceRequests, scheduledServices } = await import('@shared/schema');
+      const { eq, sql } = await import('drizzle-orm');
+
+      // Get all service requests for this technician
+      const allServiceRequests = await db
+        .select()
+        .from(serviceRequests)
+        .where(eq(serviceRequests.assignedTechnicianId, technicianId));
+
+      // Filter out completed and cancelled statuses
+      const trulyActive = allServiceRequests.filter(
+        sr => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
+      );
+
+      if (trulyActive.length > 0) {
+        console.log(`[DELETE TECHNICIAN] Cannot delete: ${trulyActive.length} active service requests found`);
+        const requestNumbers = trulyActive.map(sr => sr.requestNumber).slice(0, 5).join(', ');
+        const moreText = trulyActive.length > 5 ? ` and ${trulyActive.length - 5} more` : '';
+        return res.status(400).json({
+          error: "Cannot delete technician",
+          details: `This technician has ${trulyActive.length} active service request(s) (${requestNumbers}${moreText}). Please reassign or complete them first.`
+        });
+      }
+
+      // Step 1: Update service_requests - preserve technician name and nullify foreign key
+      console.log(`[DELETE TECHNICIAN] Updating ${allServiceRequests.length} service request(s) to preserve technician name`);
+      if (allServiceRequests.length > 0) {
+        await db.execute(sql`
+          UPDATE service_requests
+          SET
+            technician_notes = COALESCE(technician_notes, '') ||
+              CASE
+                WHEN technician_notes IS NULL OR technician_notes = ''
+                THEN ${`Assigned to: ${technicianName} (deleted)`}
+                ELSE ${`\nAssigned to: ${technicianName} (deleted)`}
+              END,
+            assigned_technician_id = NULL
+          WHERE assigned_technician_id = ${technicianId}
+        `);
+      }
+
+      // Step 2: Update scheduled_services - nullify foreign key
+      console.log(`[DELETE TECHNICIAN] Nullifying scheduled services for technician ${technicianId}`);
+      await db.execute(sql`
+        UPDATE scheduled_services
+        SET technician_id = NULL
+        WHERE technician_id = ${technicianId}
+      `);
+
+      // Step 3: Update feedback - nullify foreign key
+      console.log(`[DELETE TECHNICIAN] Nullifying feedback records for technician ${technicianId}`);
+      await db.execute(sql`
+        UPDATE feedback
+        SET technician_id = NULL
+        WHERE technician_id = ${technicianId}
+      `);
+
+      // Step 4: Delete technician record
+      console.log(`[DELETE TECHNICIAN] Deleting technician record: ${technicianId}`);
+      const { technicians, users } = await import('@shared/schema');
       await db.delete(technicians).where(eq(technicians.id, technicianId));
+
+      // Step 5: Hard delete user account (allows email/phone reuse)
+      console.log(`[DELETE TECHNICIAN] Hard deleting user account: ${existing.userId}`);
+      await db.delete(users).where(eq(users.id, existing.userId));
 
       broadcast({ type: "technician_deleted", data: { id: technicianId } });
       console.log(`[DELETE TECHNICIAN] Successfully deleted technician: ${technicianId}`);
-      res.json({ success: true });
+      res.json({ success: true, message: `Technician deleted. ${allServiceRequests.length} service record(s) updated to preserve history.` });
     } catch (error: any) {
       console.error(`[DELETE TECHNICIAN] Error deleting technician ${req.params.id}:`, error);
       console.error(`[DELETE TECHNICIAN] Error details:`, {
@@ -2991,9 +3297,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Clients routes (compat shim) -> use customers storage
-  app.get("/api/clients", authenticateUser, requireRole("admin", "coordinator"), async (_req, res) => {
+  app.get("/api/clients", authenticateUser, requireRole("admin", "coordinator", "amc", "senior_technician"), async (req: AuthRequest, res) => {
     try {
-      const list = await storage.getAllCustomers();
+      const role = (req.user?.role || '').toLowerCase();
+      let list = await storage.getAllCustomers();
+
+      // AMC role: Only contact details
+      if (role === 'amc') {
+        list = list.map(client => sanitizeClientForRole(client, role));
+      }
+      // Senior Technician: Full client data access (read-only enforced in frontend)
+
       res.json(list);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch clients" });
@@ -3003,21 +3317,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/clients", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
       const { containerIds, ...clientData } = req.body;
+      const adminUser = (req as any).user;
 
-      // Create a user first (required for customer)
-      const { hashPassword } = await import('./services/auth');
-      const defaultPassword = await hashPassword('ChangeMe@123');
+      console.log(`[CLIENT CREATION] Admin ${adminUser.id} creating client ${clientData.email}`);
 
-      const user = await storage.createUser({
-        phoneNumber: clientData.phone,
-        name: clientData.contactPerson,
-        email: clientData.email,
-        password: defaultPassword,
-        role: "client",
-        isActive: true,
-        whatsappVerified: true, // Enable WhatsApp by default for new clients
-        emailVerified: false,
-      });
+      // Check if user already exists with this email OR phone number
+      const existingUserByEmail = await storage.getUserByEmail(clientData.email);
+      const existingUserByPhone = await storage.getUserByPhoneNumber(clientData.phone);
+
+      // Prioritize email match over phone match (email is the primary login ID)
+      const existingUser = existingUserByEmail || existingUserByPhone;
+      let user;
+
+      if (existingUser) {
+        const matchType = existingUserByEmail ? 'email' : 'phone';
+        console.log(`[CLIENT CREATION] Reusing existing user for ${matchType}: ${existingUserByEmail ? clientData.email : clientData.phone}`);
+
+        // Update existing user - NO PASSWORD SET YET if it's a new email match
+        user = await storage.updateUser(existingUser.id, {
+          name: clientData.contactPerson,
+          email: clientData.email,
+          phoneNumber: clientData.phone, // Update phone if changed
+          password: existingUser.password || null, // Keep existing password if set
+          role: "client",
+          isActive: true,
+          whatsappVerified: true,
+          emailVerified: existingUser.emailVerified || false, // Keep existing status
+          requiresPasswordReset: existingUser.requiresPasswordReset || false,
+        });
+        console.log(`[CLIENT CREATION] Updated existing user ${user.id} (matched by ${matchType})`);
+      } else {
+        // Create new user - NO PASSWORD SET YET
+        user = await storage.createUser({
+          phoneNumber: clientData.phone,
+          name: clientData.contactPerson,
+          email: clientData.email,
+          password: null, // No password yet - will be set via reset link
+          role: "client",
+          isActive: true,
+          whatsappVerified: true,
+          emailVerified: false, // Will be verified when they set password
+          requiresPasswordReset: false, // Not applicable - they haven't set a password yet
+        });
+        console.log(`[CLIENT CREATION] Created new user ${user.id}`);
+      }
 
       // Create the customer with the user ID
       const customerData = {
@@ -3047,7 +3390,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await Promise.all(assignmentPromises);
       }
 
-      res.json(created);
+      // Generate secure reset token and send welcome email
+      const {
+        createPasswordResetToken,
+        sendWelcomeEmailWithResetLink,
+        logSecurityEvent
+      } = await import('./services/auth');
+
+      const { token, tokenRecord } = await createPasswordResetToken(
+        user.id,
+        adminUser.id, // Admin who created the client
+        req.ip,
+        req.headers['user-agent'] as string
+      );
+
+      console.log(`[CLIENT CREATION] Generated password reset token for ${user.email}`);
+
+      // Send welcome email with password setup link
+      const emailResult = await sendWelcomeEmailWithResetLink(user, token);
+      console.log(`[CLIENT CREATION] Email result: ${emailResult.success ? 'Success' : 'Failed: ' + emailResult.error}`);
+
+      // Log security event
+      await logSecurityEvent(
+        user.id,
+        'client_created',
+        adminUser.id,
+        {
+          email: user.email,
+          companyName: clientData.companyName,
+          createdBy: adminUser.email,
+          resetTokenGenerated: true
+        },
+        req.ip
+      );
+
+      const userCreated = !existingUser;
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+      // Return created customer with user creation status
+      res.json({
+        ...created,
+        userCreated,
+        userReused: !!existingUser,
+        resetLinkSent: emailResult.success,
+        emailError: emailResult.error,
+        // Only include reset link in development or when email fails
+        resetLink: (!emailResult.success || process.env.NODE_ENV === 'development') ? resetLink : undefined
+      });
     } catch (error) {
       console.error("Client creation error:", error);
       res.status(500).json({ error: "Failed to create client" });
@@ -3066,14 +3456,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/clients/:id", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
-      console.log(`[DELETE CLIENT] Attempting to delete client: ${req.params.id}`);
-      // @ts-ignore add method exists in storage
-      const deleted = await storage.deleteCustomer(req.params.id);
-      console.log(`[DELETE CLIENT] Successfully deleted client: ${req.params.id}`);
-      res.json(deleted);
-    } catch (error) {
+      const clientId = req.params.id;
+      console.log(`[DELETE CLIENT] Attempting to delete client: ${clientId}`);
+
+      const customer = await storage.getCustomer(clientId);
+      if (!customer) {
+        console.log(`[DELETE CLIENT] Client not found: ${clientId}`);
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      // Get client name for preservation
+      const clientName = customer.companyName || 'Deleted Client';
+      console.log(`[DELETE CLIENT] Found client: ${clientId}, name: ${clientName}`);
+
+      const { db } = await import('./db');
+      const { serviceRequests, containers, invoices, feedback } = await import('@shared/schema');
+      const { eq, sql } = await import('drizzle-orm');
+
+      // Check for active containers
+      const assignedContainers = await db
+        .select()
+        .from(containers)
+        .where(eq(containers.currentCustomerId, clientId));
+
+      if (assignedContainers.length > 0) {
+        console.log(`[DELETE CLIENT] Cannot delete: ${assignedContainers.length} container(s) still assigned`);
+        const containerCodes = assignedContainers.map(c => c.containerCode).slice(0, 5).join(', ');
+        const moreText = assignedContainers.length > 5 ? ` and ${assignedContainers.length - 5} more` : '';
+        return res.status(400).json({
+          error: "Cannot delete client",
+          details: `This client has ${assignedContainers.length} assigned container(s) (${containerCodes}${moreText}). Please unassign them first.`
+        });
+      }
+
+      // Get all service requests for this client
+      const allServiceRequests = await db
+        .select()
+        .from(serviceRequests)
+        .where(eq(serviceRequests.customerId, clientId));
+
+      // Check for active service requests
+      const trulyActive = allServiceRequests.filter(
+        sr => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
+      );
+
+      if (trulyActive.length > 0) {
+        console.log(`[DELETE CLIENT] Cannot delete: ${trulyActive.length} active service requests found`);
+        const requestNumbers = trulyActive.map(sr => sr.requestNumber).slice(0, 5).join(', ');
+        const moreText = trulyActive.length > 5 ? ` and ${trulyActive.length - 5} more` : '';
+        return res.status(400).json({
+          error: "Cannot delete client",
+          details: `This client has ${trulyActive.length} active service request(s) (${requestNumbers}${moreText}). Please complete or cancel them first.`
+        });
+      }
+
+      // Step 1: Update service_requests - preserve client name and nullify foreign key
+      console.log(`[DELETE CLIENT] Updating ${allServiceRequests.length} service request(s) to preserve client name`);
+      if (allServiceRequests.length > 0) {
+        await db.execute(sql`
+          UPDATE service_requests
+          SET
+            service_notes = COALESCE(service_notes, '') ||
+              CASE
+                WHEN service_notes IS NULL OR service_notes = ''
+                THEN ${`Client: ${clientName} (deleted)`}
+                ELSE ${`\nClient: ${clientName} (deleted)`}
+              END,
+            client_id = NULL
+          WHERE client_id = ${clientId}
+        `);
+      }
+
+      // Step 2: Update invoices - nullify foreign key but preserve company name
+      console.log(`[DELETE CLIENT] Nullifying invoices for client ${clientId}`);
+      await db.execute(sql`
+        UPDATE invoices
+        SET customer_id = NULL
+        WHERE customer_id = ${clientId}
+      `);
+
+      // Step 3: Update feedback - nullify foreign key
+      console.log(`[DELETE CLIENT] Nullifying feedback records for client ${clientId}`);
+      await db.execute(sql`
+        UPDATE feedback
+        SET customer_id = NULL
+        WHERE customer_id = ${clientId}
+      `);
+
+      // Step 4: Update container ownership history - nullify foreign key
+      console.log(`[DELETE CLIENT] Nullifying container ownership history for client ${clientId}`);
+      await db.execute(sql`
+        UPDATE container_ownership_history
+        SET customer_id = NULL
+        WHERE customer_id = ${clientId}
+      `);
+
+      // Step 5: Delete customer record
+      console.log(`[DELETE CLIENT] Deleting customer record: ${clientId}`);
+      const { customers, users } = await import('@shared/schema');
+      await db.delete(customers).where(eq(customers.id, clientId));
+
+      // Step 6: Hard delete user account (allows email/phone reuse)
+      if (customer.userId) {
+        console.log(`[DELETE CLIENT] Hard deleting user account: ${customer.userId}`);
+        await db.delete(users).where(eq(users.id, customer.userId));
+      }
+
+      console.log(`[DELETE CLIENT] Successfully deleted client: ${clientId}`);
+      res.json({ success: true, message: `Client deleted. ${allServiceRequests.length} service record(s) updated to preserve history.` });
+    } catch (error: any) {
       console.error(`[DELETE CLIENT] Error deleting client ${req.params.id}:`, error);
-      res.status(500).json({ error: "Failed to delete client", details: error instanceof Error ? error.message : String(error) });
+      console.error(`[DELETE CLIENT] Error details:`, {
+        message: error?.message,
+        code: error?.code,
+        detail: error?.detail,
+        constraint: error?.constraint,
+      });
+      res.status(500).json({
+        error: "Failed to delete client",
+        details: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
@@ -3103,6 +3605,168 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Admin triggers password reset for a client
+   * Generates secure token and sends email with reset link
+   */
+  app.post("/api/admin/clients/:id/reset-password", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
+    try {
+      const clientId = req.params.id;
+      const adminUser = (req as any).user;
+
+      console.log(`[ADMIN PASSWORD RESET] Admin ${adminUser.id} resetting password for client ${clientId}`);
+
+      // Get customer to find user
+      const customer = await storage.getCustomer(clientId);
+      if (!customer) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      if (!customer.userId) {
+        return res.status(400).json({ error: "Client has no associated user account" });
+      }
+
+      // Get user
+      const user = await storage.getUser(customer.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User account not found" });
+      }
+
+      // Generate secure reset token
+      const {
+        createPasswordResetToken,
+        sendPasswordResetEmail,
+        logSecurityEvent
+      } = await import('./services/auth');
+
+      const { token, tokenRecord } = await createPasswordResetToken(
+        user.id,
+        adminUser.id, // Admin who triggered the reset
+        req.ip,
+        req.headers['user-agent'] as string
+      );
+
+      console.log(`[ADMIN PASSWORD RESET] Generated reset token for ${user.email}`);
+
+      // Send password reset email
+      const emailResult = await sendPasswordResetEmail(user, token);
+      console.log(`[ADMIN PASSWORD RESET] Email result: ${emailResult.success ? 'Success' : 'Failed: ' + emailResult.error}`);
+
+      // Log security event
+      await logSecurityEvent(
+        user.id,
+        'password_reset_by_admin',
+        adminUser.id,
+        {
+          email: user.email,
+          companyName: customer.companyName,
+          resetBy: adminUser.email,
+          reason: 'Admin-triggered password reset'
+        },
+        req.ip
+      );
+
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+      res.json({
+        success: true,
+        message: emailResult.success
+          ? 'Password reset email sent successfully'
+          : 'Password reset token generated but email failed. Check server logs.',
+        emailSent: emailResult.success,
+        // Only include reset link in development or when email fails
+        resetLink: (!emailResult.success || process.env.NODE_ENV === 'development') ? resetLink : undefined
+      });
+    } catch (error) {
+      console.error("[ADMIN PASSWORD RESET] Error:", error);
+      res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
+
+  /**
+   * Admin triggers password reset for a technician
+   * Generates secure token and sends email with reset link
+   */
+  app.post("/api/admin/technicians/:id/reset-password", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
+    try {
+      const technicianId = req.params.id;
+      const adminUser = (req as any).user;
+
+      console.log(`[ADMIN PASSWORD RESET] Admin ${adminUser.id} resetting password for technician ${technicianId}`);
+
+      // Get technician to find user
+      const technician = await storage.getTechnician(technicianId);
+      if (!technician) {
+        return res.status(404).json({ error: "Technician not found" });
+      }
+
+      if (!technician.userId) {
+        return res.status(400).json({ error: "Technician has no associated user account" });
+      }
+
+      // Get user
+      const user = await storage.getUser(technician.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User account not found" });
+      }
+
+      if (!user.email) {
+        return res.status(400).json({ error: "Technician has no email address. Please add an email first." });
+      }
+
+      // Generate secure reset token
+      const {
+        createPasswordResetToken,
+        sendPasswordResetEmail,
+        logSecurityEvent
+      } = await import('./services/auth');
+
+      const { token, tokenRecord } = await createPasswordResetToken(
+        user.id,
+        adminUser.id, // Admin who triggered the reset
+        req.ip,
+        req.headers['user-agent'] as string
+      );
+
+      console.log(`[ADMIN PASSWORD RESET] Generated reset token for technician ${user.email}`);
+
+      // Send password reset email
+      const emailResult = await sendPasswordResetEmail(user, token);
+      console.log(`[ADMIN PASSWORD RESET] Email result: ${emailResult.success ? 'Success' : 'Failed: ' + emailResult.error}`);
+
+      // Log security event
+      await logSecurityEvent(
+        user.id,
+        'password_reset_by_admin',
+        adminUser.id,
+        {
+          email: user.email,
+          technicianName: user.name,
+          employeeCode: technician.employeeCode,
+          resetBy: adminUser.email,
+          reason: 'Admin-triggered password reset for technician'
+        },
+        req.ip
+      );
+
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+      res.json({
+        success: true,
+        message: emailResult.success
+          ? 'Password reset email sent successfully'
+          : 'Password reset token generated but email failed. Check server logs.',
+        emailSent: emailResult.success,
+        // Only include reset link in development or when email fails
+        resetLink: (!emailResult.success || process.env.NODE_ENV === 'development') ? resetLink : undefined
+      });
+    } catch (error) {
+      console.error("[ADMIN PASSWORD RESET] Error:", error);
+      res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
 
   // Inventory routes
   app.get("/api/inventory", authenticateUser, async (req, res, next) => {
@@ -3546,7 +4210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Toggle client access (enable/disable)
-  app.post('/api/admin/customers/:id/toggle-access', authenticateUser, requireRole('admin','super_admin','coordinator'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/customers/:id/toggle-access', authenticateUser, requireRole('admin', 'super_admin', 'coordinator'), async (req: AuthRequest, res) => {
     try {
       const customer = await storage.getCustomer(req.params.id);
       if (!customer) return res.status(404).json({ error: 'Customer not found' });
@@ -3705,7 +4369,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { technicianId, date } = req.body;
       const technician = await storage.getTechnician(technicianId);
       const services = await storage.getTechnicianSchedule(technicianId, date);
-      
+
       if (!technician) {
         return res.status(404).json({ error: "Technician not found" });
       }
@@ -3725,7 +4389,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { invoiceId, customerId } = req.body;
       const invoice = await storage.getInvoice(invoiceId);
       const customer = await storage.getCustomer(customerId);
-      
+
       const message = formatInvoiceMessage(invoice, customer);
       const result = await sendTextMessage(customer.phoneNumber, message);
       res.json(result);
