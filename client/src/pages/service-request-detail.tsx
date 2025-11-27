@@ -16,6 +16,16 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
   Calendar,
   Clock,
   MapPin,
@@ -37,9 +47,11 @@ import {
   Plus,
   Minus,
   Box,
-  FileDown
+  FileDown,
+  FileStack,
+  ChevronDown
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { generateServiceRequestPDF } from "@/lib/pdfGenerator";
 
 interface InventoryItem {
@@ -63,10 +75,64 @@ export default function ServiceRequestDetail() {
   const [selectedParts, setSelectedParts] = useState<{ itemId: string; quantity: number; partName: string }[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [selectedQuantity, setSelectedQuantity] = useState<number>(1);
+  const [remarks, setRemarks] = useState<string>("");
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/service-requests", id],
     queryFn: async () => (await apiRequest("GET", `/api/service-requests/${id}`)).json(),
+  });
+
+  // Update remarks when data loads
+  useEffect(() => {
+    if (data && (data as any).coordinatorRemarks) {
+      setRemarks((data as any).coordinatorRemarks);
+    }
+  }, [data]);
+
+  const { data: reports, refetch: refreshReports } = useQuery({
+    queryKey: ["/api/service-requests", id, "reports"],
+    queryFn: async () => (await apiRequest("GET", `/api/service-requests/${id}/reports`)).json(),
+    enabled: !!id,
+  });
+
+  const generateReport = useMutation({
+    mutationFn: async (stage: string) => {
+      return await apiRequest("POST", `/api/service-requests/${id}/generate-report`, { stage });
+    },
+    onSuccess: () => {
+      refreshReports();
+      toast({
+        title: "Report Generated",
+        description: "Report generated and emailed successfully.",
+      });
+    },
+    onError: (e: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: e.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  const saveRemarksMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("PATCH", `/api/service-requests/${id}/remarks`, { remarks });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests", id] });
+      toast({
+        title: "Remarks Saved",
+        description: "Coordinator remarks saved.",
+      });
+    },
+    onError: (e: Error) => {
+      toast({
+        title: "Error",
+        description: e.message,
+        variant: "destructive",
+      });
+    }
   });
 
   const { data: whatsappMessages } = useQuery({
@@ -167,8 +233,34 @@ export default function ServiceRequestDetail() {
         throw new Error("No parts available to create indent");
       }
 
+      const req = data as any;
+      const customer = req.customer || {};
+      const container = req.container || {};
+      const technician = req.technician || {};
+      const user = customer.user || {};
+
+      // Construct payload for new Indent API
+      const payload = {
+        serviceRequestId: req.id,
+        containerCode: container.containerCode || "UNKNOWN",
+        companyName: customer.companyName || "UNKNOWN",
+        customerName: customer.name || customer.companyName || "UNKNOWN",
+        customerEmail: customer.email || "",
+        customerPhone: customer.phone || "",
+        technicianName: technician.user?.name || "Unassigned",
+        siteAddress: container.currentLocation?.address || customer.billingAddress || "Unknown",
+        parts: req.requiredParts.map((part: string) => {
+          // Parse "Part Name (qty)" format
+          const match = part.match(/^(.+?)\s*\((\d+)\)$/);
+          return {
+            itemName: match ? match[1].trim() : part,
+            quantity: match ? parseInt(match[2], 10) : 1
+          };
+        })
+      };
+
       // Call the new inventory integration endpoint
-      return await apiRequest("POST", `/api/service-requests/${id}/request-indent`, {});
+      return await apiRequest("POST", `/api/inventory/request-indent`, payload);
     },
     onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests", id] });
@@ -402,10 +494,62 @@ export default function ServiceRequestDetail() {
               <ArrowLeft className="w-4 h-4" /> Back to Service Requests
             </Link>
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={handleGeneratePDF}>
-                <FileDown className="w-4 h-4 mr-2" />
-                Generate PDF
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <FileDown className="w-4 h-4 mr-2" />
+                    Generate PDF
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>Select Report Type</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  
+                  <DropdownMenuItem onClick={() => generateReport.mutate('initial')}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col">
+                      <span>Initial Service Request</span>
+                      <span className="text-xs text-muted-foreground">Basic request details</span>
+                    </div>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem 
+                    onClick={() => generateReport.mutate('pre_service')}
+                    disabled={!technician.id}
+                  >
+                    <Wrench className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col">
+                      <span>Pre-Service Deployment</span>
+                      <span className="text-xs text-muted-foreground">Technician & wage details</span>
+                    </div>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem 
+                    onClick={() => generateReport.mutate('post_service')}
+                    disabled={req.status !== 'completed'}
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col">
+                      <span>Post-Service Completion</span>
+                      <span className="text-xs text-muted-foreground">Work done & photos</span>
+                    </div>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuSeparator />
+                  
+                  <DropdownMenuItem 
+                    onClick={() => generateReport.mutate('complete')}
+                    disabled={req.status !== 'completed'}
+                  >
+                    <FileStack className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col">
+                      <span>Complete Service Report</span>
+                      <span className="text-xs text-muted-foreground">All stages combined</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Badge className={getStatusColor(req.status)}>{req.status}</Badge>
               <Badge className={getPriorityColor(req.priority)}>{req.priority}</Badge>
             </div>
@@ -427,12 +571,13 @@ export default function ServiceRequestDetail() {
 
           {/* Main Content Tabs */}
           <Tabs defaultValue="overview" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-5 lg:w-auto">
+            <TabsList className="grid w-full grid-cols-6 lg:w-auto">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="client">Client Info</TabsTrigger>
               <TabsTrigger value="media">Media</TabsTrigger>
               <TabsTrigger value="conversation">Conversation</TabsTrigger>
               <TabsTrigger value="timeline">Timeline</TabsTrigger>
+              <TabsTrigger value="reports">Reports</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -648,6 +793,57 @@ export default function ServiceRequestDetail() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Coordinator Remarks */}
+              {technician.id && (
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <MessageSquare className="w-5 h-5" />
+                      Coordinator Remarks
+                    </CardTitle>
+                    <CardDescription>
+                      Add remarks or notes after discussing with client (will appear in Pre-Service Report)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Textarea
+                      placeholder="Enter remarks, special instructions, or client discussions...
+                      
+Example:
+- Client confirmed availability on scheduled date
+- Special access required - client will arrange site pass
+- Priority parts to be carried: Temperature sensors"
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                      rows={6}
+                      className="w-full"
+                    />
+                    
+                    <div className="flex justify-between items-center mt-4">
+                      <span className="text-sm text-muted-foreground">
+                        {remarks.length} characters
+                      </span>
+                      <Button 
+                        onClick={() => saveRemarksMutation.mutate()}
+                        disabled={!remarks.trim() || saveRemarksMutation.isPending}
+                        size="sm"
+                      >
+                        {saveRemarksMutation.isPending ? "Saving..." : "💾 Save Remarks"}
+                      </Button>
+                    </div>
+                    
+                    {(data as any)?.remarksAddedAt && (
+                      <div className="mt-4 p-3 bg-green-50 text-green-800 rounded-md flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span>
+                          Remarks saved on {new Date((data as any).remarksAddedAt).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Resolution Notes */}
               {req.resolutionNotes && (
@@ -1015,6 +1211,72 @@ export default function ServiceRequestDetail() {
                   ) : (
                     <p className="text-center text-muted-foreground py-8">No timeline events available</p>
                   )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Reports Tab */}
+            <TabsContent value="reports" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
+                    Generated Reports History
+                  </CardTitle>
+                  <CardDescription>
+                    History of all PDF reports generated for this service request
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Report Type</TableHead>
+                        <TableHead>Generated At</TableHead>
+                        <TableHead>Email Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reports && reports.length > 0 ? (
+                        reports.map((report: any) => (
+                          <TableRow key={report.id}>
+                            <TableCell className="font-medium capitalize">
+                              {report.reportStage.replace('_', ' ')} Report
+                            </TableCell>
+                            <TableCell>
+                              {new Date(report.generatedAt).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              {report.status === 'emailed' ? (
+                                <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100">
+                                  ✓ Sent
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">Pending</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => window.open(report.fileUrl, '_blank')}
+                              >
+                                <FileDown className="w-4 h-4 mr-2" />
+                                Download
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                            No reports generated yet. Use the "Generate PDF" button to create one.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
                 </CardContent>
               </Card>
             </TabsContent>

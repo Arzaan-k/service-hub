@@ -50,7 +50,7 @@ export async function apiRequest(
     // In development, backend runs on port 5000
     // In production, frontend and backend are served from the same origin
     if (process.env.NODE_ENV === 'development') {
-      return 'http://localhost:5000';
+      return ''; // Use relative path to leverage Vite proxy
     }
     
     // In production, use the same origin as the frontend
@@ -64,7 +64,7 @@ export async function apiRequest(
     }
     
     // Default fallback
-    return 'http://localhost:5000';
+    return '';
   };
 
   const baseUrl = getBaseUrl();
@@ -130,9 +130,7 @@ export const getQueryFn: <T>(options: {
   }
   
   // Default fallbacks
-  return process.env.NODE_ENV === 'development' 
-    ? 'http://localhost:5000' 
-    : 'http://localhost:5000';
+  return '';
 };
 
 console.log('[DEBUG] Query key:', queryKey);

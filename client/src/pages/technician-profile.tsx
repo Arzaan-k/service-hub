@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
-import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock, Send } from "lucide-react";
+import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock, Send, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
 import { websocket } from "@/lib/websocket";
@@ -338,6 +338,7 @@ export default function TechnicianProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ baseLocation: "" });
   const [isCredentialsConfirmOpen, setIsCredentialsConfirmOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   // WebSocket listeners for real-time updates
   useEffect(() => {
@@ -390,36 +391,75 @@ export default function TechnicianProfile() {
     },
   });
 
-  const sendCredentialsMutation = useMutation({
+  const resetPasswordMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`/api/admin/users/${technicianId}/send-credentials`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const response = await apiRequest("POST", `/api/admin/technicians/${technicianId}/reset-password`);
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to send credentials');
+        throw new Error(error.error || 'Failed to send password reset');
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Show link in toast if email failed or in development
+      const message = data.emailSent
+        ? "Password reset email sent successfully to the technician."
+        : "Password reset link generated. Email delivery failed - check server logs.";
+
       toast({
-        title: "Success",
-        description: "New credentials sent via email",
+        title: data.emailSent ? "Email Sent" : "Link Generated",
+        description: message,
       });
+
+      // Log reset link for development
+      if (data.resetLink) {
+        console.log('🔗 Technician password reset link:', data.resetLink);
+      }
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to send credentials",
+        description: error.message,
         variant: "destructive",
       });
     },
   });
 
-  const handleConfirmSendCredentials = () => {
-    sendCredentialsMutation.mutate();
+  const handleConfirmResetPassword = () => {
+    resetPasswordMutation.mutate();
     setIsCredentialsConfirmOpen(false);
+  };
+
+  const deleteTechnicianMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("DELETE", `/api/technicians/${technicianId}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.details || error.error || 'Failed to delete technician');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
+      toast({
+        title: "Technician Deleted",
+        description: "The technician has been successfully deleted.",
+      });
+      // Navigate back to technicians list
+      window.location.href = "/technicians";
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleConfirmDelete = () => {
+    deleteTechnicianMutation.mutate();
+    setIsDeleteConfirmOpen(false);
   };
 
   useEffect(() => {
@@ -466,11 +506,21 @@ export default function TechnicianProfile() {
                       variant="outline"
                       size="sm"
                       onClick={() => setIsCredentialsConfirmOpen(true)}
-                      disabled={sendCredentialsMutation.isPending}
+                      disabled={resetPasswordMutation.isPending}
                       className="bg-green-600 hover:bg-green-700 text-white border-green-600"
                     >
                       <Send className="h-4 w-4 mr-2" />
-                      {sendCredentialsMutation.isPending ? 'Sending...' : 'Send Credentials'}
+                      {resetPasswordMutation.isPending ? 'Sending...' : 'Reset Password'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsDeleteConfirmOpen(true)}
+                      disabled={deleteTechnicianMutation.isPending}
+                      className="bg-red-600 hover:bg-red-700 text-white border-red-600"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {deleteTechnicianMutation.isPending ? 'Deleting...' : 'Delete'}
                     </Button>
                   </div>
                 </div>
@@ -484,10 +534,17 @@ export default function TechnicianProfile() {
                     <span>{technician.phone || technician.whatsappNumber || "Not provided"}</span>
                   </div>
 
+                  {technician.email && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <i className="fas fa-envelope h-4 w-4 text-muted-foreground"></i>
+                      <span>{technician.email}</span>
+                    </div>
+                  )}
+
                   {/* Location Section */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm">
-                      <MapPin className="h-4 w-4 text-muted-foreground"/>
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
                       <span>Location:</span>
                     </div>
                     {isEditing ? (
@@ -1069,18 +1126,19 @@ export default function TechnicianProfile() {
                         ⚠️ This action will:
                       </p>
                       <ul className="text-xs text-warning-foreground space-y-1 ml-4">
-                        <li>• Generate a new secure password</li>
-                        <li>• Send login credentials via email</li>
-                        <li>• Invalidate the current password</li>
-                        <li>• Require the user to change password after login</li>
+                        <li>• Generate a secure one-time password reset link</li>
+                        <li>• Send the link via email to the technician</li>
+                        <li>• Link expires in 1 hour</li>
+                        <li>• Technician sets their own secure password</li>
                       </ul>
                     </div>
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  The technician will receive an email with their new login credentials.
-                  For security, they should change their password after first login.
-                </p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-900">
+                    <strong>🔒 Security:</strong> The technician's email ({technician?.email || 'email address'}) will be used as their login ID. They'll choose their own strong password via the secure link.
+                  </p>
+                </div>
               </div>
             </DialogDescription>
           </DialogHeader>
@@ -1094,11 +1152,11 @@ export default function TechnicianProfile() {
               Cancel
             </Button>
             <Button
-              onClick={handleConfirmSendCredentials}
-              disabled={sendCredentialsMutation.isPending}
+              onClick={handleConfirmResetPassword}
+              disabled={resetPasswordMutation.isPending}
               className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
-              {sendCredentialsMutation.isPending ? (
+              {resetPasswordMutation.isPending ? (
                 <>
                   <i className="fas fa-spinner fa-spin mr-2"></i>
                   Sending...
@@ -1106,7 +1164,72 @@ export default function TechnicianProfile() {
               ) : (
                 <>
                   <i className="fas fa-key mr-2"></i>
-                  Reset & Send Password
+                  Send Reset Link
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Delete Technician
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              <div className="space-y-3">
+                <p className="font-medium">
+                  Are you sure you want to delete <strong>{technician?.name}</strong>?
+                </p>
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <i className="fas fa-exclamation-triangle text-destructive mt-0.5"></i>
+                    <div>
+                      <p className="text-sm font-medium text-destructive-foreground mb-1">
+                        ⚠️ This action will:
+                      </p>
+                      <ul className="text-xs text-destructive-foreground space-y-1 ml-4">
+                        <li>• Mark the user account as inactive</li>
+                        <li>• Remove the technician record permanently</li>
+                        <li>• This action cannot be undone</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Note: You cannot delete a technician with active service requests.
+                  Please reassign or complete them first.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmDelete}
+              disabled={deleteTechnicianMutation.isPending}
+              className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {deleteTechnicianMutation.isPending ? (
+                <>
+                  <i className="fas fa-spinner fa-spin mr-2"></i>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Technician
                 </>
               )}
             </Button>

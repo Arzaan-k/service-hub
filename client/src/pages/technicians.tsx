@@ -49,6 +49,7 @@ export default function Technicians() {
     experienceLevel: "mid",
     specialization: "general",
     baseLocation: "",
+    role: "technician", // Default to regular technician
   });
   const [thirdPartyFormData, setThirdPartyFormData] = useState({
     contactName: "",
@@ -158,54 +159,15 @@ export default function Technicians() {
       }
       const technicianData = await res.json();
 
-      // Create user account for the technician
-      try {
-        const userResponse = await fetch('/api/admin/users', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken || ''}`
-          },
-          body: JSON.stringify({
-            name: data.name,
-            email: data.email,
-            phoneNumber: data.phone,
-            role: 'technician'
-          }),
-        });
-
-        let userCreated = false;
-        let user = null;
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          userCreated = true;
-          user = userData.user;
-        } else {
-          console.warn('Failed to create user account:', await userResponse.text());
-        }
-
-        return {
-          ...technicianData,
-          userCreated,
-          user,
-          name: technicianData.name ?? technicianData.user?.name,
-          email: technicianData.email ?? technicianData.user?.email,
-          phone: technicianData.phone ?? technicianData.user?.phoneNumber,
-          specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
-          baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
-        };
-      } catch (error) {
-        console.warn('Error creating user account:', error);
-        return {
-          ...technicianData,
-          userCreated: false,
-          name: technicianData.name ?? technicianData.user?.name,
-          email: technicianData.email ?? technicianData.user?.email,
-          phone: technicianData.phone ?? technicianData.user?.phoneNumber,
-          specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
-          baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
-        };
-      }
+      // Return technician data - user account is already handled by backend
+      return {
+        ...technicianData,
+        name: technicianData.name ?? technicianData.user?.name,
+        email: technicianData.email ?? technicianData.user?.email,
+        phone: technicianData.phone ?? technicianData.user?.phoneNumber,
+        specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
+        baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
+      };
     },
     onSuccess: (result) => {
       console.log("Technician created successfully:", result);
@@ -213,9 +175,20 @@ export default function Technicians() {
       setIsAddDialogOpen(false);
       resetForm();
 
-      const successMessage = result.userCreated
-        ? "Technician added and user account created. Credentials sent via email."
-        : "Technician added. User account creation failed.";
+      // Build success message based on what happened
+      let successMessage = "Technician added successfully.";
+
+      if (result.userCreated && result.resetLinkSent) {
+        successMessage = "Technician added. User account created and password setup link sent via email.";
+      } else if (result.userCreated && !result.resetLinkSent) {
+        successMessage = `Technician added. User account created but email failed. ${result.emailError || 'Check server logs for reset link.'}`;
+        // Log reset link for development
+        if (result.resetLink) {
+          console.log('🔗 Technician password setup link:', result.resetLink);
+        }
+      } else if (result.userReused) {
+        successMessage = "Technician added. Existing user account reused.";
+      }
 
       toast({
         title: "Success",
@@ -357,6 +330,7 @@ export default function Technicians() {
       experienceLevel: "mid",
       specialization: "general",
       baseLocation: "",
+      role: "technician",
     });
     setSelectedTech(null);
   };
@@ -907,6 +881,21 @@ export default function Technicians() {
                   <SelectItem value="mid">Mid-Level</SelectItem>
                   <SelectItem value="senior">Senior</SelectItem>
                   <SelectItem value="expert">Expert</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="role">Role</Label>
+              <Select
+                value={formData.role}
+                onValueChange={(value) => setFormData({ ...formData, role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="technician">Technician</SelectItem>
+                  <SelectItem value="senior_technician">Senior Technician</SelectItem>
                 </SelectContent>
               </Select>
             </div>

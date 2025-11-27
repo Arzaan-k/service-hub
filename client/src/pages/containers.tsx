@@ -298,9 +298,9 @@ export default function Containers() {
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden bg-background relative" style={{ backgroundImage: 'none' }}>
+      <main className="flex-1 flex flex-col min-h-screen bg-background relative" style={{ backgroundImage: 'none' }}>
         <Header title="Container Master Sheet" />
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8 relative z-10 scrollbar-thin">
+        <div className="flex-1 p-4 lg:p-8 space-y-8 relative z-10">
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <AnimatedCard gradientColor="#3B82F6" className="p-6">
@@ -436,7 +436,89 @@ export default function Containers() {
               <h3 className="text-lg font-semibold text-foreground">Container Master Sheet <span className="text-muted-foreground text-sm font-normal ml-2">({totalItems} containers)</span></h3>
             </div>
             <div className="p-0">
-              <div className="overflow-x-auto max-h-[600px] scrollbar-thin">
+              {/* Mobile Card View */}
+              <div className="lg:hidden space-y-4 p-4">
+                {paginatedItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+                    <Package className="h-12 w-12 text-muted-foreground/30" />
+                    <p>No containers found</p>
+                  </div>
+                ) : (
+                  paginatedItems.map((container: Container) => {
+                    const metadata = container.excelMetadata || {};
+                    const containerNumber =
+                      (container as any).container_no ||
+                      container.containerCode ||
+                      (container as any).container_id ||
+                      "";
+
+                    return (
+                      <div
+                        key={container.id}
+                        className="bg-white/60 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-xl p-4 shadow-sm active:scale-[0.98] transition-all duration-200"
+                        onClick={() => setLocation(`/containers/${container.id}`)}
+                      >
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h4 className="font-mono font-bold text-primary text-lg">{containerNumber || "—"}</h4>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {(container as any).productType || metadata.productType || "N/A"} • {(container as any).size || metadata.size || "N/A"}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            {getStatusBadge(
+                              (container as any).inventoryStatus ||
+                              (container as any).inventory_status ||
+                              metadata.status ||
+                              container.status
+                            )}
+                            {getHealthScoreBadge(container.healthScore || 0)}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mb-3">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase text-muted-foreground font-semibold">Location</span>
+                            <span className="truncate font-medium">
+                              {(container as any).availableLocation || metadata.location || "Unknown"}
+                            </span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase text-muted-foreground font-semibold">Depot</span>
+                            <span className="truncate font-medium">
+                              {(container as any).depot || metadata.depot || "Unknown"}
+                            </span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase text-muted-foreground font-semibold">Grade</span>
+                            <span className="font-medium">
+                              {getGradeBadge((container as any).grade || metadata.grade || "N/A")}
+                            </span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase text-muted-foreground font-semibold">YOM</span>
+                            <span className="font-medium">
+                              {(container as any).mfgYear || metadata.yom || "N/A"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-white/10 flex justify-between items-center">
+                          <span className="text-xs text-muted-foreground">
+                            {(container as any).current || metadata.current || "No current status"}
+                          </span>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full hover:bg-primary/10 hover:text-primary">
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden lg:block overflow-x-auto max-h-[600px] scrollbar-thin">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 z-20 bg-white/80 dark:bg-black/80 backdrop-blur-xl text-xs uppercase text-muted-foreground font-semibold shadow-sm">
                     <tr>

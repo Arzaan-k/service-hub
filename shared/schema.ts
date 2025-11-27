@@ -5,7 +5,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Enums according to PRD
-export const userRoleEnum = pgEnum("user_role", ["admin", "client", "technician", "coordinator", "super_admin"]);
+export const userRoleEnum = pgEnum("user_role", ["admin", "client", "technician", "coordinator", "super_admin", "senior_technician", "amc"]);
 export const containerStatusEnum = pgEnum("container_status", ["active", "in_service", "maintenance", "retired", "in_transit", "for_sale", "sold"]);
 // Use existing enum from database
 export const containerTypeEnum = pgEnum("container_type", ["refrigerated", "dry", "special", "iot_enabled", "manual"]);
@@ -46,6 +46,7 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true).notNull(),
   whatsappVerified: boolean("whatsapp_verified").default(false).notNull(),
   emailVerified: boolean("email_verified").default(false).notNull(),
+  requiresPasswordReset: boolean("requires_password_reset").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }) as any;
@@ -246,7 +247,7 @@ export const serviceRequests = pgTable("service_requests", {
   clientApprovalRequired: boolean("client_approval_required"),
   clientApprovedAt: timestamp("client_approved_at"),
   // New columns for technician WhatsApp flow
-  // startTime: timestamp("start_time"), // When technician actually started (WhatsApp flow)
+  startTime: timestamp("start_time"), // When technician actually started (WhatsApp flow)
   endTime: timestamp("end_time"), // When technician actually ended (WhatsApp flow)
   durationMinutes: integer("duration_minutes"), // Calculated duration in minutes
   signedDocumentUrl: text("signed_document_url"), // Client signature document
@@ -266,10 +267,28 @@ export const serviceRequests = pgTable("service_requests", {
   year: integer("year"), // 2023, 2024, etc.
   excelData: jsonb("excel_data"), // Store all Excel data as JSON
   
-  // Inventory Integration fields (commented out until migration is run)
-  // inventoryOrderId: text("inventory_order_id"), // Order ID from Inventory System
-  // inventoryOrderNumber: text("inventory_order_number"), // Order Number from Inventory System
-  // inventoryOrderCreatedAt: timestamp("inventory_order_created_at"), // When order was created in Inventory System
+  // Inventory Integration fields
+  inventoryOrderId: text("inventory_order_id"), // Order ID from Inventory System
+  inventoryOrderNumber: text("inventory_order_number"), // Order Number from Inventory System
+  inventoryOrderCreatedAt: timestamp("inventory_order_created_at"), // When order was created in Inventory System
+  
+  // Coordinator Remarks for Pre-Service Report
+  coordinatorRemarks: text("coordinator_remarks"),
+  remarksAddedBy: varchar("remarks_added_by"),
+  remarksAddedAt: timestamp("remarks_added_at"),
+});
+
+// Service Report PDFs table (new according to PRD)
+export const serviceReportPdfs = pgTable("service_report_pdfs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
+  reportStage: varchar("report_stage").notNull(), // 'initial', 'pre_service', 'post_service', 'complete'
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size"),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  emailedAt: timestamp("emailed_at"),
+  emailRecipients: text("email_recipients").array(),
+  status: varchar("status").default('generated'), // 'generated', 'emailed', 'failed'
 });
 
 // Invoices table (enhanced according to PRD)
@@ -400,6 +419,19 @@ export const emailVerifications = pgTable("email_verifications", {
   codeHash: text("code_hash").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   attempts: integer("attempts").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Password Reset Tokens (secure password reset flow)
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  tokenHash: text("token_hash").notNull().unique(), // SHA-256 hash of the token
+  expiresAt: timestamp("expires_at").notNull(), // Tokens expire after 1 hour
+  usedAt: timestamp("used_at"), // null if not used yet, timestamp when used
+  createdBy: varchar("created_by").references(() => users.id), // Admin who triggered the reset
+  ipAddress: text("ip_address"), // IP address of the requester
+  userAgent: text("user_agent"), // Browser/device info
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
