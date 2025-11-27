@@ -138,10 +138,10 @@ export const containers = pgTable("containers", {
   reeferModel: text("reefer_model"), // Reefer unit model name
   imageLinks: text("image_links"), // Links to container images/docs
   masterSheetData: jsonb("master_sheet_data"), // Complete master sheet row data
-  lastPmDate: timestamp("last_pm_date"),
-  nextPmDueDate: timestamp("next_pm_due_date"),
-  pmFrequencyDays: integer("pm_frequency_days").default(90),
-  pmStatus: pmStatusEnum("pm_status").default("UP_TO_DATE"),
+  // lastPmDate: timestamp("last_pm_date"),
+  // nextPmDueDate: timestamp("next_pm_due_date"),
+  // pmFrequencyDays: integer("pm_frequency_days").default(90),
+  // pmStatus: pmStatusEnum("pm_status").default("UP_TO_DATE"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -219,8 +219,8 @@ export const serviceRequests = pgTable("service_requests", {
   alertId: varchar("alert_id").references(() => alerts.id),
   assignedTechnicianId: varchar("assigned_technician_id").references(() => technicians.id),
   // Assignment audit fields (from existing DB columns)
-  assignedBy: text("assigned_by"),
-  assignedAt: timestamp("assigned_at"),
+  // assignedBy: text("assigned_by"),
+  // assignedAt: timestamp("assigned_at"),
   priority: servicePriorityEnum("priority").notNull().default("normal"),
   status: serviceStatusEnum("status").notNull().default("pending"),
   issueDescription: text("issue_description").notNull(),

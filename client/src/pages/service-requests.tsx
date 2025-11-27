@@ -555,13 +555,15 @@ export default function ServiceRequests() {
                     <div className="flex flex-wrap gap-3 pt-4 border-t border-border">
                       {request.status === "pending" && (
                         <div className="flex items-center gap-3 w-full relative z-10 overflow-visible flex-nowrap">
-                          <button
-                            onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
-                            title="Assign Technician"
-                          >
-                            <UserCog className="w-4 h-4" /> Assign Technician
-                          </button>
+                          {!request.assignedTechnicianId && (
+                            <button
+                              onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
+                              title="Assign Technician"
+                            >
+                              <UserCog className="w-4 h-4" /> Assign Technician
+                            </button>
+                          )}
 
                           <button
                             onClick={() => startService.mutate(request.id)}
@@ -583,13 +585,15 @@ export default function ServiceRequests() {
                       )}
                       {request.status === "scheduled" && (
                         <div className="flex items-center gap-3 w-full relative z-10 overflow-visible flex-nowrap">
-                          <button
-                            onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
-                            title="Assign Technician"
-                          >
-                            <UserCog className="w-4 h-4" /> Assign Technician
-                          </button>
+                          {!request.assignedTechnicianId && (
+                            <button
+                              onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
+                              title="Assign Technician"
+                            >
+                              <UserCog className="w-4 h-4" /> Assign Technician
+                            </button>
+                          )}
                           <button
                             onClick={() => startService.mutate(request.id)}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#FFA07A] text-[#FFA07A] hover:bg-[#FFF2ED] dark:hover:bg-[#1F1F1F] transition-all duration-300"

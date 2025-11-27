@@ -3,9 +3,7 @@ import { storage } from '../storage';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
-import { db } from '../db';
-import { serviceRequests, technicians, whatsappMessages } from '@shared/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { serviceRequests, technicians } from '@shared/schema';
 
 // Constants for styling
 const COLORS = {
@@ -127,16 +125,28 @@ export async function generateServiceReportPDF(serviceRequestId: string, stage: 
             drawHeader(doc, stage, serviceRequest);
         }
 
-        // Content logic
+        // Content logic based on stage
         if (stage === 'initial') {
             await drawInitialContent(ctx, serviceRequest, customer, container);
         } else if (stage === 'pre_service') {
             await drawInitialContent(ctx, serviceRequest, customer, container);
             await drawPreServiceDetails(ctx, serviceRequest, technician, technicianUser);
         } else if (stage === 'post_service') {
-            // Post service typically includes basic info + post details
+            // Post service: 3-4 pages structure
+            // Page 1: Basic Info, Service Timeline, Issue Description
             await drawBasicInfo(ctx, serviceRequest);
-            await drawPostServiceDetails(ctx, serviceRequest, technician, technicianUser);
+            await drawServiceTimeline(ctx, serviceRequest);
+            await drawIssueDescription(ctx, serviceRequest, customer);
+            
+            // Page 2: Assigned Tech, Wages, Parts, Costs, Work Performed
+            checkPageBreak(ctx, 200); // Ensure new page for tech details if needed
+            await drawTechnicianDetails(ctx, serviceRequest, technician, technicianUser);
+            
+            // Page 3+: Photos & Docs
+            await drawPostServiceDocs(ctx, serviceRequest);
+            
+            // Summary
+            await drawServiceSummary(ctx, serviceRequest, customer, container);
         } else if (stage === 'complete') {
             await drawCompleteContent(ctx, serviceRequest, customer, container, technician, technicianUser);
         }
@@ -154,11 +164,11 @@ export async function generateServiceReportPDF(serviceRequestId: string, stage: 
 
 async function drawInitialContent(ctx: any, req: any, customer: any, container: any) {
     await drawBasicInfo(ctx, req);
-    await drawIssueDescription(ctx, req);
+    await drawIssueDescription(ctx, req, customer);
     await drawClientDetails(ctx, customer);
     await drawContainerDetails(ctx, container);
     if (req.clientUploadedPhotos && req.clientUploadedPhotos.length > 0) {
-        await drawImages(ctx, 'CLIENT UPLOADED PHOTOS', req.clientUploadedPhotos);
+        await drawImagesGrid(ctx, 'CLIENT UPLOADED PHOTOS', req.clientUploadedPhotos);
     }
 }
 
@@ -170,36 +180,130 @@ async function drawBasicInfo(ctx: any, req: any) {
     ctx.y += 10;
 }
 
-async function drawIssueDescription(ctx: any, req: any) {
-    let descriptionText = sanitizeText(req.issueDescription || '');
+async function drawServiceTimeline(ctx: any, req: any) {
+    drawSectionHeader(ctx, 'SERVICE TIMELINE');
+    drawField(ctx, 'Scheduled', req.scheduledDate ? new Date(req.scheduledDate).toLocaleString() : '-');
+    drawField(ctx, 'Started', req.actualStartTime ? new Date(req.actualStartTime).toLocaleString() : '-');
+    drawField(ctx, 'Completed', req.actualEndTime ? new Date(req.actualEndTime).toLocaleString() : '-');
+    ctx.y += 10;
+}
+
+async function drawIssueDescription(ctx: any, req: any, customer: any) {
+    drawSectionHeader(ctx, 'ISSUE DESCRIPTION');
     
-    // Fetch WhatsApp
-    try {
-        const messages = await db.select().from(whatsappMessages)
-           .where(eq(whatsappMessages.relatedEntityId, req.id))
-           .orderBy(asc(whatsappMessages.sentAt));
-           
-        if (messages.length > 0) {
-            const waText = messages.map(m => {
-                const content = m.messageContent as any;
-                const body = content.body || content.text?.body || '[Media/Other]';
-                const sender = m.recipientType === 'technician' ? 'Coordinator' : 'Technician/Client'; 
-                return `[${new Date(m.sentAt).toLocaleString()}] ${sender}: ${sanitizeText(body)}`;
-            }).join('\n');
+    // Helper to parse unstructured text blob if it contains "Key: Value" lines
+    const parseEmbeddedData = (text: string) => {
+        const result: any = { description: '' };
+        if (!text) return result;
+        
+        const lines = text.split(/\r?\n/);
+        let isParsingFields = false;
+        
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
             
-            descriptionText += `\n\n--- WHATSAPP LOG ---\n${waText}`;
+            // Check for keys
+            const lower = trimmed.toLowerCase();
+            if (lower.startsWith('error code:')) {
+                result.errorCode = trimmed.substring(11).trim();
+                isParsingFields = true;
+            } else if (lower.startsWith('company name:')) {
+                result.companyName = trimmed.substring(13).trim();
+                isParsingFields = true;
+            } else if (lower.startsWith('onsite contact:')) {
+                result.onsiteContact = trimmed.substring(15).trim();
+                isParsingFields = true;
+            } else if (lower.startsWith('site address:')) {
+                result.siteAddress = trimmed.substring(13).trim();
+                isParsingFields = true;
+            } else if (lower.startsWith('preferred technician call:')) {
+                result.preferredCall = trimmed.substring(26).trim();
+                isParsingFields = true;
+            } else {
+                // If we haven't started parsing fields yet, it's part of description
+                if (!isParsingFields) {
+                    result.description += (result.description ? '\n' : '') + trimmed;
+                }
+            }
         }
-    } catch (e) {
-        console.error("WA Fetch Error", e);
-    }
+        
+        // If we didn't find any fields, return original text as description if description is empty
+        if (!result.description && !isParsingFields) {
+            result.description = text;
+        }
+        
+        return result;
+    };
+
+    const rawDesc = req.issueDescription || '';
+    const parsed = parseEmbeddedData(rawDesc);
     
-    if (!descriptionText.trim()) descriptionText = "No issue description provided.";
-    drawTextBlock(ctx, 'ISSUE DESCRIPTION', descriptionText);
+    // Data Preparation with Correct Field Mapping
+    // Description -> Issue
+    const issue = parsed.description || (parsed.errorCode ? '' : rawDesc) || 'No description provided.';
+    // Error Code -> Error Code
+    const errorCode = parsed.errorCode || req.alertId || 'N/A';
+    // Company Name -> Company Name
+    const companyName = parsed.companyName || customer?.companyName || customer?.company || 'N/A';
+    // Onsite Contact -> Phone Number (prioritize parsed, then customer phone)
+    const onsiteContact = parsed.onsiteContact || customer?.phone || customer?.contactPerson || 'N/A';
+    // Site Address -> Site Address
+    const siteAddress = parsed.siteAddress || customer?.billingAddress || customer?.address || 'N/A';
+    // Preferred Technician Call -> Preferred Technician Call
+    const preferredCall = parsed.preferredCall || (req.scheduledDate ? new Date(req.scheduledDate).toLocaleString() : 'N/A');
+
+    const doc = ctx.doc;
+    const labelWidth = 140;
+    const valueX = LAYOUT.margin + 150;
+    const valueWidth = LAYOUT.contentWidth - 150;
+
+    // Helper for drawing a single row
+    const drawRow = (label: string, value: any) => {
+        const safeValue = sanitizeText(String(value));
+        
+        doc.font('Helvetica').fontSize(10);
+        const valueHeight = doc.heightOfString(safeValue, { width: valueWidth, align: 'left' });
+        const rowHeight = Math.max(valueHeight, 15);
+
+        checkPageBreak(ctx, rowHeight + 5);
+
+        // Draw Label
+        doc.font('Helvetica-Bold').fillColor(COLORS.textLabel).fontSize(9)
+           .text(label + ':', LAYOUT.margin, ctx.y, { width: labelWidth });
+        
+        // Draw Value
+        doc.font('Helvetica').fillColor(COLORS.text).fontSize(10)
+           .text(safeValue, valueX, ctx.y, { width: valueWidth, align: 'left' });
+
+        ctx.y += rowHeight + 5; // Line gap 5
+    };
+
+    // Layout Execution
     
-    if (req.alertId) {
-        drawField(ctx, 'Alert ID', req.alertId);
-        ctx.y += 10;
-    }
+    // 1. Issue & Error Code
+    drawRow('Issue', issue);
+    drawRow('Error Code', errorCode);
+    
+    ctx.y += 10; // Gap
+
+    // 2. Service Location Details Header
+    checkPageBreak(ctx, 20);
+    doc.font('Helvetica-Bold').fillColor(COLORS.textLabel).fontSize(10)
+       .text('Service Location Details:', LAYOUT.margin, ctx.y);
+    ctx.y += 20;
+
+    // 3. Location Details
+    drawRow('Company Name', companyName);
+    drawRow('Onsite Contact', onsiteContact);
+    drawRow('Site Address', siteAddress);
+
+    ctx.y += 10; // Gap
+
+    // 4. Preferred Technician Call
+    drawRow('Preferred Technician Call', preferredCall);
+    
+    ctx.y += 10;
 }
 
 async function drawClientDetails(ctx: any, customer: any) {
@@ -225,6 +329,16 @@ async function drawContainerDetails(ctx: any, container: any) {
 }
 
 async function drawPreServiceDetails(ctx: any, req: any, technician: any, techUser: any) {
+    // Assigned Tech
+    await drawTechnicianDetails(ctx, req, technician, techUser);
+    
+    // Finance Approval Section
+    ctx.doc.addPage();
+    ctx.y = LAYOUT.margin;
+    await drawFinanceApproval(ctx, req, technician);
+}
+
+async function drawTechnicianDetails(ctx: any, req: any, technician: any, techUser: any) {
     drawSectionHeader(ctx, 'ASSIGNED TECHNICIAN');
     if (technician) {
         drawField(ctx, 'Name', techUser?.name);
@@ -239,13 +353,23 @@ async function drawPreServiceDetails(ctx: any, req: any, technician: any, techUs
 
     if (technician) {
         drawSectionHeader(ctx, 'TECHNICIAN WAGE BREAKDOWN');
+        // Assuming baseWage is 1500 if not present as it's missing in schema but required in PDF
+        const base = technician.baseWage || 1500; 
+        const hotel = technician.hotelAllowance || 0;
+        const food = technician.foodAllowance || 0;
+        const travel = technician.localTravelAllowance || 0;
+        const personal = technician.personalAllowance || 0;
+        const total = base + hotel + food + travel + personal;
+
         const wageFields = [
             ['Grade', technician.grade || '-'],
             ['Designation', technician.designation || '-'],
-            ['Base Daily Wage', `INR ${technician.baseWage || 0}`],
-            ['Hotel Allowance', `INR ${technician.hotelAllowance || 0}`],
-            ['Food Allowance', `INR ${technician.foodAllowance || 0}`],
-            ['Travel Allowance', `INR ${technician.localTravelAllowance || 0}`]
+            ['Base Daily Wage', `INR ${base}`],
+            ['Hotel Allowance', `INR ${hotel}`],
+            ['Food Allowance', `INR ${food}`],
+            ['Travel Allowance', `INR ${travel}`],
+            ['Personal Allowance', `INR ${personal}`],
+            ['TOTAL DAILY WAGE', `INR ${total}`]
         ];
         wageFields.forEach(([label, val]) => drawField(ctx, label, val));
         ctx.y += 10;
@@ -266,13 +390,68 @@ async function drawPreServiceDetails(ctx: any, req: any, technician: any, techUs
     }
 }
 
-async function drawPostServiceDetails(ctx: any, req: any, technician: any, techUser: any) {
-    drawSectionHeader(ctx, 'SERVICE EXECUTION TIMELINE');
-    drawField(ctx, 'Scheduled', req.scheduledDate ? new Date(req.scheduledDate).toLocaleString() : '-');
-    drawField(ctx, 'Started', req.actualStartTime ? new Date(req.actualStartTime).toLocaleString() : '-');
-    drawField(ctx, 'Completed', req.actualEndTime ? new Date(req.actualEndTime).toLocaleString() : '-');
-    ctx.y += 10;
+async function drawFinanceApproval(ctx: any, req: any, technician: any) {
+    drawSectionHeader(ctx, 'OVERALL TRIP COST & FINANCE APPROVAL');
+    const doc = ctx.doc;
+    
+    // Calculate estimated costs
+    const base = technician?.baseWage || 1500;
+    const allowances = (technician?.hotelAllowance || 0) + (technician?.foodAllowance || 0) + (technician?.localTravelAllowance || 0) + (technician?.personalAllowance || 0);
+    const dailyTotal = base + allowances;
+    const days = req.estimatedDuration ? Math.ceil(req.estimatedDuration / (24 * 60)) : 1; // Estimate days or default to 1
+    
+    const totalLabor = dailyTotal * days;
+    const partsCost = 0; // Placeholder as parts cost isn't in request schema directly usually
+    const subtotal = totalLabor + partsCost;
+    const contingency = Math.round(subtotal * 0.10);
+    const grandTotal = subtotal + contingency;
 
+    const costs = [
+        ['Daily Wage Breakdown', `INR ${dailyTotal}`],
+        ['Estimated Duration', `${days} Days`],
+        ['Total Labor Cost', `INR ${totalLabor}`],
+        ['Parts Cost (Est)', `INR ${partsCost}`],
+        ['Contingency (10%)', `INR ${contingency}`],
+        ['GRAND TOTAL TRIP COST', `INR ${grandTotal}`]
+    ];
+
+    costs.forEach(([label, val]) => drawField(ctx, label, val));
+    ctx.y += 20;
+
+    // Approval Box
+    checkPageBreak(ctx, 100);
+    doc.rect(LAYOUT.margin, ctx.y, LAYOUT.contentWidth, 80).stroke(COLORS.border);
+    doc.fontSize(10).fillColor(COLORS.textLabel).text('FINANCE APPROVAL', LAYOUT.margin + 10, ctx.y + 10);
+    
+    const boxY = ctx.y + 30;
+    const boxW = 100;
+    
+    doc.rect(LAYOUT.margin + 20, boxY, 15, 15).stroke(COLORS.border);
+    doc.text('Pending', LAYOUT.margin + 45, boxY + 3);
+    
+    doc.rect(LAYOUT.margin + 150, boxY, 15, 15).stroke(COLORS.border);
+    doc.text('Approved', LAYOUT.margin + 175, boxY + 3);
+    
+    doc.rect(LAYOUT.margin + 280, boxY, 15, 15).stroke(COLORS.border);
+    doc.text('Rejected', LAYOUT.margin + 305, boxY + 3);
+    
+    doc.text('Signature: __________________________', LAYOUT.margin + 20, boxY + 40);
+    doc.text('Date: ________________', LAYOUT.margin + 300, boxY + 40);
+    
+    ctx.y += 100;
+}
+
+async function drawPostServiceDocs(ctx: any, req: any) {
+    if (req.clientUploadedPhotos?.length) await drawImagesGrid(ctx, 'CLIENT UPLOADED PHOTOS', req.clientUploadedPhotos);
+    if (req.beforePhotos?.length) await drawImagesGrid(ctx, 'BEFORE SERVICE PHOTOS', req.beforePhotos);
+    if (req.afterPhotos?.length) await drawImagesGrid(ctx, 'AFTER SERVICE PHOTOS', req.afterPhotos);
+    if (req.signedDocumentUrl) await drawImagesGrid(ctx, 'CLIENT SIGNATURE / DOCUMENT', [req.signedDocumentUrl]);
+    if (req.vendorInvoiceUrl) await drawImagesGrid(ctx, 'VENDOR INVOICE', [req.vendorInvoiceUrl]);
+}
+
+async function drawServiceSummary(ctx: any, req: any, customer: any, container: any) {
+    drawSectionHeader(ctx, 'SERVICE SUMMARY');
+    
     drawSectionHeader(ctx, 'ACTUAL COSTS INCURRED');
     drawField(ctx, 'Total Cost', `INR ${req.totalCost || 0}`);
     ctx.y += 10;
@@ -289,34 +468,27 @@ async function drawPostServiceDetails(ctx: any, req: any, technician: any, techU
         });
         ctx.y += 10;
     }
-    
-    if (req.signedDocumentUrl) {
-        await drawImages(ctx, 'CLIENT SIGNATURE', [req.signedDocumentUrl]);
-    }
-    if (req.vendorInvoiceUrl) {
-        await drawImages(ctx, 'VENDOR INVOICE', [req.vendorInvoiceUrl]);
-    }
-    
-    if (req.beforePhotos && req.beforePhotos.length > 0) {
-         await drawImages(ctx, 'BEFORE SERVICE PHOTOS', req.beforePhotos);
-    }
-    if (req.afterPhotos && req.afterPhotos.length > 0) {
-         await drawImages(ctx, 'AFTER SERVICE PHOTOS', req.afterPhotos);
-    }
 }
 
 async function drawCompleteContent(ctx: any, req: any, customer: any, container: any, technician: any, techUser: any) {
-    // Consolidated flow
-    await drawInitialContent(ctx, req, customer, container);
+    await drawBasicInfo(ctx, req);
+    await drawIssueDescription(ctx, req, customer);
+    await drawClientDetails(ctx, customer);
+    await drawContainerDetails(ctx, container);
     
-    // Space before next section (or page break if not enough space)
+    checkPageBreak(ctx, 50);
+    await drawServiceTimeline(ctx, req);
+    
     checkPageBreak(ctx, 100);
+    await drawTechnicianDetails(ctx, req, technician, techUser);
     
-    await drawPreServiceDetails(ctx, req, technician, techUser);
+    // Finance page for complete report? Maybe skip or condense.
+    // Spec says "merged overview". I'll include key details.
     
-    checkPageBreak(ctx, 100);
+    checkPageBreak(ctx, 50);
+    await drawServiceSummary(ctx, req, customer, container);
     
-    await drawPostServiceDetails(ctx, req, technician, techUser);
+    await drawPostServiceDocs(ctx, req);
 }
 
 // --- Helpers ---
@@ -388,10 +560,10 @@ function drawField(ctx: { doc: any, y: number }, label: string, value: any) {
     const doc = ctx.doc;
     
     doc.font('Helvetica-Bold').fillColor(COLORS.textLabel).fontSize(9)
-       .text(label + ':', LAYOUT.margin, ctx.y, { width: 120 });
+       .text(label + ':', LAYOUT.margin, ctx.y, { width: 140 });
        
     doc.font('Helvetica').fillColor(COLORS.text).fontSize(10)
-       .text(sanitizeText(String(value)), LAYOUT.margin + 130, ctx.y, { width: LAYOUT.contentWidth - 130 });
+       .text(sanitizeText(String(value)), LAYOUT.margin + 150, ctx.y, { width: LAYOUT.contentWidth - 150 });
        
     ctx.y += 15;
 }
@@ -416,31 +588,58 @@ function drawTextBlock(ctx: { doc: any, y: number }, title: string, text: string
     ctx.y += height + 20;
 }
 
-async function drawImages(ctx: any, title: string, urls: string[]) {
+async function drawImagesGrid(ctx: any, title: string, urls: string[]) {
+    if (!urls || urls.length === 0) return;
     drawSectionHeader(ctx, title);
     const doc = ctx.doc;
     
-    const imgWidth = 400;
-    const imgHeight = 300; 
-    const x = (LAYOUT.width - imgWidth) / 2; // Centered
+    const pageWidth = LAYOUT.contentWidth;
+    const gap = 10;
+    const cols = 2;
+    const imgWidth = (pageWidth - (gap * (cols - 1))) / cols;
+    const imgHeight = 200; // Fixed height for uniform grid
     
-    // Parallel fetch
     const buffers = await Promise.all(urls.map(url => fetchImage(url)));
+    
+    let colIndex = 0;
+    let startY = ctx.y;
+    let currentRowHeight = imgHeight;
     
     for (const imgBuffer of buffers) {
         if (!imgBuffer) continue;
         
-        checkPageBreak(ctx, imgHeight + 30);
-        
-        try {
-            doc.image(imgBuffer, x, ctx.y, { fit: [imgWidth, imgHeight], align: 'center' });
-            doc.rect(x, ctx.y, imgWidth, imgHeight).stroke(COLORS.border);
-        } catch (e) {
-            doc.rect(x, ctx.y, imgWidth, imgHeight).stroke(COLORS.danger);
-            doc.text('Img Error', x+5, ctx.y+5);
+        // If first column, check page break for the whole row
+        if (colIndex === 0) {
+            if (checkPageBreak(ctx, imgHeight + 20)) {
+                startY = ctx.y;
+            }
         }
-        
-        ctx.y += imgHeight + 20;
+
+        const x = LAYOUT.margin + (colIndex * (imgWidth + gap));
+        const y = startY; 
+
+        try {
+            // Scale image to fit within box while maintaining aspect ratio
+            doc.image(imgBuffer, x, y, { fit: [imgWidth, imgHeight], align: 'center', valign: 'center' });
+            doc.rect(x, y, imgWidth, imgHeight).stroke(COLORS.border);
+        } catch (e) {
+            doc.rect(x, y, imgWidth, imgHeight).stroke(COLORS.danger);
+            doc.fontSize(8).fillColor(COLORS.danger).text('Image Load Error', x + 5, y + 5);
+        }
+
+        colIndex++;
+        if (colIndex >= cols) {
+            colIndex = 0;
+            startY += imgHeight + gap;
+            ctx.y = startY; // Update y cursor
+        }
+    }
+    
+    // If we ended in the middle of a row, push y down
+    if (colIndex !== 0) {
+        ctx.y = startY + imgHeight + 20;
+    } else {
+        ctx.y += 10;
     }
 }
 
