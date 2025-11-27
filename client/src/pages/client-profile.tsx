@@ -9,13 +9,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Edit } from "lucide-react";
+import { Edit, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Container = {
@@ -53,6 +53,7 @@ export default function ClientProfile() {
 
   // Edit modal state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isCredentialsConfirmOpen, setIsCredentialsConfirmOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
     companyName: "",
     contactPerson: "",
@@ -114,6 +115,45 @@ export default function ClientProfile() {
       });
     },
   });
+
+
+  const sendCredentialsMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await fetch(`/api/admin/users/${userId}/send-credentials`, {
+        method: 'POST',
+        headers: { ...commonHeaders, "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send credentials');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "New credentials sent via email",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to send credentials",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSendCredentials = () => {
+    if (!cust?.userId) return;
+    setIsCredentialsConfirmOpen(true);
+  };
+
+  const handleConfirmSendCredentials = () => {
+    if (!cust?.userId) return;
+    sendCredentialsMutation.mutate(cust.userId);
+    setIsCredentialsConfirmOpen(false);
+  };
 
   const resetEditForm = () => {
     setEditFormData({
@@ -280,10 +320,22 @@ export default function ClientProfile() {
               </div>
               <div className="flex items-center gap-2">
                 {isAdmin && !isSelfProfile && (
-                  <Button variant="outline" size="sm" onClick={handleEdit}>
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit
-                  </Button>
+                  <>
+                    <Button variant="outline" size="sm" onClick={handleEdit}>
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSendCredentials}
+                      disabled={sendCredentialsMutation.isPending}
+                      className="bg-green-600 hover:bg-green-700 text-white border-green-600"
+                    >
+                      <Send className="h-4 w-4 mr-2" />
+                      {sendCredentialsMutation.isPending ? 'Sending...' : 'Send Credentials'}
+                    </Button>
+                  </>
                 )}
                 {cust?.customerTier && (
                   <Badge className="border text-xs">{String(cust.customerTier).toUpperCase()}</Badge>
@@ -664,6 +716,72 @@ export default function ClientProfile() {
             </Button>
             <Button onClick={handleUpdate} disabled={updateCustomer.isPending}>
               {updateCustomer.isPending ? "Updating..." : "Update Client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Credentials Confirmation Dialog */}
+      <Dialog open={isCredentialsConfirmOpen} onOpenChange={setIsCredentialsConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <i className="fas fa-exclamation-triangle"></i>
+              Reset Password Warning
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              <div className="space-y-3">
+                <p className="font-medium">
+                  You are about to reset the password for <strong>{cust?.companyName || cust?.name}</strong>.
+                </p>
+                <div className="bg-warning/10 border border-warning/20 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <i className="fas fa-shield-alt text-warning mt-0.5"></i>
+                    <div>
+                      <p className="text-sm font-medium text-warning-foreground mb-1">
+                        ⚠️ This action will:
+                      </p>
+                      <ul className="text-xs text-warning-foreground space-y-1 ml-4">
+                        <li>• Generate a new secure password</li>
+                        <li>• Send login credentials via email</li>
+                        <li>• Invalidate the current password</li>
+                        <li>• Require the user to change password after login</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  The user will receive an email with their new login credentials.
+                  For security, they should change their password after first login.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsCredentialsConfirmOpen(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmSendCredentials}
+              disabled={sendCredentialsMutation.isPending}
+              className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {sendCredentialsMutation.isPending ? (
+                <>
+                  <i className="fas fa-spinner fa-spin mr-2"></i>
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-key mr-2"></i>
+                  Reset & Send Password
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

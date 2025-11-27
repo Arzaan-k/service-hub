@@ -5,7 +5,6 @@ import { websocket } from "@/lib/websocket";
 
 declare global {
   interface Window {
-    MapmyIndia: any;
     L: any;
   }
 }
@@ -28,13 +27,11 @@ interface Container {
   };
 }
 
-interface MapMyIndiaFleetMapProps {
+interface FleetMapProps {
   containers: Container[];
 }
 
-const MAPMYINDIA_API_KEY = import.meta.env.VITE_MAPMYINDIA_API_KEY || 'bwxdagrnmadhcoftinhpcdsgpdkzwmrkvpax';
-
-export default function MapMyIndiaFleetMap({ containers }: MapMyIndiaFleetMapProps) {
+export default function FleetMap({ containers }: FleetMapProps) {
   const mapRef = useRef<any>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
@@ -46,12 +43,15 @@ export default function MapMyIndiaFleetMap({ containers }: MapMyIndiaFleetMapPro
     if (typeof window === 'undefined') return;
 
     const loadScripts = async () => {
+      console.log('🔄 Loading map scripts...');
+
       // Load Leaflet CSS
       if (!document.querySelector('link[href*="leaflet.css"]')) {
         const leafletCSS = document.createElement('link');
         leafletCSS.rel = 'stylesheet';
         leafletCSS.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
         document.head.appendChild(leafletCSS);
+        console.log('📦 Leaflet CSS added');
       }
 
       // Load Leaflet JS
@@ -60,30 +60,20 @@ export default function MapMyIndiaFleetMap({ containers }: MapMyIndiaFleetMapPro
           const leafletScript = document.createElement('script');
           leafletScript.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
           leafletScript.onload = () => {
-            console.log('Leaflet loaded');
+            console.log('✅ Leaflet JS loaded');
+            resolve();
+          };
+          leafletScript.onerror = () => {
+            console.error('❌ Failed to load Leaflet JS');
             resolve();
           };
           document.head.appendChild(leafletScript);
         });
+      } else {
+        console.log('✅ Leaflet JS already loaded');
       }
 
-      // Load Map My India
-      if (!window.MapmyIndia) {
-        await new Promise<void>((resolve) => {
-          const script = document.createElement('script');
-          script.src = `https://apis.mapmyindia.com/advancedmaps/api/${MAPMYINDIA_API_KEY}/map_sdk?layer=vector&v=3.0`;
-          script.onload = () => {
-            console.log('Map My India loaded');
-            resolve();
-          };
-          script.onerror = () => {
-            console.error('Failed to load Map My India');
-            resolve(); // Continue anyway with Leaflet
-          };
-          document.head.appendChild(script);
-        });
-      }
-
+      console.log('✅ Leaflet loaded, ready to initialize');
       setScriptsLoaded(true);
     };
 
@@ -98,18 +88,20 @@ export default function MapMyIndiaFleetMap({ containers }: MapMyIndiaFleetMapPro
   // Listen for real-time updates
   useEffect(() => {
     const handleContainerUpdate = (data: any) => {
+      console.log('🔄 Received container update:', data);
       setContainersData(prev => prev.map(container => {
-        if (container.id === data.containerId) {
+        if (container.id === data.data?.containerId || container.id === data.containerId) {
+          const updateData = data.data || data;
           return {
             ...container,
-            locationLat: data.latitude?.toString(),
-            locationLng: data.longitude?.toString(),
-            temperature: data.temperature,
-            powerStatus: data.powerStatus,
-            lastUpdateTimestamp: data.timestamp,
-            currentLocation: data.latitude && data.longitude ? {
-              lat: parseFloat(data.latitude),
-              lng: parseFloat(data.longitude),
+            locationLat: updateData.latitude?.toString() || container.locationLat,
+            locationLng: updateData.longitude?.toString() || container.locationLng,
+            temperature: updateData.temperature !== undefined ? updateData.temperature : container.temperature,
+            powerStatus: updateData.powerStatus || container.powerStatus,
+            lastUpdateTimestamp: updateData.timestamp || new Date().toISOString(),
+            currentLocation: updateData.latitude && updateData.longitude ? {
+              lat: parseFloat(updateData.latitude),
+              lng: parseFloat(updateData.longitude),
             } : container.currentLocation
           };
         }
@@ -117,26 +109,39 @@ export default function MapMyIndiaFleetMap({ containers }: MapMyIndiaFleetMapPro
       }));
     };
 
+    const handleAlertCreated = (data: any) => {
+      console.log('🚨 Received alert:', data);
+      // Alerts will trigger container updates through the container_update event
+    };
+
     websocket.on('container_update', handleContainerUpdate);
-    return () => websocket.off('container_update', handleContainerUpdate);
+    websocket.on('alert_created', handleAlertCreated);
+
+    return () => {
+      websocket.off('container_update', handleContainerUpdate);
+      websocket.off('alert_created', handleAlertCreated);
+    };
   }, []);
 
   // Initialize map
   useEffect(() => {
-    if (!mapRef.current || !scriptsLoaded || !window.MapmyIndia || mapInstanceRef.current) return;
+    if (!mapRef.current || !scriptsLoaded || mapInstanceRef.current) return;
 
     try {
-      const map = new window.MapmyIndia.Map(mapRef.current, {
-        center: [20.5937, 78.9629],
-        zoom: 5,
-        zoomControl: true,
-        hybrid: false,
-      });
+      console.log('🗺️ Initializing OpenStreetMap...');
+
+      const map = window.L.map(mapRef.current).setView([20.5937, 78.9629], 5);
+
+      // Add OpenStreetMap tiles
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(map);
 
       mapInstanceRef.current = map;
-      console.log('Map initialized');
+      console.log('✅ OpenStreetMap initialized successfully');
     } catch (error) {
-      console.error('Error initializing map:', error);
+      console.error('❌ Error initializing OpenStreetMap:', error);
     }
   }, [scriptsLoaded]);
 
@@ -150,12 +155,26 @@ export default function MapMyIndiaFleetMap({ containers }: MapMyIndiaFleetMapPro
     markersRef.current.forEach(marker => marker.remove());
     markersRef.current.clear();
 
+    console.log('📍 Total containers received:', containersData.length);
+
     // Add new markers
     const validContainers = containersData.filter(container => {
       const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
       const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
-      return lat !== 0 && lng !== 0;
+      const isValid = lat !== 0 && lng !== 0;
+
+      if (!isValid && container.orbcommDeviceId) {
+        console.log(`⚠️  Container ${container.containerCode} has Orbcomm device but no GPS:`, {
+          locationLat: container.locationLat,
+          locationLng: container.locationLng,
+          currentLocation: container.currentLocation
+        });
+      }
+
+      return isValid;
     });
+
+    console.log('📍 Valid containers with GPS:', validContainers.length);
 
     validContainers.forEach(container => {
       const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
@@ -268,7 +287,25 @@ export default function MapMyIndiaFleetMap({ containers }: MapMyIndiaFleetMapPro
         </div>
 
         {/* Map */}
-        <div ref={mapRef} className="flex-1 min-h-0 bg-muted/20" />
+        <div ref={mapRef} className="flex-1 min-h-0 bg-muted/20 relative">
+          {!scriptsLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
+              <div className="text-center">
+                <RefreshCw className="h-8 w-8 animate-spin text-primary mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">Loading map...</p>
+              </div>
+            </div>
+          )}
+          {scriptsLoaded && !mapInstanceRef.current && (
+            <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
+              <div className="text-center">
+                <MapPin className="h-8 w-8 text-destructive mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">Map failed to initialize</p>
+                <p className="text-xs text-muted-foreground mt-1">Check console for errors</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <style>{`

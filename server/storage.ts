@@ -1299,8 +1299,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTechnicianSchedule(technicianId: string, date?: string): Promise<any[]> {
-    // If no date provided, get all services for this technician
-    let query = db
+    // Build the where conditions
+    const conditions = [eq(serviceRequests.assignedTechnicianId, technicianId)];
+    
+    // Add date filter if provided
+    if (date) {
+      const targetDate = new Date(date);
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      conditions.push(
+        sql`${serviceRequests.scheduledDate} >= ${startOfDay}`,
+        sql`${serviceRequests.scheduledDate} <= ${endOfDay}`
+      );
+    }
+
+    const results = await db
       .select({
         // Service request fields
         id: serviceRequests.id,
@@ -1336,24 +1352,10 @@ export class DatabaseStorage implements IStorage {
       .from(serviceRequests)
       .leftJoin(containers, eq(serviceRequests.containerId, containers.id))
       .leftJoin(customers, eq(serviceRequests.customerId, customers.id))
-      .where(eq(serviceRequests.assignedTechnicianId, technicianId));
+      .where(and(...conditions))
+      .orderBy(serviceRequests.scheduledDate);
 
-    // Add date filter if provided
-    if (date) {
-      const targetDate = new Date(date);
-      const startOfDay = new Date(targetDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(targetDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      query = query.where(and(
-        eq(serviceRequests.assignedTechnicianId, technicianId),
-        sql`${serviceRequests.scheduledDate} >= ${startOfDay}`,
-        sql`${serviceRequests.scheduledDate} <= ${endOfDay}`
-      )) as any;
-    }
-
-    return await query.orderBy(serviceRequests.scheduledDate);
+    return results;
   }
 
   async getTechniciansBySkill(skill: string): Promise<Technician[]> {

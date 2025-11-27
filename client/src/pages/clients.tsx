@@ -99,18 +99,28 @@ export default function Clients() {
         containerIds: allocation.containerIds.length > 0 ? allocation.containerIds : undefined
       };
       const res = await apiRequest("POST", "/api/clients", requestData);
-      return await res.json();
+      const created = await res.json();
+
+      // The backend automatically creates a user account and sends credentials
+      return { ...created, userCreated: true };
     },
-    onSuccess: async (created: any) => {
+    onSuccess: async (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
       setIsAddDialogOpen(false);
       resetForm();
+
+      const successMessage = result.userCreated
+        ? (allocation.containerIds.length > 0
+          ? `Client added, user account created, and ${allocation.containerIds.length} container(s) assigned. Credentials sent via email.`
+          : "Client added and user account created. Credentials sent via email.")
+        : (allocation.containerIds.length > 0
+          ? `Client added and ${allocation.containerIds.length} container(s) assigned. User account creation failed.`
+          : "Client added. User account creation failed.");
+
       toast({
         title: "Success",
-        description: allocation.containerIds.length > 0 
-          ? `Client added and ${allocation.containerIds.length} container(s) assigned` 
-          : "Client added successfully",
+        description: successMessage,
       });
     },
     onError: () => {
@@ -293,9 +303,7 @@ export default function Clients() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {clients?.map((client: Customer) => {
-              const owned = (containers || []).filter((c: any) => c.currentCustomerId === client.id);
-              const sample = owned.slice(0, 5);
-              const remaining = Math.max(0, owned.length - sample.length);
+              const containerCount = client.containerCount || 0;
               return (
               <Card key={client.id} className="card-surface hover:shadow-soft transition-all">
                 <CardHeader className="pb-3">
@@ -337,20 +345,8 @@ export default function Clients() {
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Package className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{owned.length} containers</span>
+                    <span className="text-foreground">{containerCount} containers</span>
                   </div>
-                  {owned.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {sample.map((c: any) => (
-                        <Badge key={c.id} variant="outline" className="text-xs">
-                          {c.containerCode}
-                        </Badge>
-                      ))}
-                      {remaining > 0 && (
-                        <Badge variant="secondary" className="text-xs">+{remaining} more</Badge>
-                      )}
-                    </div>
-                  )}
                   <div className="flex gap-2 pt-2 border-t border-border">
                     <Link href={`/clients/${client.id}`}>
                       <Button size="sm" className="flex-1 btn-secondary">

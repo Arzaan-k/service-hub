@@ -18,6 +18,16 @@ export default function Login() {
   const [rpCode, setRpCode] = useState("");
   const [rpPassword, setRpPassword] = useState("");
 
+  // Password strength validation
+  const validatePassword = (password: string) => {
+    if (password.length < 8) return "Password must be at least 8 characters";
+    if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter";
+    if (!/[a-z]/.test(password)) return "Password must contain at least one lowercase letter";
+    if (!/[0-9]/.test(password)) return "Password must contain at least one number";
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) return "Password must contain at least one special character";
+    return null;
+  };
+
   // Clear any test auth on login page load
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -76,11 +86,20 @@ export default function Login() {
 
   const resetMutation = useMutation({
     mutationFn: async (data: { email: string; code: string; newPassword: string }) => {
+      // Validate password strength
+      const passwordError = validatePassword(data.newPassword);
+      if (passwordError) {
+        throw new Error(passwordError);
+      }
+
       const res = await apiRequest("POST", "/api/auth/reset-password", data);
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Password reset", description: "You can login with your new password" });
+      toast({
+        title: "Password reset successful",
+        description: "You can now login with your new password. Remember to keep it secure!"
+      });
       setResetOpen(false);
       setRpEmail("");
       setRpCode("");
@@ -164,6 +183,22 @@ export default function Login() {
           </div>
 
           {/* Security Notice */}
+          <div className="mt-6 p-4 bg-warning/10 border border-warning/20 rounded-lg">
+            <div className="flex items-start gap-3">
+              <i className="fas fa-shield-alt text-warning mt-0.5"></i>
+              <div>
+                <p className="text-sm font-medium text-warning-foreground mb-1">
+                  🔐 Security Reminder
+                </p>
+                <p className="text-xs text-warning-foreground">
+                  <strong>⚠️ Important:</strong> Please change your password after first login for security.
+                  Use a strong password with uppercase, lowercase, numbers, and special characters.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Security Notice */}
           <div className="mt-6 p-4 bg-muted/50 rounded-lg border border-border">
             <div className="flex items-start gap-3">
               <i className="fas fa-shield-alt text-success mt-0.5"></i>
@@ -210,7 +245,27 @@ export default function Login() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">New Password</label>
                 <Input placeholder="••••••••" type="password" value={rpPassword} onChange={(e)=>setRpPassword(e.target.value)} />
+                {rpPassword && (
+                  <div className="text-xs">
+                    {validatePassword(rpPassword) ? (
+                      <span className="text-destructive">{validatePassword(rpPassword)}</span>
+                    ) : (
+                      <span className="text-green-600">✓ Password meets security requirements</span>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* Security Warning */}
+              <div className="mt-4 p-3 bg-warning/10 border border-warning/20 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <i className="fas fa-shield-alt text-warning mt-0.5"></i>
+                  <div className="text-xs text-warning-foreground">
+                    <strong>Security Reminder:</strong> Choose a strong password with at least 8 characters, including uppercase, lowercase, numbers, and special characters.
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-3 pt-2">
                 <button className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-foreground" onClick={()=>{setResetOpen(false); setRpEmail(""); setRpCode(""); setRpPassword("");}}>Cancel</button>
                 <button className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium" onClick={()=>resetMutation.mutate({ email: rpEmail, code: rpCode, newPassword: rpPassword })} disabled={resetMutation.isPending}>{resetMutation.isPending ? 'Resetting...' : 'Reset Password'}</button>

@@ -25,6 +25,8 @@ export default function Sidebar() {
     // Admin/Coordinator/Technician
     { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true, color: "text-whatsapp", roles: ["admin", "coordinator", "super_admin"] },
     { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", color: "text-inventory", roles: ["admin", "coordinator", "technician", "super_admin"] },
+    // User management
+    { path: "/admin/user-management", label: "User Management", icon: "fas fa-users-cog", color: "text-primary", roles: ["admin", "super_admin"] },
     // Admin-only analytics
     { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", color: "text-analytics", roles: ["admin", "super_admin"] },
     // Manuals for all users

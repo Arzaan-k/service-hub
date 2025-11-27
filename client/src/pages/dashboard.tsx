@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import KPICards from "@/components/dashboard/kpi-cards";
-import MapMyIndiaFleetMap from "@/components/dashboard/mapmyindia-fleet-map";
+import FleetMap from "@/components/dashboard/fleet-map";
 import AlertPanel from "@/components/dashboard/alert-panel";
 import ServiceRequestsPanel from "@/components/dashboard/service-requests-panel";
 import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
@@ -11,12 +11,13 @@ import TechnicianSchedule from "@/components/dashboard/technician-schedule";
 import ContainerLookup from "@/components/dashboard/container-lookup";
 import ErrorBoundary from "@/components/error-boundary";
 import { websocket } from "@/lib/websocket";
-import { getAuthToken } from "@/lib/auth";
+import { getAuthToken, useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const authToken = getAuthToken();
+  const { user } = useAuth();
 
   const { data: stats = {} } = useQuery<any>({ 
     queryKey: ["/api/dashboard/stats"],
@@ -28,10 +29,14 @@ export default function Dashboard() {
     refetchInterval: 60000, // 1 minute
   });
 
+  // Determine API endpoints based on user role
+  const isClient = user?.role === 'client';
+  const containersEndpoint = isClient ? "/api/customers/me/containers" : "/api/containers";
+
   const { data: containers = [] } = useQuery<any[]>({
-    queryKey: ["/api/containers"],
+    queryKey: [containersEndpoint],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/containers");
+      const response = await apiRequest("GET", containersEndpoint);
       const data = await response.json();
       return Array.isArray(data) ? data : [];
     },
@@ -109,14 +114,14 @@ export default function Dashboard() {
       } catch {}
     };
 
-    websocket.on("alert_created", () => {
+    const onAlertCreated = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-    });
+    };
 
-    websocket.on("container_created", () => {
+    const onContainerCreated = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-    });
+    };
 
     // Refresh technician schedules and assigned services when assignments happen
     websocket.on("service_request_assigned", () => {
@@ -156,13 +161,37 @@ export default function Dashboard() {
       }
     };
 
+    const onServiceRequestAssigned = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+    };
+
+    const onServiceRequestStarted = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+    };
+
+    const onServiceRequestCompleted = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    };
+
+    websocket.on("alert_created", onAlertCreated);
+    websocket.on("container_created", onContainerCreated);
+    websocket.on("service_request_assigned", onServiceRequestAssigned);
+    websocket.on("service_request_started", onServiceRequestStarted);
+    websocket.on("service_request_completed", onServiceRequestCompleted);
     websocket.on("device_update", onDeviceUpdate);
     websocket.on("container_location_update", onContainerLocUpdate);
     websocket.on("container_update", onContainerUpdate);
 
     return () => {
-      websocket.off("alert_created");
-      websocket.off("container_created");
+      websocket.off("alert_created", onAlertCreated);
+      websocket.off("container_created", onContainerCreated);
+      websocket.off("service_request_assigned", onServiceRequestAssigned);
+      websocket.off("service_request_started", onServiceRequestStarted);
+      websocket.off("service_request_completed", onServiceRequestCompleted);
       websocket.off("device_update", onDeviceUpdate);
       websocket.off("container_location_update", onContainerLocUpdate);
       websocket.off("container_update", onContainerUpdate);
@@ -185,7 +214,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ height: '600px', minHeight: '600px', maxHeight: '600px', overflow: 'visible' }}>
             <div className="lg:col-span-2" style={{ height: '600px' }}>
               <ErrorBoundary>
-                <MapMyIndiaFleetMap containers={containers || []} />
+                  <FleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
             <div style={{ height: '600px' }}>

@@ -1,116 +1,206 @@
-export class WebSocketClient {
+/**
+ * WebSocket Client for Real-time Updates
+ * Handles connection to the server WebSocket and event management
+ */
+
+type WebSocketEventHandler = (data: any) => void;
+
+class WebSocketClient {
   private ws: WebSocket | null = null;
-  private listeners: Map<string, Set<(data: any) => void>> = new Map();
+  private reconnectTimeout: number | null = null;
+  private eventHandlers: Map<string, Set<WebSocketEventHandler>> = new Map();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
-  private authToken: string | null = null;
+  private maxReconnectAttempts = 10;
+  private reconnectDelay = 3000; // 3 seconds
+  private isIntentionallyClosed = false;
 
-  constructor(private url?: string) {
-    try {
-      this.authToken = localStorage.getItem('auth_token');
-    } catch {}
-    this.connect();
-  }
-
-private connect() {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    // Allow explicit URL via env or constructor
-    let wsUrl = this.url;
-    const envUrl = (import.meta as any)?.env?.VITE_WS_URL as string | undefined;
-    if (!wsUrl && envUrl) wsUrl = envUrl;
-
-    if (!wsUrl) {
-      // Derive from location with safe fallback for dev
-      let host = window.location.host;
-      if (!host || host.indexOf(":") < 0) {
-        // No port specified (some embedded setups) → fallback
-        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-          host = "localhost:5000";
-        } else {
-          host = window.location.hostname + ":5000";
-        }
-      }
-      wsUrl = `${protocol}//${host}/ws`;
+  /**
+   * Connect to the WebSocket server
+   */
+  public connect(userId?: string): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected');
+      return;
     }
 
-    console.log("Attempting WebSocket connection to:", wsUrl);
+    this.isIntentionallyClosed = false;
+
+    // Determine WebSocket URL
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws`;
+
+    console.log('Connecting to WebSocket:', wsUrl);
 
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log("WebSocket connected to:", wsUrl);
+        console.log('✅ WebSocket connected');
         this.reconnectAttempts = 0;
-        // Authenticate socket so server delivers role/user-scoped events
-        try {
-          const token = this.authToken || localStorage.getItem('auth_token');
-          if (token && this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'authenticate', token }));
-          }
-        } catch (error) {
-          console.error("WebSocket auth error:", error);
+
+        // Authenticate if userId is provided
+        if (userId) {
+          this.authenticate(userId);
         }
+
+        // Notify connection handlers
+        this.emit('connected', {});
       };
 
       this.ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          this.emit(message.type, message.data);
+          console.log('WebSocket message received:', message.type);
+
+          // Emit the event to registered handlers
+          this.emit(message.type, message.data || message);
+
         } catch (error) {
-          console.error("WebSocket message parse error:", error);
+          console.error('Error parsing WebSocket message:', error);
         }
       };
 
       this.ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
+        console.error('WebSocket error:', error);
+        this.emit('error', error);
       };
 
       this.ws.onclose = () => {
-        console.log("WebSocket disconnected from:", wsUrl);
-        this.attemptReconnect();
+        console.log('WebSocket disconnected');
+        this.emit('disconnected', {});
+
+        // Attempt to reconnect if not intentionally closed
+        if (!this.isIntentionallyClosed) {
+          this.scheduleReconnect(userId);
+        }
       };
+
     } catch (error) {
-      console.error("WebSocket connection error:", error);
-      this.attemptReconnect();
+      console.error('Error creating WebSocket:', error);
+      this.scheduleReconnect(userId);
     }
   }
 
-  private attemptReconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      console.log(`Reconnecting... Attempt ${this.reconnectAttempts}`);
-      setTimeout(() => this.connect(), this.reconnectDelay * this.reconnectAttempts);
+  /**
+   * Authenticate the WebSocket connection
+   */
+  private authenticate(userId: string): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.send({
+        type: 'authenticate',
+        token: userId
+      });
     }
   }
 
-  on(event: string, callback: (data: any) => void) {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+  /**
+   * Schedule a reconnection attempt
+   */
+  private scheduleReconnect(userId?: string): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached');
+      return;
     }
-    this.listeners.get(event)!.add(callback);
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
+
+    this.reconnectAttempts++;
+    const delay = this.reconnectDelay * Math.min(this.reconnectAttempts, 5);
+
+    console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+
+    this.reconnectTimeout = window.setTimeout(() => {
+      this.connect(userId);
+    }, delay);
   }
 
-  off(event: string, callback: (data: any) => void) {
-    const listeners = this.listeners.get(event);
-    if (listeners) {
-      listeners.delete(callback);
+  /**
+   * Send a message through the WebSocket
+   */
+  public send(data: any): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    } else {
+      console.warn('WebSocket not connected, cannot send message');
     }
   }
 
-  private emit(event: string, data: any) {
-    const listeners = this.listeners.get(event);
-    if (listeners) {
-      listeners.forEach((callback) => callback(data));
+  /**
+   * Register an event handler
+   */
+  public on(event: string, handler: WebSocketEventHandler): void {
+    if (!this.eventHandlers.has(event)) {
+      this.eventHandlers.set(event, new Set());
+    }
+    this.eventHandlers.get(event)!.add(handler);
+  }
+
+  /**
+   * Unregister an event handler
+   */
+  public off(event: string, handler: WebSocketEventHandler): void {
+    const handlers = this.eventHandlers.get(event);
+    if (handlers) {
+      handlers.delete(handler);
+      if (handlers.size === 0) {
+        this.eventHandlers.delete(event);
+      }
     }
   }
 
-  disconnect() {
+  /**
+   * Emit an event to all registered handlers
+   */
+  private emit(event: string, data: any): void {
+    const handlers = this.eventHandlers.get(event);
+    if (handlers) {
+      handlers.forEach(handler => {
+        try {
+          handler(data);
+        } catch (error) {
+          console.error(`Error in event handler for ${event}:`, error);
+        }
+      });
+    }
+  }
+
+  /**
+   * Disconnect from the WebSocket
+   */
+  public disconnect(): void {
+    this.isIntentionallyClosed = true;
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
+
+    this.reconnectAttempts = 0;
+  }
+
+  /**
+   * Check if WebSocket is connected
+   */
+  public isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 }
 
+// Export a singleton instance
 export const websocket = new WebSocketClient();
+
+// Auto-connect on module load
+if (typeof window !== 'undefined') {
+  // Connect after a short delay to allow the page to load
+  setTimeout(() => {
+    websocket.connect();
+  }, 1000);
+}

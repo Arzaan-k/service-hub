@@ -4,12 +4,13 @@ import Header from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
-import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock } from "lucide-react";
+import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
 import { websocket } from "@/lib/websocket";
@@ -336,6 +337,36 @@ export default function TechnicianProfile() {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ baseLocation: "" });
+  const [isCredentialsConfirmOpen, setIsCredentialsConfirmOpen] = useState(false);
+
+  // WebSocket listeners for real-time updates
+  useEffect(() => {
+    const onServiceRequestAssigned = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", technicianId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "schedule"] });
+    };
+
+    const onServiceRequestStarted = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", technicianId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "schedule"] });
+    };
+
+    const onServiceRequestCompleted = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/technician", technicianId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId, "performance"] });
+    };
+
+    websocket.on("service_request_assigned", onServiceRequestAssigned);
+    websocket.on("service_request_started", onServiceRequestStarted);
+    websocket.on("service_request_completed", onServiceRequestCompleted);
+
+    return () => {
+      websocket.off("service_request_assigned", onServiceRequestAssigned);
+      websocket.off("service_request_started", onServiceRequestStarted);
+      websocket.off("service_request_completed", onServiceRequestCompleted);
+    };
+  }, [queryClient, technicianId]);
 
   const updateTechnician = useMutation({
     mutationFn: async (data: any) => {
@@ -359,6 +390,38 @@ export default function TechnicianProfile() {
     },
   });
 
+  const sendCredentialsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/admin/users/${technicianId}/send-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send credentials');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "New credentials sent via email",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to send credentials",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleConfirmSendCredentials = () => {
+    sendCredentialsMutation.mutate();
+    setIsCredentialsConfirmOpen(false);
+  };
+
   useEffect(() => {
     if (technician && isEditing) {
       const locationValue = typeof technician.baseLocation === "string"
@@ -370,7 +433,42 @@ export default function TechnicianProfile() {
     }
   }, [technician, isEditing]);
 
+<<<<<<< HEAD
   // Don't block rendering - always show UI even if data is loading or missing
+=======
+  const completed = Array.isArray(requests)
+    ? requests.filter((r: any) => r.status === "completed")
+    : [];
+
+  if (isTechLoading) {
+    return (
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <main className="flex-1 flex flex-col overflow-hidden">
+          <Header title="Technician Profile" />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (techError || !technician) {
+    return (
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <main className="flex-1 flex flex-col overflow-hidden">
+          <Header title="Technician Profile" />
+          <div className="p-6">
+            <Link href="/technicians"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2" />Back</Button></Link>
+            <div className="mt-6 text-destructive">Failed to load technician.</div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+>>>>>>> main
 
   return (
     <div className="flex min-h-screen">
@@ -379,7 +477,7 @@ export default function TechnicianProfile() {
         <Header title="Technician Profile" />
         <div className="p-6 space-y-6">
           <div className="flex items-center justify-between">
-            <Link href="/technicians"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2"/>Back</Button></Link>
+            <Link href="/technicians"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2" />Back</Button></Link>
           </div>
 
           <Card>
@@ -401,6 +499,7 @@ export default function TechnicianProfile() {
                     <Badge>{technician.status || "available"}</Badge>
                   </div>
                 </div>
+<<<<<<< HEAD
               )}
             </CardHeader>
             <CardContent className="space-y-4">
@@ -416,6 +515,48 @@ export default function TechnicianProfile() {
                     <div className="flex items-center gap-2 text-sm">
                       <MapPin className="h-4 w-4 text-muted-foreground"/>
                       <span>Location:</span>
+=======
+                <div className="flex items-center gap-2">
+                  {technician.type === "thirdparty" && (
+                    <Badge variant="secondary" className="bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300">Third-Party</Badge>
+                  )}
+                  <Badge>{technician.status || "available"}</Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsCredentialsConfirmOpen(true)}
+                    disabled={sendCredentialsMutation.isPending}
+                    className="bg-green-600 hover:bg-green-700 text-white border-green-600"
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {sendCredentialsMutation.isPending ? 'Sending...' : 'Send Credentials'}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2 text-sm">
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span>{technician.phone || technician.whatsappNumber}</span>
+              </div>
+
+              {/* Location Section */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <span>Location:</span>
+                </div>
+                {isEditing ? (
+                  <div className="ml-6 relative">
+                    <Label htmlFor="location">Base Location</Label>
+                    <div className="mt-2">
+                      <MapMyIndiaAutocomplete
+                        value={editForm.baseLocation}
+                        onChange={(value) => setEditForm({ ...editForm, baseLocation: value })}
+                        placeholder="Search for Indian locations (e.g., Mumbai, Delhi, Bangalore)..."
+                        className="w-full"
+                      />
+>>>>>>> main
                     </div>
                     {isEditing ? (
                       <div className="ml-6 relative">
@@ -438,6 +579,7 @@ export default function TechnicianProfile() {
                     )}
                   </div>
 
+<<<<<<< HEAD
                   <div className="flex items-center gap-2 text-sm">
                     <Wrench className="h-4 w-4 text-muted-foreground"/>
                     <span>{Array.isArray(technician.skills) ? technician.skills.join(", ") : technician.specialization || "general"}</span>
@@ -450,6 +592,16 @@ export default function TechnicianProfile() {
               ) : (
                 <div className="text-sm text-muted-foreground">Technician data not available</div>
               )}
+=======
+              <div className="flex items-center gap-2 text-sm">
+                <Wrench className="h-4 w-4 text-muted-foreground" />
+                <span>{Array.isArray(technician.skills) ? technician.skills.join(", ") : technician.specialization || "general"}</span>
+              </div>
+              <div className="flex items-center gap-1 text-sm pt-1">
+                <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                <span>{technician.averageRating ?? 0}/5</span>
+              </div>
+>>>>>>> main
 
               {/* Edit/Save Buttons */}
               <div className="flex gap-2 pt-4">
@@ -482,7 +634,8 @@ export default function TechnicianProfile() {
                 <CardTitle>{isThirdParty ? "Money Allowance" : "Wage Breakdown"}</CardTitle>
                 <div className="flex items-center gap-2">
                   <Button
-                    className="bg-orange-200 hover:bg-orange-300 text-black"
+                    variant="secondary"
+                    className="bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
                     onClick={() => {
                       if (!wageEditMode) return setWageEditMode(true);
                       return isThirdParty ? updateThirdParty.mutate() : updateWage.mutate();
@@ -504,7 +657,7 @@ export default function TechnicianProfile() {
             <CardContent>
               {isWageLoading && <div className="text-sm text-muted-foreground">Loading wage details…</div>}
               {!isWageLoading && (
-                <div className="p-4 rounded-xl" style={{ background: '#FFF9F7', border: '1px solid #FFE0D6' }}>
+                <div className="p-4 rounded-xl bg-muted/30 border border-border">
                   {isThirdParty ? (
                     <div className="grid grid-cols-1 gap-4 text-sm">
                       <div>
@@ -580,8 +733,8 @@ export default function TechnicianProfile() {
                           />
                         </div>
                       </div>
-                      <hr className="my-3 border-[#FFE0D6]" />
-                      <div className="font-semibold text-black">
+                      <hr className="my-3 border-border" />
+                      <div className="font-semibold text-foreground">
                         Total Daily Wage: ₹
                         {(Number(wageForm.hotelAllowance) || 0) +
                           (Number(wageForm.foodAllowance) || 0) +
@@ -725,6 +878,7 @@ export default function TechnicianProfile() {
                   </Button>
                 </div>
               ) : (() => {
+<<<<<<< HEAD
                 // Use categorized data from backend
                 // For third-party, use tpRequests (legacy format), otherwise use new categorized format
                 let assigned: any[] = [];
@@ -863,6 +1017,32 @@ export default function TechnicianProfile() {
                               <div className="text-xs text-muted-foreground mt-1 italic">
                                 PM Travel Task - Read Only
                               </div>
+=======
+                const source = (technician as any)?.type === 'thirdparty' ? tpRequests : requests;
+                const assigned = Array.isArray(source)
+                  ? source.filter((r: any) => ['scheduled', 'in_progress', 'pending', 'assigned'].includes(r.status))
+                  : [];
+
+                return assigned.length > 0 ? (
+                  <div className="space-y-3">
+                    {assigned.map((r: any) => (
+                      <Link key={r.id} href={`/service-requests/${r.id}`}>
+                        <div className="rounded-md border p-3 hover:bg-accent hover:border-primary transition-colors cursor-pointer">
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="font-medium text-primary hover:underline">SR #{r.requestNumber}</div>
+                            <Badge className={
+                              r.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                                r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-gray-100 text-gray-800'
+                            }>
+                              {r.status}
+                            </Badge>
+                          </div>
+                          <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
+                          {r.status === 'in_progress' && r.actualStartTime && (
+                            <div className="mt-2">
+                              <ElapsedTime startTime={r.actualStartTime} />
+>>>>>>> main
                             </div>
                           )}
                         </div>
@@ -973,6 +1153,72 @@ export default function TechnicianProfile() {
           </Card>
         </div>
       </main>
+
+      {/* Send Credentials Confirmation Dialog */}
+      <Dialog open={isCredentialsConfirmOpen} onOpenChange={setIsCredentialsConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <i className="fas fa-exclamation-triangle"></i>
+              Reset Password Warning
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              <div className="space-y-3">
+                <p className="font-medium">
+                  You are about to reset the password for <strong>{technician?.name}</strong>.
+                </p>
+                <div className="bg-warning/10 border border-warning/20 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <i className="fas fa-shield-alt text-warning mt-0.5"></i>
+                    <div>
+                      <p className="text-sm font-medium text-warning-foreground mb-1">
+                        ⚠️ This action will:
+                      </p>
+                      <ul className="text-xs text-warning-foreground space-y-1 ml-4">
+                        <li>• Generate a new secure password</li>
+                        <li>• Send login credentials via email</li>
+                        <li>• Invalidate the current password</li>
+                        <li>• Require the user to change password after login</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  The technician will receive an email with their new login credentials.
+                  For security, they should change their password after first login.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsCredentialsConfirmOpen(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmSendCredentials}
+              disabled={sendCredentialsMutation.isPending}
+              className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {sendCredentialsMutation.isPending ? (
+                <>
+                  <i className="fas fa-spinner fa-spin mr-2"></i>
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-key mr-2"></i>
+                  Reset & Send Password
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
