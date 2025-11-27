@@ -51,7 +51,13 @@ export default function AdminUserManagement() {
   const { data: users, isLoading, error } = useQuery({
     queryKey: ['admin-users'],
     queryFn: async () => {
-      const response = await fetch('/api/admin/users');
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('/api/admin/users', {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': token || ''
+        }
+      });
       if (!response.ok) throw new Error('Failed to fetch users');
       return response.json();
     },
@@ -59,9 +65,13 @@ export default function AdminUserManagement() {
 
   const updateCredentialsMutation = useMutation({
     mutationFn: async (data: { userId: string; email?: string; password?: string }) => {
+      const token = localStorage.getItem('auth_token');
       const response = await fetch(`/api/admin/users/${data.userId}/credentials`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': token || ''
+        },
         body: JSON.stringify({
           email: data.email || undefined,
           password: data.password || undefined
@@ -87,9 +97,13 @@ export default function AdminUserManagement() {
 
   const createUserMutation = useMutation({
     mutationFn: async (data: { name: string; email: string; phoneNumber: string; role: string }) => {
+      const token = localStorage.getItem('auth_token');
       const response = await fetch('/api/admin/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': token || ''
+        },
         body: JSON.stringify(data),
       });
       if (!response.ok) {
@@ -111,9 +125,13 @@ export default function AdminUserManagement() {
 
   const sendCredentialsMutation = useMutation({
     mutationFn: async (userId: string) => {
+      const token = localStorage.getItem('auth_token');
       const response = await fetch(`/api/admin/users/${userId}/send-credentials`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': token || ''
+        },
       });
       if (!response.ok) {
         const error = await response.json();

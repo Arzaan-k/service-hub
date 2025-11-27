@@ -8,6 +8,7 @@ import {
   containerOwnershipHistory,
   alerts,
   serviceRequests,
+  courierShipments,
   invoices,
   whatsappSessions,
   whatsappMessages,
@@ -30,6 +31,8 @@ import {
   type Container,
   type Alert,
   type ServiceRequest,
+  type CourierShipment,
+  type InsertCourierShipment,
   type Invoice,
   type WhatsappSession,
   type ScheduledService,
@@ -129,6 +132,14 @@ export interface IStorage {
   cancelServiceRequest(serviceRequestId: string, reason: string): Promise<ServiceRequest>;
   getServiceRequestTimeline(serviceRequestId: string): Promise<any[]>;
   getScheduledService(id: string): Promise<ScheduledService | undefined>;
+
+  // Courier Shipment operations
+  getCourierShipment(id: string): Promise<any | undefined>;
+  getCourierShipmentByAwb(awbNumber: string): Promise<any | undefined>;
+  getCourierShipmentsByServiceRequest(serviceRequestId: string): Promise<any[]>;
+  createCourierShipment(shipment: any): Promise<any>;
+  updateCourierShipment(id: string, shipment: any): Promise<any>;
+  deleteCourierShipment(id: string): Promise<void>;
 
   // Technician operations
   getAllTechnicians(): Promise<Technician[]>;
@@ -243,16 +254,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
+    console.log(`[CREATE USER] Creating user with data:`, {
+      ...insertUser,
+      password: insertUser.password ? '[HASHED]' : null
+    });
     const [user] = await db.insert(users).values(insertUser).returning();
+    console.log(`[CREATE USER] User created with ID: ${user.id}`);
     return user;
   }
 
   async updateUser(id: string, updateData: Partial<InsertUser>): Promise<User> {
+    console.log(`[UPDATE USER] Updating user ${id} with data:`, {
+      ...updateData,
+      password: updateData.password ? '[HASHED]' : undefined
+    });
     const [user] = await db
       .update(users)
       .set({ ...updateData, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
+    console.log(`[UPDATE USER] User updated: ${user.id}`);
     return user;
   }
 
@@ -281,18 +302,151 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCustomer(id: string): Promise<Customer> {
-    // First, unassign any containers from this customer
-    await db
-      .update(containers)
-      .set({ currentCustomerId: null })
-      .where(eq(containers.currentCustomerId, id));
+    console.log(`[DELETE CUSTOMER] Starting deletion for customer: ${id}`);
 
-    // Then delete the customer
-    const [deleted] = await db
-      .delete(customers)
-      .where(eq(customers.id, id))
-      .returning();
-    return deleted;
+    // Get the customer to access userId
+    const customer = await db.query.customers.findFirst({
+      where: eq(customers.id, id)
+    });
+
+    if (!customer) {
+      console.log(`[DELETE CUSTOMER] Customer ${id} not found`);
+      throw new Error("Customer not found");
+    }
+
+    console.log(`[DELETE CUSTOMER] Found customer ${id}, userId: ${customer.userId}`);
+
+    // Start transaction for complete cascade delete
+    await db.transaction(async (tx) => {
+      console.log(`[DELETE CUSTOMER] Starting transaction for customer ${id}`);
+      // 1. Unassign all containers from this customer
+      await tx
+        .update(containers)
+        .set({ currentCustomerId: null })
+        .where(eq(containers.currentCustomerId, id));
+
+      // 2. Delete container ownership history for this customer
+      await tx
+        .delete(containerOwnershipHistory)
+        .where(eq(containerOwnershipHistory.customerId, id));
+
+      // 3. Get all service requests for this customer to cascade delete related data
+      const customerServiceRequests = await tx.query.serviceRequests.findMany({
+        where: eq(serviceRequests.customerId, id),
+        columns: { id: true }
+      });
+      const serviceRequestIds = customerServiceRequests.map(sr => sr.id);
+
+      // 4. Delete feedback for this customer's service requests
+      if (serviceRequestIds.length > 0) {
+        await tx
+          .delete(feedback)
+          .where(inArray(feedback.serviceRequestId, serviceRequestIds));
+      }
+
+      // 5. Delete scheduled services for this customer's service requests
+      if (serviceRequestIds.length > 0) {
+        await tx
+          .delete(scheduledServices)
+          .where(inArray(scheduledServices.serviceRequestId, serviceRequestIds));
+      }
+
+      // 6. Delete invoices for this customer's service requests
+      if (serviceRequestIds.length > 0) {
+        await tx
+          .delete(invoices)
+          .where(inArray(invoices.serviceRequestId, serviceRequestIds));
+      }
+
+      // 7. Delete service requests
+      await tx
+        .delete(serviceRequests)
+        .where(eq(serviceRequests.customerId, id));
+
+      // 8. Delete all audit logs for this user (both customer and user actions)
+      if (customer.userId) {
+        await tx
+          .delete(auditLogs)
+          .where(eq(auditLogs.userId, customer.userId));
+      }
+
+      // 9. Delete audit logs for this customer entity
+      await tx
+        .delete(auditLogs)
+        .where(and(
+          eq(auditLogs.entityType, "customer"),
+          eq(auditLogs.entityId, id)
+        ));
+
+      // 10. Delete WhatsApp sessions for this customer's user
+      if (customer.userId) {
+        await tx
+          .delete(whatsappSessions)
+          .where(eq(whatsappSessions.userId, customer.userId));
+      }
+
+      // 11. Delete WhatsApp messages for this customer
+      await tx
+        .delete(whatsappMessages)
+        .where(and(
+          eq(whatsappMessages.recipientType, "customer"),
+          eq(whatsappMessages.recipientId, id)
+        ));
+
+      // 12. Delete email verifications for this customer's user
+      if (customer.userId) {
+        await tx
+          .delete(emailVerifications)
+          .where(eq(emailVerifications.userId, customer.userId));
+      }
+
+      // 13. Delete inventory transactions for this user
+      if (customer.userId) {
+        await tx
+          .delete(inventoryTransactions)
+          .where(eq(inventoryTransactions.userId, customer.userId));
+      }
+
+      // 14. Update alerts to remove acknowledgedBy reference (allows null)
+      if (customer.userId) {
+        await tx
+          .update(alerts)
+          .set({ acknowledgedBy: null })
+          .where(eq(alerts.acknowledgedBy, customer.userId));
+      }
+
+      // 15. Update customers to remove accountManagerId reference (allows null)
+      if (customer.userId) {
+        await tx
+          .update(customers)
+          .set({ accountManagerId: null })
+          .where(eq(customers.accountManagerId, customer.userId));
+      }
+
+      // 16. Delete technician record if this user is also a technician
+      if (customer.userId) {
+        await tx
+          .delete(technicians)
+          .where(eq(technicians.userId, customer.userId));
+      }
+
+      // 17. Delete the customer record
+      await tx
+        .delete(customers)
+        .where(eq(customers.id, id));
+
+      // 18. Finally, delete the user account
+      if (customer.userId) {
+        console.log(`[DELETE CUSTOMER] Deleting user account: ${customer.userId}`);
+        await tx
+          .delete(users)
+          .where(eq(users.id, customer.userId));
+        console.log(`[DELETE CUSTOMER] Successfully deleted user account: ${customer.userId}`);
+      }
+    });
+
+    console.log(`[DELETE CUSTOMER] Successfully completed deletion for customer: ${id}`);
+    return customer;
   }
 
   async getAllContainers(): Promise<any[]> {
@@ -1257,6 +1411,60 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
     return svc;
   }
+
+  // ==================== Courier Shipment Methods ====================
+
+  async getCourierShipment(id: string): Promise<CourierShipment | undefined> {
+    const [shipment] = await db
+      .select()
+      .from(courierShipments)
+      .where(eq(courierShipments.id, id))
+      .limit(1);
+    return shipment;
+  }
+
+  async getCourierShipmentByAwb(awbNumber: string): Promise<CourierShipment | undefined> {
+    const [shipment] = await db
+      .select()
+      .from(courierShipments)
+      .where(eq(courierShipments.awbNumber, awbNumber))
+      .limit(1);
+    return shipment;
+  }
+
+  async getCourierShipmentsByServiceRequest(serviceRequestId: string): Promise<CourierShipment[]> {
+    const shipments = await db
+      .select()
+      .from(courierShipments)
+      .where(eq(courierShipments.serviceRequestId, serviceRequestId))
+      .orderBy(desc(courierShipments.createdAt));
+    return shipments;
+  }
+
+  async createCourierShipment(shipment: InsertCourierShipment): Promise<CourierShipment> {
+    const [newShipment] = await db
+      .insert(courierShipments)
+      .values(shipment)
+      .returning();
+    return newShipment;
+  }
+
+  async updateCourierShipment(id: string, shipment: Partial<InsertCourierShipment>): Promise<CourierShipment> {
+    const [updated] = await db
+      .update(courierShipments)
+      .set({ ...shipment, updatedAt: new Date() })
+      .where(eq(courierShipments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCourierShipment(id: string): Promise<void> {
+    await db
+      .delete(courierShipments)
+      .where(eq(courierShipments.id, id));
+  }
+
+  // ==================== End Courier Shipment Methods ====================
 
   // Enhanced Technician Management Methods according to PRD
   async getTechnicianPerformance(technicianId: string): Promise<any> {
