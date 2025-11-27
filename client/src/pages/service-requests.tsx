@@ -393,7 +393,7 @@ export default function ServiceRequests() {
 
             <TabsContent value={activeTab} className="space-y-4">
               {filteredRequests?.map((request: ServiceRequest) => (
-                <Card key={(request as any)?._id || request.id} className="card-surface hover:shadow-soft transition-all overflow-visible" style={request.status === 'completed' ? { background: '#F0FFF6' } : {}}>
+                <Card key={(request as any)?._id || request.id} className={`card-surface hover:shadow-soft transition-all overflow-visible ${request.status === 'completed' ? 'bg-green-50/80 dark:bg-green-900/20 border-green-200 dark:border-green-800' : ''}`}>
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
@@ -731,9 +731,9 @@ export default function ServiceRequests() {
                     This action cannot be undone. The service request will be marked as cancelled.
                   </p>
                 </div>
+              </div>
             </div>
           </div>
-        </div>
           <DialogFooter>
             <Button className="btn-secondary" onClick={() => setCancelDialogOpen(false)}>
               Keep Request
@@ -801,14 +801,16 @@ export default function ServiceRequests() {
               <Textarea id="issue" value={newIssue} onChange={(e) => setNewIssue(e.target.value)} rows={4} placeholder="Describe the issue..." />
             </div>
             <div>
-              <Label htmlFor="est">Estimated Duration (minutes)</Label>
-              <Input id="est" value={newEstimatedDuration} onChange={(e) => setNewEstimatedDuration(e.target.value)} placeholder="e.g. 60" />
+              <Label htmlFor="estimatedDuration">Estimated Duration (hours)</Label>
+              <Input id="estimatedDuration" type="number" value={newEstimatedDuration} onChange={(e) => setNewEstimatedDuration(e.target.value)} placeholder="e.g., 2" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => createRequest.mutate()} disabled={createRequest.isPending}>
-              {createRequest.isPending ? "Creating..." : "Create"}
+            <Button className="btn-secondary" onClick={() => setNewDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="btn-primary" onClick={() => createRequest.mutate()} disabled={createRequest.isPending}>
+              {createRequest.isPending ? "Creating..." : "Create Request"}
             </Button>
           </DialogFooter>
         </DialogContent>

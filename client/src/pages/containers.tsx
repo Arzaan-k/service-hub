@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAuthToken } from "@/lib/auth";
+import { getAuthToken, useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -45,55 +45,6 @@ interface Container {
   [key: string]: any;
 }
 
-// CSV/import-driven fields from the containers table to display in the UI
-const csvFieldDefinitions: { key: string; label: string }[] = [
-  // labels match DB column names exactly as requested
-  { key: "product_type", label: "product_type" },
-  { key: "size", label: "size" },
-  { key: "size_type", label: "size_type" },
-  { key: "group_name", label: "group_name" },
-  { key: "gku_product_name", label: "gku_product_name" },
-  { key: "category", label: "category" },
-  { key: "available_location", label: "available_location" },
-  { key: "depot", label: "depot" },
-  { key: "mfg_year", label: "mfg_year" },
-  { key: "inventory_status", label: "inventory_status" },
-  { key: "current", label: "current" },
-  { key: "images_pti_survey", label: "images_pti_survey" },
-  { key: "grade", label: "grade" },
-  { key: "purchase_date", label: "purchase_date" },
-  { key: "temperature", label: "temperature" },
-  { key: "domestication", label: "domestication" },
-  { key: "reefer_unit", label: "reefer_unit" },
-  { key: "reefer_unit_model_name", label: "reefer_unit_model_name" },
-  { key: "reefer_unit_serial_no", label: "reefer_unit_serial_no" },
-  { key: "controller_configuration_number", label: "controller_configuration_number" },
-  { key: "controller_version", label: "controller_version" },
-  { key: "city_of_purchase", label: "city_of_purchase" },
-  { key: "purchase_yard_details", label: "purchase_yard_details" },
-  { key: "cro_number", label: "cro_number" },
-  { key: "brand_new_used", label: "brand_new_used" },
-  { key: "date_of_arrival_in_depot", label: "date_of_arrival_in_depot" },
-  { key: "in_house_run_test_report", label: "in_house_run_test_report" },
-  { key: "condition", label: "condition" },
-  { key: "curtains", label: "curtains" },
-  { key: "lights", label: "lights" },
-  { key: "colour", label: "colour" },
-  { key: "logo_sticker", label: "logo_sticker" },
-  { key: "repair_remarks", label: "repair_remarks" },
-  { key: "estimated_cost_for_repair", label: "estimated_cost_for_repair" },
-  { key: "crystal_smart_sr_no", label: "crystal_smart_sr_no" },
-  { key: "booking_order_number", label: "booking_order_number" },
-  { key: "do_number", label: "do_number" },
-  { key: "dispatch_date", label: "dispatch_date" },
-  { key: "no_of_days", label: "no_of_days" },
-  { key: "dispatch_location", label: "dispatch_location" },
-  { key: "set_temperature_during_despatch_live", label: "set_temperature_during_despatch_live" },
-  { key: "assets_belong_to", label: "assets_belong_to" },
-  { key: "blocked", label: "blocked" },
-  { key: "remark", label: "remark" },
-];
-
 const safeLower = (val: any): string => {
   if (val === null || val === undefined) return "";
   try {
@@ -109,6 +60,7 @@ export default function Containers() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const authToken = getAuthToken();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -121,67 +73,64 @@ export default function Containers() {
 
   // Determine if we should use pagination or fetch all data for filtering
   const hasActiveFilters = searchTerm !== "" || statusFilter !== "all" || typeFilter !== "all" || gradeFilter !== "all";
-  console.log('[Containers Page] Filter values:', { searchTerm, statusFilter, typeFilter, gradeFilter, hasActiveFilters });
-  console.log('[Containers Page] Query key will be:', hasActiveFilters
-    ? ["/api/containers", "all"]
-    : ["/api/containers", "paginated", currentPage, itemsPerPage]);
-  console.log('[Containers Page] Current page:', currentPage, 'Items per page:', itemsPerPage);
-  console.log('[Containers Page] About to run main query with hasActiveFilters:', hasActiveFilters);
 
-  // Query for summary statistics (always fetch all containers)
+  // Determine API endpoints based on user role
+  const isClient = user?.role === 'client';
+  const containersEndpoint = isClient ? "/api/customers/me/containers" : "/api/containers";
+
+  // Query for summary statistics (always fetch all containers for stats)
   const { data: allContainers = [] } = useQuery({
     queryKey: ["/api/containers", "stats"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/containers");
       const data = await response.json();
-      console.log('[Containers Page] Fetched all containers for stats:', Array.isArray(data) ? data.length : 'Not an array');
       return Array.isArray(data) ? data : [];
     },
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
+    enabled: !isClient, // Only fetch all containers for non-clients (for stats)
   });
 
   const { data: containersData, isLoading, error } = useQuery({
     queryKey: hasActiveFilters
-      ? ["/api/containers", "all"] // Fetch all for filtering
-      : ["/api/containers", "paginated", currentPage, itemsPerPage], // Use pagination
+      ? [containersEndpoint, "all"] // Fetch all for filtering
+      : [containersEndpoint, "paginated", currentPage, itemsPerPage], // Use pagination
     queryFn: async () => {
-      console.log('[Containers Page] Query function called, hasActiveFilters:', hasActiveFilters);
       if (hasActiveFilters) {
         // Fetch all containers for client-side filtering
-        const response = await apiRequest("GET", "/api/containers");
+        const response = await apiRequest("GET", containersEndpoint);
         const data = await response.json();
-        console.log('[Containers Page] Fetched all containers for filtering:', Array.isArray(data) ? data.length : 'Not an array');
         return {
           containers: Array.isArray(data) ? data : [],
           totalCount: Array.isArray(data) ? data.length : 0,
           isPaginated: false
         };
-      } else {
-        // Use server-side pagination
-        const offset = (currentPage - 1) * itemsPerPage;
-        const url = `/api/containers?limit=${itemsPerPage}&offset=${offset}`;
-        const response = await apiRequest("GET", url);
-        const data = await response.json();
-        const totalCount = parseInt(response.headers.get('x-total-count') || '0');
-
-        console.log('[Containers Page] Fetched paginated containers:', Array.isArray(data) ? data.length : 'Not an array', 'Total:', totalCount);
-        if (data.length > 0) {
-          console.log('[Containers Page] First container sample:', data[0]);
-          console.log('[Containers Page] Container keys:', Object.keys(data[0]));
-          console.log('[Containers Page] product_type:', data[0].product_type);
-          console.log('[Containers Page] depot:', data[0].depot);
-          console.log('[Containers Page] grade:', data[0].grade);
-        }
-
-        const result = {
-          containers: Array.isArray(data) ? data : [],
-          totalCount,
-          isPaginated: true
-        };
-        console.log('[Containers Page] Returning paginated result:', result);
-        return result;
       }
+
+      // Use server-side pagination (only for non-clients)
+      if (isClient) {
+        // For clients, fetch all containers (they likely have fewer containers)
+        const response = await apiRequest("GET", containersEndpoint);
+        const data = await response.json();
+        return {
+          containers: Array.isArray(data) ? data : [],
+          totalCount: Array.isArray(data) ? data.length : 0,
+          isPaginated: false
+        };
+      }
+
+      // For admins/coordinators/technicians, use pagination
+      const offset = (currentPage - 1) * itemsPerPage;
+      const url = `/api/containers?limit=${itemsPerPage}&offset=${offset}`;
+      const response = await apiRequest("GET", url);
+      const data = await response.json();
+      const totalCount = parseInt(response.headers.get('x-total-count') || '0');
+
+      return {
+        containers: Array.isArray(data) ? data : [],
+        totalCount,
+        isPaginated: true
+      };
     },
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
@@ -192,30 +141,8 @@ export default function Containers() {
   const totalCount = containersData?.totalCount || (Array.isArray(containersData) ? containersData.length : 0) || allContainers.length;
   const isUsingPagination = containersData?.isPaginated || false;
 
-  console.log('[Containers Page] containersData:', containersData);
-  console.log('[Containers Page] allContainers:', allContainers, 'length:', allContainers.length);
-  console.log('[Containers Page] containers (final):', containers, 'length:', containers.length);
-
-  // Debug logging
-  useEffect(() => {
-    console.log('[Containers Page] Render state:', {
-      isLoading,
-      hasError: !!error,
-      containerCount: Array.isArray(containers) ? containers.length : 'Not an array'
-    });
-  }, [isLoading, error, containers]);
-
-  // Initialize data on component mount
-  useEffect(() => {
-    // Removed test auth initialization - was causing conflicts with real authentication
-  }, []);
-
-  console.log('[Containers Page] About to process filteredAndSortedContainers, containers:', containers, 'type:', typeof containers, 'isArray:', Array.isArray(containers));
-
   const filteredAndSortedContainers = useMemo(() => {
-    console.log('[useMemo] Starting with containers:', containers, 'hasActiveFilters:', hasActiveFilters, 'isUsingPagination:', isUsingPagination);
     if (!Array.isArray(containers)) {
-      console.warn("Containers data is not an array:", containers);
       return [];
     }
 
@@ -323,47 +250,44 @@ export default function Containers() {
 
   const getStatusBadge = (status: string) => {
     const statusMap = {
-      "DEPLOYED": { color: "bg-green-500/20 text-green-400", label: "Deployed" },
-      "SALE": { color: "bg-blue-500/20 text-blue-400", label: "For Sale" },
-      "SOLD": { color: "bg-red-500/20 text-red-400", label: "Sold" },
-      "MAINTENANCE": { color: "bg-yellow-500/20 text-yellow-400", label: "Maintenance" },
-      "STOCK": { color: "bg-gray-500/20 text-gray-400", label: "In Stock" },
+      "DEPLOYED": { color: "bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/20", label: "Deployed" },
+      "SALE": { color: "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/20", label: "For Sale" },
+      "SOLD": { color: "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/20", label: "Sold" },
+      "MAINTENANCE": { color: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/20", label: "Maintenance" },
+      "STOCK": { color: "bg-gray-500/20 text-gray-600 dark:text-gray-400 border-gray-500/20", label: "In Stock" },
     };
-    const statusInfo = statusMap[status as keyof typeof statusMap] || { color: "bg-gray-500/20 text-gray-400", label: status };
-    return <Badge className={statusInfo.color}>{statusInfo.label}</Badge>;
+    const statusInfo = statusMap[status as keyof typeof statusMap] || { color: "bg-gray-500/20 text-gray-600 dark:text-gray-400", label: status };
+    return <Badge variant="outline" className={`${statusInfo.color} border font-medium`}>{statusInfo.label}</Badge>;
   };
 
   const getGradeBadge = (grade: string) => {
     const gradeMap = {
-      "A": { color: "bg-green-500/20 text-green-400", label: "A" },
-      "B": { color: "bg-yellow-500/20 text-yellow-400", label: "B" },
-      "C": { color: "bg-red-500/20 text-red-400", label: "C" },
-      "D": { color: "bg-red-500/20 text-red-400", label: "D" },
+      "A": { color: "bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/20", label: "A" },
+      "B": { color: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/20", label: "B" },
+      "C": { color: "bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/20", label: "C" },
+      "D": { color: "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/20", label: "D" },
     };
-    const gradeInfo = gradeMap[grade as keyof typeof gradeMap] || { color: "bg-gray-500/20 text-gray-400", label: grade };
-    return <Badge className={gradeInfo.color}>{gradeInfo.label}</Badge>;
+    const gradeInfo = gradeMap[grade as keyof typeof gradeMap] || { color: "bg-gray-500/20 text-gray-600 dark:text-gray-400", label: grade };
+    return <Badge variant="outline" className={`${gradeInfo.color} border font-medium`}>{gradeInfo.label}</Badge>;
   };
 
   const getHealthScoreBadge = (score: number) => {
-    if (score >= 90) return <Badge className="bg-green-500/20 text-green-400">Excellent</Badge>;
-    if (score >= 70) return <Badge className="bg-yellow-500/20 text-yellow-400">Good</Badge>;
-    if (score >= 50) return <Badge className="bg-orange-500/20 text-orange-400">Fair</Badge>;
-    return <Badge className="bg-red-500/20 text-red-400">Poor</Badge>;
+    if (score >= 90) return <Badge variant="outline" className="bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/20">Excellent</Badge>;
+    if (score >= 70) return <Badge variant="outline" className="bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/20">Good</Badge>;
+    if (score >= 50) return <Badge variant="outline" className="bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/20">Fair</Badge>;
+    return <Badge variant="outline" className="bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/20">Poor</Badge>;
   };
 
-  console.log('[Containers Page] isLoading:', isLoading, 'hasError:', !!error, 'containersData:', containersData);
-  console.log('[Containers Page] About to check loading condition');
   if (isLoading) {
     return (
       <div className="flex min-h-screen bg-background text-foreground">
         <Sidebar />
-        <main className="flex-1 flex flex-col overflow-hidden relative">
-          <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1574621100236-d25b64cfd647?q=80&w=2833&auto=format&fit=crop')] bg-cover bg-center opacity-5 pointer-events-none" />
+        <main className="flex-1 flex flex-col overflow-hidden relative" style={{ backgroundImage: 'none' }}>
           <Header title="Container Master Sheet" />
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-6"></div>
-              <p className="text-muted-foreground text-lg animate-pulse">Loading fleet data...</p>
+              <p className="text-muted-foreground text-lg animate-pulse">Loading container fleet...</p>
             </div>
           </div>
         </main>
@@ -374,16 +298,15 @@ export default function Containers() {
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden bg-background relative">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1574621100236-d25b64cfd647?q=80&w=2833&auto=format&fit=crop')] bg-cover bg-center opacity-5 pointer-events-none" />
+      <main className="flex-1 flex flex-col overflow-hidden bg-background relative" style={{ backgroundImage: 'none' }}>
         <Header title="Container Master Sheet" />
-        <div className="flex-1 overflow-y-auto p-8 space-y-8 relative z-10">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8 relative z-10 scrollbar-thin">
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <AnimatedCard gradientColor="#3B82F6" className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-muted-foreground">Total Containers</h3>
-                <div className="p-2 bg-blue-500/10 rounded-lg">
+                <div className="p-2 bg-blue-500/10 rounded-xl">
                   <Package className="h-5 w-5 text-blue-500" />
                 </div>
               </div>
@@ -394,7 +317,7 @@ export default function Containers() {
             <AnimatedCard gradientColor="#10B981" className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-muted-foreground">Deployed</h3>
-                <div className="p-2 bg-green-500/10 rounded-lg">
+                <div className="p-2 bg-green-500/10 rounded-xl">
                   <MapPin className="h-5 w-5 text-green-500" />
                 </div>
               </div>
@@ -407,7 +330,7 @@ export default function Containers() {
             <AnimatedCard gradientColor="#F59E0B" className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-muted-foreground">For Sale</h3>
-                <div className="p-2 bg-amber-500/10 rounded-lg">
+                <div className="p-2 bg-amber-500/10 rounded-xl">
                   <Zap className="h-5 w-5 text-amber-500" />
                 </div>
               </div>
@@ -420,7 +343,7 @@ export default function Containers() {
             <AnimatedCard gradientColor="#8B5CF6" className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-muted-foreground">Avg Grade</h3>
-                <div className="p-2 bg-purple-500/10 rounded-lg">
+                <div className="p-2 bg-purple-500/10 rounded-xl">
                   <Calendar className="h-5 w-5 text-purple-500" />
                 </div>
               </div>
@@ -438,7 +361,7 @@ export default function Containers() {
           {/* Filters and Search */}
           <GlassCard className="mb-8">
             <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-primary/10 rounded-lg">
+              <div className="p-2 bg-primary/10 rounded-xl">
                 <Filter className="h-5 w-5 text-primary" />
               </div>
               <h3 className="text-lg font-semibold text-foreground">Filters & Search</h3>
@@ -451,11 +374,11 @@ export default function Containers() {
                   placeholder="Search containers..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 bg-input border-input focus:bg-input/80 transition-all"
+                  className="pl-10 bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 focus:bg-white dark:focus:bg-black/40 transition-all rounded-xl"
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="bg-input border-input">
+                <SelectTrigger className="bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 rounded-xl">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -467,7 +390,7 @@ export default function Containers() {
                 </SelectContent>
               </Select>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="bg-input border-input">
+                <SelectTrigger className="bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 rounded-xl">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -477,7 +400,7 @@ export default function Containers() {
                 </SelectContent>
               </Select>
               <Select value={gradeFilter} onValueChange={setGradeFilter}>
-                <SelectTrigger className="bg-input border-input">
+                <SelectTrigger className="bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 rounded-xl">
                   <SelectValue placeholder="Grade" />
                 </SelectTrigger>
                 <SelectContent>
@@ -489,7 +412,7 @@ export default function Containers() {
                 </SelectContent>
               </Select>
               <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="bg-input border-input">
+                <SelectTrigger className="bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 rounded-xl">
                   <SelectValue placeholder="Sort By" />
                 </SelectTrigger>
                 <SelectContent>
@@ -500,7 +423,7 @@ export default function Containers() {
                   <SelectItem value="yom">Year of Manufacture</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" className="bg-input border-input hover:bg-accent hover:text-accent-foreground transition-all flex items-center gap-2">
+              <Button variant="outline" className="bg-white/50 dark:bg-black/20 border-transparent hover:bg-primary hover:text-white transition-all flex items-center gap-2 rounded-xl">
                 <Download className="h-4 w-4" />
                 Export
               </Button>
@@ -508,40 +431,43 @@ export default function Containers() {
           </GlassCard>
 
           {/* Container Table */}
-          <GlassCard className="overflow-hidden p-0">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <GlassCard className="overflow-hidden p-0 border-0 shadow-xl">
+            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/40 dark:bg-black/20 backdrop-blur-md">
               <h3 className="text-lg font-semibold text-foreground">Container Master Sheet <span className="text-muted-foreground text-sm font-normal ml-2">({totalItems} containers)</span></h3>
             </div>
             <div className="p-0">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-h-[600px] scrollbar-thin">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-xs uppercase text-muted-foreground font-semibold">
+                  <thead className="sticky top-0 z-20 bg-white/80 dark:bg-black/80 backdrop-blur-xl text-xs uppercase text-muted-foreground font-semibold shadow-sm">
                     <tr>
                       {/* Match DB field name for primary identifier */}
-                      <th className="text-left py-4 px-4">container_id</th>
-                      <th className="text-left py-4 px-4">Product Type</th>
-                      <th className="text-left py-4 px-4">Size</th>
-                      <th className="text-left py-4 px-4">Size Type</th>
-                      <th className="text-left py-4 px-4">Group Name</th>
-                      <th className="text-left py-4 px-4">GKU Product Name</th>
-                      <th className="text-left py-4 px-4">Category</th>
-                      <th className="text-left py-4 px-4">Location</th>
-                      <th className="text-left py-4 px-4">Depot</th>
-                      <th className="text-left py-4 px-4">YOM</th>
-                      <th className="text-left py-4 px-4">Status</th>
-                      <th className="text-left py-4 px-4">Current</th>
-                      <th className="text-left py-4 px-4">Grade</th>
-                      <th className="text-left py-4 px-4">Reefer Unit</th>
-                      <th className="text-left py-4 px-4">Reefer Unit Model</th>
-                      <th className="text-left py-4 px-4">Health Score</th>
-                      <th className="text-left py-4 px-4">Actions</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">container_id</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Product Type</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Size</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Size Type</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Group Name</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">GKU Product Name</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Category</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Location</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Depot</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">YOM</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Status</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Current</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Grade</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Reefer Unit</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Reefer Unit Model</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Health Score</th>
+                      <th className="text-left py-4 px-4 font-bold tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-white/10">
                     {paginatedItems.length === 0 ? (
                       <tr>
-                        <td colSpan={18} className="py-8 text-center text-muted-foreground">
-                          No containers found
+                        <td colSpan={18} className="py-12 text-center text-muted-foreground">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <Package className="h-12 w-12 text-muted-foreground/30" />
+                            <p>No containers found</p>
+                          </div>
                         </td>
                       </tr>
                     ) : (
@@ -555,59 +481,59 @@ export default function Containers() {
                         return (
                           <tr
                             key={container.id}
-                            className="border-b border-border hover:bg-muted/50 transition-colors cursor-pointer group"
+                            className="hover:bg-primary/5 transition-colors cursor-pointer group"
                             onClick={() => setLocation(`/containers/${container.id}`)}
                           >
-                            <td className="py-4 px-4 font-mono text-xs font-medium text-primary group-hover:text-primary-dark transition-colors">
+                            <td className="py-3 px-4 font-mono text-xs font-medium text-primary group-hover:text-primary-dark transition-colors">
                               {containerNumber || "—"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).productType ||
                                 (container as any).product_type ||
                                 metadata.productType ||
                                 container.type ||
                                 "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).size || metadata.size || container.capacity || "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).sizeType ||
                                 (container as any).sizeType ||
                                 metadata.sizeType ||
                                 "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).groupName ||
                                 (container as any).group_name ||
                                 metadata.groupName ||
                                 "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).gkuProductName ||
                                 (container as any).gku_product_name ||
                                 metadata.gkuProductName ||
                                 "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).category || metadata.category || "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).availableLocation ||
                                 (container as any).available_location ||
                                 metadata.location ||
                                 "Unknown"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).depot || metadata.depot || "Unknown"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).mfgYear ||
                                 (container as any).mfg_year ||
                                 metadata.yom ||
                                 "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs">
+                            <td className="py-3 px-4 text-xs">
                               {getStatusBadge(
                                 (container as any).inventoryStatus ||
                                 (container as any).inventory_status ||
@@ -615,19 +541,19 @@ export default function Containers() {
                                 container.status
                               )}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).current || metadata.current || "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs">
+                            <td className="py-3 px-4 text-xs">
                               {getGradeBadge((container as any).grade || metadata.grade || "N/A")}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).reeferUnit ||
                                 (container as any).reefer_unit ||
                                 metadata.reeferUnit ||
                                 "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs text-foreground/80">
+                            <td className="py-3 px-4 text-xs text-foreground/80">
                               {(container as any).reeferUnitModelName ||
                                 (container as any).reefer_unit_model_name ||
                                 (container as any).reeferModel ||
@@ -635,14 +561,14 @@ export default function Containers() {
                                 metadata.reeferUnitModel ||
                                 "N/A"}
                             </td>
-                            <td className="py-4 px-4 text-xs">
+                            <td className="py-3 px-4 text-xs">
                               {getHealthScoreBadge(container.healthScore || 0)}
                             </td>
-                            <td className="py-4 px-4 text-xs">
+                            <td className="py-3 px-4 text-xs">
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 w-8 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setLocation(`/containers/${container.id}`);
@@ -661,7 +587,7 @@ export default function Containers() {
 
               {/* Pagination Controls */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between px-2 py-4 border-t border-border">
+                <div className="flex items-center justify-between px-6 py-4 border-t border-white/10 bg-white/40 dark:bg-black/20 backdrop-blur-md">
                   <div className="flex-1 text-sm text-muted-foreground">
                     {hasActiveFilters ? (
                       <span>Showing filtered results ({filteredAndSortedContainers.length} of {totalCount} total entries)</span>
@@ -679,7 +605,7 @@ export default function Containers() {
                           setCurrentPage(1);
                         }}
                       >
-                        <SelectTrigger className="h-8 w-[70px]">
+                        <SelectTrigger className="h-8 w-[70px] bg-white/50 dark:bg-black/20 border-transparent rounded-lg">
                           <SelectValue placeholder={itemsPerPage} />
                         </SelectTrigger>
                         <SelectContent side="top">
@@ -721,7 +647,7 @@ export default function Containers() {
                                   <PaginationLink
                                     onClick={() => setCurrentPage(page)}
                                     isActive={currentPage === page}
-                                    className="cursor-pointer"
+                                    className={`cursor-pointer ${currentPage === page ? 'bg-primary text-white hover:bg-primary/90' : ''}`}
                                   >
                                     {page}
                                   </PaginationLink>

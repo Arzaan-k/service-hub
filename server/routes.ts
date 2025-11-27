@@ -428,6 +428,175 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin user management endpoints
+  app.get("/api/admin/users", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      // Remove sensitive data like passwords
+      const safeUsers = users.map(user => ({
+        ...user,
+        password: undefined
+      }));
+      res.json(safeUsers);
+    } catch (error) {
+      console.error("Get users error:", error);
+      res.status(500).json({ error: "Failed to get users" });
+    }
+  });
+
+  app.put("/api/admin/users/:userId/credentials", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { email, password } = req.body;
+
+      if (!email && !password) {
+        return res.status(400).json({ error: "Either email or password must be provided" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Check if email is already taken by another user
+      if (email && email !== user.email) {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser && existingUser.id !== userId) {
+          return res.status(400).json({ error: "Email already in use by another user" });
+        }
+      }
+
+      const updates: any = {};
+
+      if (email) {
+        updates.email = email;
+        updates.emailVerified = false; // Reset verification when email changes
+      }
+
+      if (password) {
+        const { hashPassword } = await import('./services/auth');
+        updates.password = await hashPassword(password);
+      }
+
+      const updatedUser = await storage.updateUser(userId, updates);
+
+      // Send verification email if email was changed
+      if (email && email !== user.email) {
+        try {
+          const { createAndSendEmailOTP } = await import('./services/auth');
+          await createAndSendEmailOTP(updatedUser);
+        } catch (emailError) {
+          console.error("Failed to send verification email:", emailError);
+        }
+      }
+
+      res.json({
+        user: { ...updatedUser, password: undefined },
+        message: "User credentials updated successfully"
+      });
+    } catch (error) {
+      console.error("Update user credentials error:", error);
+      res.status(500).json({ error: "Failed to update user credentials" });
+    }
+  });
+
+  // Admin create user with auto-generated password
+  app.post("/api/admin/users", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
+    try {
+      const { name, email, phoneNumber, role } = req.body;
+
+      if (!email || !name || !phoneNumber || !role) {
+        return res.status(400).json({ error: "Name, email, phone and role are required" });
+      }
+
+      // Validate role
+      const validRoles = ['client', 'technician', 'coordinator'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: "Invalid role. Must be client, technician, or coordinator" });
+      }
+
+      const existingEmail = await storage.getUserByEmail(email);
+      if (existingEmail) return res.status(400).json({ error: "Email already registered" });
+
+      const existingPhone = await storage.getUserByPhoneNumber(phoneNumber);
+      if (existingPhone) return res.status(400).json({ error: "Phone already registered" });
+
+      const { hashPassword, generateSecurePassword, sendUserCredentials } = await import('./services/auth');
+
+      // Generate secure password
+      const plainPassword = generateSecurePassword();
+      const passwordHash = await hashPassword(plainPassword);
+
+      const user = await storage.createUser({
+        phoneNumber,
+        name,
+        email,
+        password: passwordHash,
+        role,
+        isActive: true,
+        whatsappVerified: false,
+        emailVerified: false,
+      });
+
+      // Send credentials via email
+      const emailResult = await sendUserCredentials(user, plainPassword);
+
+      const message = emailResult.success
+        ? 'User created and credentials sent via email'
+        : `User created. ${emailResult.error || 'Check server logs for credentials.'}`;
+
+      res.json({
+        user: { ...user, password: undefined },
+        message,
+        emailSent: emailResult.success,
+        plainPassword: plainPassword // Only for development/debugging
+      });
+    } catch (error) {
+      console.error("Create user error:", error);
+      res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  // Admin send credentials to existing user
+  app.post("/api/admin/users/:userId/send-credentials", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { generateSecurePassword, sendUserCredentials } = await import('./services/auth');
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Generate new secure password
+      const plainPassword = generateSecurePassword();
+      const { hashPassword } = await import('./services/auth');
+      const passwordHash = await hashPassword(plainPassword);
+
+      // Update user with new password
+      await storage.updateUser(userId, {
+        password: passwordHash,
+        emailVerified: false // Reset verification
+      });
+
+      // Send credentials via email
+      const emailResult = await sendUserCredentials(user, plainPassword);
+
+      const message = emailResult.success
+        ? 'New credentials sent via email'
+        : `${emailResult.error || 'Check server logs for credentials.'}`;
+
+      res.json({
+        message,
+        emailSent: emailResult.success,
+        plainPassword: plainPassword // Only for development/debugging
+      });
+    } catch (error) {
+      console.error("Send credentials error:", error);
+      res.status(500).json({ error: "Failed to send credentials" });
+    }
+  });
+
   // Test endpoint to get all users (for development only)
   app.get("/api/test/users", async (req, res) => {
     try {
@@ -3234,7 +3403,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
       const customers = await storage.getAllCustomers();
-      res.json(customers);
+
+      // Add container count for each customer
+      const customersWithCounts = await Promise.all(
+        customers.map(async (customer: any) => {
+          try {
+            const containers = await storage.getContainersByCustomer(customer.id);
+            return {
+              ...customer,
+              containerCount: containers.length
+            };
+          } catch (error) {
+            console.error(`Failed to get container count for customer ${customer.id}:`, error);
+            return {
+              ...customer,
+              containerCount: 0
+            };
+          }
+        })
+      );
+
+      res.json(customersWithCounts);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch customers" });
     }
@@ -3322,10 +3511,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/customers/:id", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
-      const customer = await storage.updateCustomer(req.params.id, req.body);
-      if (!customer) {
+      // Get the current customer to check if email changed
+      const currentCustomer = await storage.getCustomer(req.params.id);
+      if (!currentCustomer) {
         return res.status(404).json({ error: "Customer not found" });
       }
+
+      const customer = await storage.updateCustomer(req.params.id, req.body);
+
+      // If email changed, update the associated user account
+      if (req.body.email && req.body.email !== currentCustomer.email && currentCustomer.userId) {
+        try {
+          await storage.updateUser(currentCustomer.userId, {
+            email: req.body.email,
+            emailVerified: false // Reset verification when email changes
+          });
+
+          // Send verification email for the new email address
+          const user = await storage.getUser(currentCustomer.userId);
+          if (user) {
+            const { createAndSendEmailOTP } = await import('./services/auth');
+            await createAndSendEmailOTP(user);
+          }
+        } catch (userUpdateError) {
+          console.error('Failed to update user account for customer:', userUpdateError);
+          // Don't fail the customer update if user update fails
+        }
+      }
+
       res.json(customer);
     } catch (error) {
       res.status(500).json({ error: "Failed to update customer" });
@@ -4078,9 +4291,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Container not found" });
       }
 
+      // Check for duplicate alerts - prevent spamming
+      const existingAlerts = await storage.getAlertsByContainer(containerId);
+      const recentAlert = existingAlerts.find(a =>
+        a.alertType === alertType &&
+        a.status === 'open' &&
+        // Check if alert was created in the last 2 minutes
+        new Date(a.detectedAt).getTime() > (Date.now() - 2 * 60 * 1000)
+      );
+
+      if (recentAlert) {
+        return res.status(409).json({
+          error: "Duplicate alert detected",
+          message: `A similar ${alertType} alert already exists for this container (created ${Math.floor((Date.now() - new Date(recentAlert.detectedAt).getTime()) / 1000)}s ago). Please wait before creating another alert.`,
+          existingAlertId: recentAlert.id
+        });
+      }
+
       const simulatedAlert = {
         containerId,
-        alertCode: `SIM_${Date.now()}`,
+        alertCode: `SIM_${alertType.toUpperCase()}_${Date.now()}`,
         alertType: alertType,
         severity,
         source: "simulation",

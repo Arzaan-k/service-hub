@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Filter, Search, SortAsc, SortDesc } from "lucide-react";
+import { Filter, Search } from "lucide-react";
 
 interface Alert {
   id: string;
@@ -21,74 +21,8 @@ interface AlertPanelProps {
   containers: any[];
 }
 
-interface AlertCardContentProps {
-  alert: Alert;
-  container: any;
-  colors: any;
-}
-
-function AlertCardContent({ alert, container, colors }: AlertCardContentProps) {
-  return (
-    <>
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span
-            className={`px-2.5 py-1 ${colors.badge} text-white text-[10px] font-bold rounded-md uppercase tracking-wider shadow-sm`}
-          >
-            {alert.severity}
-          </span>
-          <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-            <i className="far fa-clock"></i>
-            {new Date(alert.detectedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
-        <div className={`w-2 h-2 ${colors.badge} rounded-full animate-pulse shadow-[0_0_8px_currentColor]`}></div>
-      </div>
-
-      <p className={`text-sm font-bold ${colors.text} mb-1 leading-tight`}>{alert.title}</p>
-      <div className="flex items-center gap-1.5 mb-3">
-        <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50"></div>
-        <p className="text-xs font-mono text-muted-foreground">
-          {container?.containerCode || container?.containerId || "Unknown"}
-        </p>
-      </div>
-
-      <p className="text-xs text-foreground/90 mb-3 leading-relaxed bg-muted/50 p-2 rounded-lg border border-border/50">
-        {alert.description}
-      </p>
-
-      {alert.aiClassification && (
-        <div className="mb-3 p-2 rounded-lg bg-primary/5 border border-primary/10">
-          <div className="flex items-center gap-1.5 mb-1">
-            <i className="fas fa-robot text-primary text-xs"></i>
-            <span className="text-[10px] font-bold text-primary uppercase tracking-wider">AI Analysis</span>
-          </div>
-          <p className="text-xs text-foreground/90">
-            {alert.aiClassification.rootCause}
-          </p>
-        </div>
-      )}
-
-      <div className="flex gap-2 mt-auto pt-2 border-t border-border/50">
-        <button
-          className={`flex-1 px-3 py-2 text-xs font-bold ${colors.badge} text-white rounded-lg hover:opacity-90 transition-all shadow-md hover:shadow-lg`}
-        >
-          Dispatch Tech
-        </button>
-        <button className="px-3 py-2 text-xs font-bold border border-border bg-secondary/50 text-foreground rounded-lg hover:bg-secondary transition-all">
-          Details
-        </button>
-      </div>
-    </>
-  );
-}
-
-import { GlassCard } from "@/components/ui/animated-card";
-
 export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
   const [, setLocation] = useLocation();
-
-  // Filter and sort states
   const [searchTerm, setSearchTerm] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
@@ -97,7 +31,6 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
   // Filter and sort alerts
   const filteredAndSortedAlerts = useMemo(() => {
     let filtered = alerts.filter(alert => {
-      // Search filter
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
         const container = containers?.find((c: any) =>
@@ -113,7 +46,6 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
         if (!matchesSearch) return false;
       }
 
-      // Severity filter
       if (severityFilter !== "all" && alert.severity !== severityFilter) {
         return false;
       }
@@ -121,7 +53,6 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
       return true;
     });
 
-    // Sort alerts
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "newest":
@@ -173,92 +104,96 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
     return colors[severity as keyof typeof colors] || colors.medium;
   };
 
-
   return (
-    <GlassCard className="h-full w-full flex flex-col p-6">
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-red-500/10 rounded-xl">
-            <i className="fas fa-exclamation-triangle text-red-500 text-lg"></i>
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-foreground tracking-tight">Active Alerts</h3>
-            <p className="text-xs text-muted-foreground">{filteredAndSortedAlerts.length} of {alerts.length} alerts</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-            className="h-8 w-8 p-0"
-          >
-            <Filter className="h-4 w-4" />
-          </Button>
-          <button className="text-xs font-semibold text-red-500 hover:text-red-400 transition-colors uppercase tracking-wider">View All</button>
-        </div>
-      </div>
+    <div className="h-full w-full flex flex-col bg-card/40 backdrop-blur-2xl border border-border rounded-[2rem] p-6 relative overflow-hidden">
+      {/* Glass effect overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent opacity-40 pointer-events-none" />
 
-      {/* Filters Section */}
-      {showFilters && (
-        <div className="mb-4 p-3 bg-white/5 rounded-lg border border-white/10 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-              <Input
-                placeholder="Search alerts..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 h-8 text-xs bg-white/5 border-white/10"
-              />
+      {/* Content */}
+      <div className="relative z-10 h-full flex flex-col">
+        {/* Header - Fixed */}
+        <div className="flex items-center justify-between mb-4 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-500/10 rounded-xl">
+              <i className="fas fa-exclamation-triangle text-red-500 text-lg"></i>
             </div>
-            <Select value={severityFilter} onValueChange={setSeverityFilter}>
-              <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10">
-                <SelectValue placeholder="All Severities" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Severities</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-              </SelectContent>
-            </Select>
+            <div>
+              <h3 className="text-xl font-bold text-foreground tracking-tight">Active Alerts</h3>
+              <p className="text-xs text-muted-foreground">{filteredAndSortedAlerts.length} of {alerts.length} alerts</p>
+            </div>
           </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Sort by:</span>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="h-7 w-auto text-xs bg-white/5 border-white/10">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="newest">Newest First</SelectItem>
-                  <SelectItem value="oldest">Oldest First</SelectItem>
-                  <SelectItem value="severity">Severity</SelectItem>
-                  <SelectItem value="container">Container</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
-                setSearchTerm("");
-                setSeverityFilter("all");
-                setSortBy("newest");
-              }}
-              className="h-7 text-xs"
+              onClick={() => setShowFilters(!showFilters)}
+              className="h-8 w-8 p-0"
             >
-              Clear Filters
+              <Filter className="h-4 w-4" />
             </Button>
           </div>
         </div>
-      )}
 
-      <div className="flex-1" style={{ overflow: 'hidden', minHeight: 0 }}>
-        <div style={{ height: '100%', overflowY: 'auto' }} className="scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
+        {/* Filters - Fixed */}
+        {showFilters && (
+          <div className="mb-4 p-3 bg-white/5 rounded-lg border border-white/10 space-y-3 shrink-0">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input
+                  placeholder="Search alerts..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8 h-8 text-xs bg-white/5 border-white/10"
+                />
+              </div>
+              <Select value={severityFilter} onValueChange={setSeverityFilter}>
+                <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10">
+                  <SelectValue placeholder="All Severities" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Severities</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Sort by:</span>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="h-7 w-auto text-xs bg-white/5 border-white/10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Newest First</SelectItem>
+                    <SelectItem value="oldest">Oldest First</SelectItem>
+                    <SelectItem value="severity">Severity</SelectItem>
+                    <SelectItem value="container">Container</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm("");
+                  setSeverityFilter("all");
+                  setSortBy("newest");
+                }}
+                className="h-7 text-xs"
+              >
+                Clear Filters
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Alert List - Scrollable, takes remaining space */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
           {filteredAndSortedAlerts.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">
@@ -269,7 +204,7 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 pr-1">
               {filteredAndSortedAlerts.map((alert) => {
                 const container = containers?.find((c: any) =>
                   c.id === alert.containerId ||
@@ -334,6 +269,6 @@ export default function AlertPanel({ alerts, containers }: AlertPanelProps) {
           )}
         </div>
       </div>
-    </GlassCard>
+    </div>
   );
 }

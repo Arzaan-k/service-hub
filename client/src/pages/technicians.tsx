@@ -11,9 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { User, Phone, MapPin, Star, Wrench, Plus, Edit, Trash2, UserPlus, UserCog, IndianRupee } from "lucide-react";
+import { User, Phone, MapPin, Star, Wrench, Plus, UserPlus, UserCog, IndianRupee } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { saveAuth, getAuthToken } from "@/lib/auth";
+import { getAuthToken } from "@/lib/auth";
 import ThirdPartyTechnicianForm from "@/components/technicians/third-party-technician-form";
 
 interface Technician {
@@ -101,24 +101,70 @@ export default function Technicians() {
         const errorData = await res.json();
         throw new Error(errorData.details || errorData.error || "Failed to create technician");
       }
-      const json = await res.json();
-      return {
-        ...json,
-        name: json.name ?? json.user?.name,
-        email: json.email ?? json.user?.email,
-        phone: json.phone ?? json.user?.phoneNumber,
-        specialization: Array.isArray(json.skills) ? json.skills[0] : json.specialization,
-        baseLocation: typeof json.baseLocation === 'object' ? json.baseLocation?.city : json.baseLocation,
-      };
+      const technicianData = await res.json();
+
+      // Create user account for the technician
+      try {
+        const userResponse = await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken || ''}`
+          },
+          body: JSON.stringify({
+            name: data.name,
+            email: data.email,
+            phoneNumber: data.phone,
+            role: 'technician'
+          }),
+        });
+
+        let userCreated = false;
+        let user = null;
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          userCreated = true;
+          user = userData.user;
+        } else {
+          console.warn('Failed to create user account:', await userResponse.text());
+        }
+
+        return {
+          ...technicianData,
+          userCreated,
+          user,
+          name: technicianData.name ?? technicianData.user?.name,
+          email: technicianData.email ?? technicianData.user?.email,
+          phone: technicianData.phone ?? technicianData.user?.phoneNumber,
+          specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
+          baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
+        };
+      } catch (error) {
+        console.warn('Error creating user account:', error);
+        return {
+          ...technicianData,
+          userCreated: false,
+          name: technicianData.name ?? technicianData.user?.name,
+          email: technicianData.email ?? technicianData.user?.email,
+          phone: technicianData.phone ?? technicianData.user?.phoneNumber,
+          specialization: Array.isArray(technicianData.skills) ? technicianData.skills[0] : technicianData.specialization,
+          baseLocation: typeof technicianData.baseLocation === 'object' ? technicianData.baseLocation?.city : technicianData.baseLocation,
+        };
+      }
     },
-    onSuccess: (data) => {
-      console.log("Technician created successfully:", data);
+    onSuccess: (result) => {
+      console.log("Technician created successfully:", result);
       queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
       setIsAddDialogOpen(false);
       resetForm();
+
+      const successMessage = result.userCreated
+        ? "Technician added and user account created. Credentials sent via email."
+        : "Technician added. User account creation failed.";
+
       toast({
         title: "Success",
-        description: "Technician added successfully",
+        description: successMessage,
       });
     },
     onError: (error: any) => {
@@ -411,55 +457,55 @@ export default function Technicians() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {technicians && (technicians as any[]).length > 0 ? (
                 (technicians as any[]).map((tech: Technician) => (
-                  <Card key={tech.id} className="shadow-sm hover:shadow-md transition-all" style={{ background: '#FFFFFF', borderColor: '#FFE0D6' }}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: '#FFE5B4', border: '1px solid #FFE0D6' }}>
-                          <User className="h-6 w-6 text-muted-foreground" />
+                  <Card key={tech.id} className="shadow-sm hover:shadow-md transition-all bg-card border-border">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-full flex items-center justify-center bg-primary/10 border border-primary/20">
+                            <User className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <Link href={`/technicians/${tech.id}`}>
+                              <CardTitle className="text-lg cursor-pointer hover:underline">{tech.name}</CardTitle>
+                            </Link>
+                            <p className="text-sm font-medium text-muted-foreground">
+                              {(tech as any).experienceLevel?.toUpperCase?.() || "MID"}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <Link href={`/technicians/${tech.id}`}>
-                            <CardTitle className="text-lg cursor-pointer hover:underline">{tech.name}</CardTitle>
-                          </Link>
-                          <p className="text-sm font-medium text-muted-foreground">
-                            {(tech as any).experienceLevel?.toUpperCase?.() || "MID"}
-                          </p>
+                        <Badge className={`${getStatusBadge(tech.status)} rounded-full`}>
+                          {tech.status}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-foreground">{tech.phone}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <MapPin className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">
+                          {typeof (tech as any).baseLocation === "string"
+                            ? ((tech as any).baseLocation || "Not set")
+                            : ((tech as any).baseLocation?.city || "Not set")}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Wrench className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">
+                          {(tech as any).specialization || Array.isArray((tech as any).skills) ? (tech as any).skills?.join(", ") : "general"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-3 border-t border-border">
+                        <div className="flex items-center gap-1">
+                          <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                          <span className="text-sm font-medium">{(tech as any).rating ?? (tech as any).averageRating ?? 0}/5</span>
                         </div>
+                        <span className="text-xs text-muted-foreground">
+                          {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
+                        </span>
                       </div>
-                      <Badge className={`${getStatusBadge(tech.status)} rounded-full`}>
-                        {tech.status}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Phone className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-foreground">{tech.phone}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      {typeof (tech as any).baseLocation === "string"
-                        ? ((tech as any).baseLocation || "Not set")
-                        : ( (tech as any).baseLocation?.city || "Not set")}
-                    </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Wrench className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      {(tech as any).specialization || Array.isArray((tech as any).skills) ? (tech as any).skills?.join(", ") : "general"}
-                    </span>
-                    </div>
-                    <div className="flex items-center justify-between pt-3 border-t border-border">
-                      <div className="flex items-center gap-1">
-                        <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                      <span className="text-sm font-medium">{(tech as any).rating ?? (tech as any).averageRating ?? 0}/5</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                      {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
-                      </span>
-                    </div>
                       <div className="mt-4">
                         <button
                           onClick={() => handleEdit(tech)}
@@ -468,7 +514,7 @@ export default function Technicians() {
                           ✏️ Edit
                         </button>
                       </div>
-                  </CardContent>
+                    </CardContent>
                   </Card>
                 ))
               ) : (
@@ -480,7 +526,7 @@ export default function Technicians() {
           </div>
 
           {/* Divider */}
-          <div className="my-8 border-t border-[#FFD4E3]"></div>
+          <div className="my-8 border-t border-border"></div>
 
           {/* Third-Party Technicians */}
           <div className="mb-3">
@@ -490,14 +536,13 @@ export default function Technicians() {
                 (thirdPartyTechs as any[]).map((tp: any) => (
                   <Card
                     key={tp.id}
-                    className="shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-[#FFF1EC] to-[#FFF9F7] cursor-pointer hover:shadow-lg transform hover:-translate-y-1 duration-200"
-                    style={{ borderColor: '#FFE0D6' }}
+                    className="shadow-sm hover:shadow-md transition-all bg-card hover:bg-accent/5 cursor-pointer hover:shadow-lg transform hover:-translate-y-1 duration-200 border-border"
                     onClick={() => setLocation(`/technicians/${tp.id || tp._id}`)}
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: '#FFE5B4', border: '1px solid #FFE0D6' }}>
+                          <div className="w-12 h-12 rounded-full flex items-center justify-center bg-primary/10 border border-primary/20">
                             <User className="h-6 w-6 text-muted-foreground" />
                           </div>
                           <div>
@@ -507,7 +552,7 @@ export default function Technicians() {
                             </p>
                           </div>
                         </div>
-                        <Badge className="rounded-full" style={{ backgroundColor: '#FFD4E3', color: '#333' }}>
+                        <Badge className="rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80">
                           Third-Party
                         </Badge>
                       </div>

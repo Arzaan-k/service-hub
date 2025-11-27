@@ -25,6 +25,8 @@ export default function Sidebar() {
     // Admin/Coordinator/Technician
     { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true, color: "text-whatsapp", roles: ["admin", "coordinator", "super_admin"] },
     { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", color: "text-inventory", roles: ["admin", "coordinator", "technician", "super_admin"] },
+    // User management
+    { path: "/admin/user-management", label: "User Management", icon: "fas fa-users-cog", color: "text-primary", roles: ["admin", "super_admin"] },
     // Admin-only analytics
     { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", color: "text-analytics", roles: ["admin", "super_admin"] },
     // Manuals for all users
@@ -41,10 +43,10 @@ export default function Sidebar() {
   return (
     <aside
       id="sidebar"
-      className="sidebar hidden lg:flex w-72 bg-sidebar-bg/60 backdrop-blur-2xl border-r border-border flex-col fixed lg:sticky top-0 h-screen z-50 transition-all duration-500"
+      className="sidebar hidden lg:flex w-72 bg-white/60 dark:bg-black/40 backdrop-blur-xl border-r border-white/20 dark:border-white/10 flex-col fixed lg:sticky top-0 h-screen z-50 transition-all duration-500 shadow-sm"
     >
       {/* Logo */}
-      <div className="p-8 border-b border-border">
+      <div className="p-8 border-b border-white/20 dark:border-white/10">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center shadow-lg shadow-primary/20">
             <i className="fas fa-ship text-white text-xl"></i>
@@ -67,19 +69,16 @@ export default function Sidebar() {
               className={cn(
                 "flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 group relative overflow-hidden",
                 isActive
-                  ? "bg-primary/10 text-primary font-bold shadow-sm backdrop-blur-md"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  ? "bg-primary text-white font-bold shadow-md shadow-primary/25"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/50 dark:hover:bg-white/10"
               )}
               data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
             >
-              {isActive && (
-                <div className="absolute left-0 top-3 bottom-3 w-1 bg-primary rounded-r-full" />
-              )}
               <i
                 className={cn(
                   item.icon,
                   "w-6 text-center transition-colors duration-300",
-                  isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary/80"
+                  isActive ? "text-white" : "text-muted-foreground group-hover:text-primary"
                 )}
               ></i>
               <span className="text-sm tracking-wide">{item.label}</span>
@@ -89,8 +88,8 @@ export default function Sidebar() {
                   className={cn(
                     "ml-auto text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm",
                     isActive
-                      ? "bg-primary text-white"
-                      : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+                      ? "bg-white/20 text-white"
+                      : "bg-gray-100 dark:bg-white/10 text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
                   )}
                 >
                   {item.badge}
@@ -107,10 +106,10 @@ export default function Sidebar() {
           );
         })}
 
-        <div className="mt-8 pt-6 border-t border-border space-y-2">
+        <div className="mt-8 pt-6 border-t border-white/20 dark:border-white/10 space-y-2">
           <Link
             href="/settings"
-            className="flex items-center gap-4 px-4 py-3.5 rounded-2xl text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-300"
+            className="flex items-center gap-4 px-4 py-3.5 rounded-2xl text-muted-foreground hover:text-foreground hover:bg-white/50 dark:hover:bg-white/10 transition-all duration-300"
           >
             <i className="fas fa-cog w-6 text-center"></i>
             <span className="text-sm font-medium tracking-wide">Settings</span>
@@ -119,8 +118,8 @@ export default function Sidebar() {
       </nav>
 
       {/* User Profile */}
-      <div className="p-4 border-t border-border bg-card/30 backdrop-blur-xl">
-        <div className="flex items-center gap-3 p-3 rounded-2xl hover:bg-muted cursor-pointer transition-all duration-300 group">
+      <div className="p-4 border-t border-white/20 dark:border-white/10 bg-white/30 dark:bg-white/5 backdrop-blur-xl">
+        <div className="flex items-center gap-3 p-3 rounded-2xl hover:bg-white/50 dark:hover:bg-white/10 cursor-pointer transition-all duration-300 group">
           <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-white font-bold shadow-md group-hover:shadow-lg transition-all">
             {user?.name?.charAt(0) || "U"}
           </div>

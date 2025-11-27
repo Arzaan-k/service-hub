@@ -18,6 +18,7 @@ interface ProcessedAlert {
   longitude?: number;
   timestamp: Date;
   rawData: any;
+  shouldCreateAlert?: boolean; // Flag for smart alert filtering
 }
 
 class OrbcommIntegrationService {
@@ -147,31 +148,46 @@ class OrbcommIntegrationService {
       }
 
       // Determine alert type and severity based on telemetry
+      // SMART ALERTS: Only create alerts for actionable conditions, not routine telemetry
       let alertType = 'telemetry';
       let severity = 'low';
       let description = 'Routine telemetry update';
+      let shouldCreateAlert = false; // Only create alerts for critical conditions
 
       // Check for critical conditions
       if (errorCodes.length > 0) {
         alertType = 'error';
-        severity = 'high';
+        severity = 'critical';
         description = `Reefer alarms: ${errorCodes.join(', ')}`;
-      } else if (temperature && (temperature < -25 || temperature > 30)) {
+        shouldCreateAlert = true; // Critical: Equipment errors
+      } else if (temperature && (temperature < -30 || temperature > 35)) {
+        // Extreme temperature ranges only (previously -25 to 30)
         alertType = 'temperature';
         severity = 'high';
-        description = `Temperature out of range: ${temperature}°C`;
+        description = `Temperature critically out of range: ${temperature}°C`;
+        shouldCreateAlert = true; // High: Critical temperature
+      } else if (temperature && (temperature < -25 || temperature > 30)) {
+        // Warning range (don't create alert, just log)
+        alertType = 'temperature';
+        severity = 'medium';
+        description = `Temperature warning: ${temperature}°C`;
+        shouldCreateAlert = false; // Medium: Just monitor, don't alert
       } else if (doorStatus === 'Open') {
         alertType = 'door';
         severity = 'medium';
         description = 'Container door is open';
+        shouldCreateAlert = false; // Don't alert for door open - often intentional
       } else if (powerStatus === 'off') {
         alertType = 'power';
         severity = 'high';
         description = 'External power failure';
-      } else if (batteryLevel && batteryLevel < 20) {
+        shouldCreateAlert = true; // High: Power failure is critical
+      } else if (batteryLevel && batteryLevel < 10) {
+        // Only alert for critically low battery (previously <20)
         alertType = 'battery';
-        severity = 'medium';
-        description = `Low battery: ${Math.round(batteryLevel)}%`;
+        severity = 'high';
+        description = `Battery critically low: ${Math.round(batteryLevel)}%`;
+        shouldCreateAlert = true; // High: Battery almost dead
       }
 
       const processed: ProcessedAlert = {
@@ -184,6 +200,7 @@ class OrbcommIntegrationService {
         longitude,
         timestamp: messageData.EventDtm ? new Date(messageData.EventDtm) : new Date(),
         rawData: alert,
+        shouldCreateAlert, // Flag to determine if alert should be saved to database
       };
 
       // Log telemetry data for debugging (first 5 alerts only)
@@ -255,16 +272,18 @@ class OrbcommIntegrationService {
    */
   private async handleProcessedAlert(alert: ProcessedAlert): Promise<void> {
     try {
-      console.log(`🔧 Handling alert: ${alert.alertType} - ${alert.severity}`);
-
-      // Update container with complete telemetry data first
+      // Always update container telemetry (location, temperature, etc.)
       if (alert.containerId) {
         await this.updateContainerTelemetry(alert);
       }
 
-      // Store alert in database for critical alerts only
-      if (alert.severity === 'high' || alert.severity === 'critical' || alert.severity === 'medium') {
+      // SMART ALERTS: Only store alerts that meet criteria
+      if (alert.shouldCreateAlert) {
+        console.log(`🔧 Creating alert: ${alert.alertType} - ${alert.severity} (${alert.description})`);
         await this.storeAlert(alert);
+      } else {
+        // Just log routine telemetry without creating alerts
+        console.log(`📊 Telemetry update: ${alert.alertType} - ${alert.severity} (${alert.description})`);
       }
 
       // Service requests are NOT automatically created - users will create them manually from alerts
@@ -352,6 +371,7 @@ class OrbcommIntegrationService {
 
       const updates: any = {
         lastUpdateTimestamp: alert.timestamp,
+        hasIot: true, // Mark as IoT-enabled when receiving Orbcomm data
       };
 
       // Update location if available - store as separate lat/lng fields only
@@ -361,17 +381,46 @@ class OrbcommIntegrationService {
       }
 
       // Update temperature if available
-      const temperature = reeferData.TAmb || deviceData.DeviceTemp;
+      const temperature = reeferData.TAmb || deviceData.DeviceTemp || eventData.Temperature;
       if (temperature !== undefined) {
         updates.temperature = temperature;
       }
 
       // Update power status
-      const powerStatus = deviceData.ExtPower !== undefined ?
+      let powerStatus = deviceData.ExtPower !== undefined ?
         (deviceData.ExtPower ? 'on' : 'off') : null;
+
+      if (!powerStatus && eventData.PowerStatus) {
+        powerStatus = eventData.PowerStatus.toLowerCase();
+      }
+
       if (powerStatus) {
         updates.powerStatus = powerStatus;
       }
+
+      // Extract battery level
+      let batteryLevel: number | undefined;
+      if (deviceData.BatteryVoltage !== undefined) {
+        batteryLevel = Math.min(100, Math.max(0, (deviceData.BatteryVoltage / 8.1) * 100));
+      } else if (eventData.BatteryLevel !== undefined) {
+        batteryLevel = eventData.BatteryLevel;
+      }
+
+      // Extract door status
+      const doorStatus = deviceData.DoorState || reeferData.DoorState || eventData.DoorState;
+
+      // Store complete telemetry in lastTelemetry JSONB field
+      updates.lastTelemetry = {
+        temperature: temperature,
+        powerStatus: powerStatus,
+        batteryLevel: batteryLevel !== undefined ? Math.round(batteryLevel) : undefined,
+        doorStatus: doorStatus,
+        latitude: alert.latitude,
+        longitude: alert.longitude,
+        deviceId: alert.deviceId,
+        timestamp: alert.timestamp.toISOString(),
+        rawData: alert.rawData, // Store complete raw data for debugging
+      };
 
       // Update device association
       if (alert.deviceId && alert.containerId) {
@@ -386,15 +435,14 @@ class OrbcommIntegrationService {
         return;
       }
 
-      // Log the updates object to debug SQL error
-      console.log('🔍 Container updates object:', JSON.stringify(updates, null, 2));
-
       await storage.updateContainer(alert.containerId, updates);
 
       console.log(`📊 Updated container telemetry: ${alert.containerId}`, {
         location: alert.latitude && alert.longitude ? `${alert.latitude}, ${alert.longitude}` : 'N/A',
         temperature: temperature !== undefined ? `${temperature}°C` : 'N/A',
         power: powerStatus || 'N/A',
+        battery: batteryLevel !== undefined ? `${Math.round(batteryLevel)}%` : 'N/A',
+        door: doorStatus || 'N/A',
       });
 
       // Broadcast realtime update to connected clients
@@ -411,6 +459,31 @@ class OrbcommIntegrationService {
   private broadcastContainerUpdate(alert: ProcessedAlert): void {
     try {
       if ((global as any).broadcast) {
+        // Extract additional telemetry data
+        const eventData = alert.rawData?.Event || alert.rawData;
+        const deviceData = eventData?.DeviceData || {};
+        const reeferData = eventData?.ReeferData || {};
+
+        const temperature = reeferData.TAmb || deviceData.DeviceTemp || eventData.Temperature;
+
+        let powerStatus = deviceData.ExtPower !== undefined ?
+          (deviceData.ExtPower ? 'on' : 'off') : undefined;
+
+        if (!powerStatus && eventData.PowerStatus) {
+          powerStatus = eventData.PowerStatus.toLowerCase();
+        }
+
+        // Extract battery level
+        let batteryLevel: number | undefined;
+        if (deviceData.BatteryVoltage !== undefined) {
+          batteryLevel = Math.min(100, Math.max(0, (deviceData.BatteryVoltage / 8.1) * 100));
+        } else if (eventData.BatteryLevel !== undefined) {
+          batteryLevel = eventData.BatteryLevel;
+        }
+
+        // Extract door status
+        const doorStatus = deviceData.DoorState || reeferData.DoorState || eventData.DoorState;
+
         (global as any).broadcast({
           type: 'container_update',
           data: {
@@ -418,10 +491,22 @@ class OrbcommIntegrationService {
             deviceId: alert.deviceId,
             latitude: alert.latitude,
             longitude: alert.longitude,
+            temperature: temperature,
+            powerStatus: powerStatus,
+            batteryLevel: batteryLevel !== undefined ? Math.round(batteryLevel) : undefined,
+            doorStatus: doorStatus,
             alertType: alert.alertType,
             severity: alert.severity,
             timestamp: alert.timestamp.toISOString(),
           },
+        });
+
+        console.log(`📡 Broadcasted container update: ${alert.containerId}`, {
+          location: `${alert.latitude}, ${alert.longitude}`,
+          temperature: temperature !== undefined ? `${temperature}°C` : 'N/A',
+          power: powerStatus || 'N/A',
+          battery: batteryLevel !== undefined ? `${Math.round(batteryLevel)}%` : 'N/A',
+          door: doorStatus || 'N/A',
         });
       }
     } catch (error) {
@@ -436,15 +521,51 @@ class OrbcommIntegrationService {
     try {
       // Create alert record if container is found
       if (alert.containerId) {
+        // Check for duplicate alerts - prevent spamming dashboard
+        const existingAlerts = await storage.getAlertsByContainer(alert.containerId);
+        const mappedAlertType = this.mapAlertType(alert.alertType);
+
+        const recentDuplicate = existingAlerts.find(a =>
+          a.alertType === mappedAlertType &&
+          a.status === 'open' &&
+          // Check if alert was created in the last 5 minutes (configurable threshold)
+          new Date(a.detectedAt).getTime() > (Date.now() - 5 * 60 * 1000)
+        );
+
+        if (recentDuplicate) {
+          // For temperature alerts, check if the change is significant enough (threshold-based)
+          if (mappedAlertType === 'temperature') {
+            const currentTemp = this.extractTemperatureFromAlert(alert);
+            const previousTemp = this.extractTemperatureFromDescription(recentDuplicate.description);
+
+            if (currentTemp !== null && previousTemp !== null) {
+              const tempDifference = Math.abs(currentTemp - previousTemp);
+              const TEMPERATURE_THRESHOLD = 2.0; // Only create new alert if temp changed by ±2°C
+
+              if (tempDifference < TEMPERATURE_THRESHOLD) {
+                console.log(`⏭️  Skipping temperature alert - change of ${tempDifference.toFixed(1)}°C is below threshold of ${TEMPERATURE_THRESHOLD}°C (current: ${currentTemp}°C, previous: ${previousTemp}°C)`);
+                return recentDuplicate;
+              } else {
+                console.log(`✅ Temperature changed significantly by ${tempDifference.toFixed(1)}°C (${previousTemp}°C → ${currentTemp}°C) - creating new alert`);
+              }
+            }
+          } else {
+            // For non-temperature alerts, use standard time-based deduplication
+            console.log(`⏭️  Skipping duplicate ${mappedAlertType} alert for container ${alert.containerId} (last alert ${Math.floor((Date.now() - new Date(recentDuplicate.detectedAt).getTime()) / 1000)}s ago)`);
+            return recentDuplicate;
+          }
+        }
+
         const storedAlert = await storage.createAlert({
           alertCode: alert.alertId,
           containerId: alert.containerId,
-          alertType: this.mapAlertType(alert.alertType),
+          alertType: mappedAlertType,
           severity: this.mapSeverity(alert.severity),
           source: 'orbcomm',
           title: alert.alertType,
           description: alert.description,
           detectedAt: alert.timestamp,
+          status: 'open',
           metadata: {
             deviceId: alert.deviceId,
             latitude: alert.latitude,
@@ -454,6 +575,15 @@ class OrbcommIntegrationService {
         });
 
         console.log(`✅ Stored alert in database: ${alert.alertId}`);
+
+        // Broadcast alert creation to connected clients
+        if ((global as any).broadcast) {
+          (global as any).broadcast({
+            type: 'alert_created',
+            data: storedAlert,
+          });
+        }
+
         return storedAlert;
       }
 
@@ -461,6 +591,39 @@ class OrbcommIntegrationService {
 
     } catch (error) {
       console.error('❌ Error storing alert:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract temperature from ProcessedAlert
+   */
+  private extractTemperatureFromAlert(alert: ProcessedAlert): number | null {
+    try {
+      const eventData = alert.rawData?.Event || alert.rawData;
+      const deviceData = eventData?.DeviceData || {};
+      const reeferData = eventData?.ReeferData || {};
+
+      const temp = reeferData.TAmb || deviceData.DeviceTemp || eventData?.Temperature;
+      return temp !== undefined ? parseFloat(temp) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Extract temperature from alert description string
+   * Example: "Temperature out of range: 35.2°C" → 35.2
+   */
+  private extractTemperatureFromDescription(description: string): number | null {
+    try {
+      // Match patterns like "35.2°C" or "35°C" or "-10.5°C"
+      const tempMatch = description.match(/(-?\d+(?:\.\d+)?)\s*°C/);
+      if (tempMatch && tempMatch[1]) {
+        return parseFloat(tempMatch[1]);
+      }
+      return null;
+    } catch {
       return null;
     }
   }

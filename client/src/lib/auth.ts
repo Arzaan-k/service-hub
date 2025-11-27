@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+
 const AUTH_KEY = "auth_token";
 const USER_KEY = "current_user";
 
@@ -39,4 +41,22 @@ export function initTestAuth() {
     localStorage.setItem('current_user', JSON.stringify(testUser));
     console.log('[AUTH] Initialized test user for development');
   }
+}
+
+// React hook for authentication
+export function useAuth() {
+  const [user, setUser] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const currentUser = getCurrentUser();
+    setUser(currentUser);
+    setIsLoading(false);
+  }, []);
+
+  return {
+    user,
+    isLoading,
+    isAuthenticated: !!user,
+  };
 }

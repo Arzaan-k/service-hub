@@ -1,27 +1,23 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import KPICards from "@/components/dashboard/kpi-cards";
-import MapMyIndiaFleetMap from "@/components/dashboard/mapmyindia-fleet-map";
+import FleetMap from "@/components/dashboard/fleet-map";
 import AlertPanel from "@/components/dashboard/alert-panel";
 import ServiceRequestsPanel from "@/components/dashboard/service-requests-panel";
-import WhatsAppHubPanel from "@/components/dashboard/whatsapp-hub-panel";
+import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
 import TechnicianSchedule from "@/components/dashboard/technician-schedule";
 import ContainerLookup from "@/components/dashboard/container-lookup";
-import ContainerFleetStats from "@/components/dashboard/container-fleet-stats";
 import ErrorBoundary from "@/components/error-boundary";
 import { websocket } from "@/lib/websocket";
-import { getAuthToken } from "@/lib/auth";
+import { getAuthToken, useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const authToken = getAuthToken();
-  const [selectedContainer, setSelectedContainer] = useState<string>("");
-  const [selectedAlertType, setSelectedAlertType] = useState<string>("temperature");
+  const { user } = useAuth();
 
   const { data: stats = {} } = useQuery<any>({ 
     queryKey: ["/api/dashboard/stats"],
@@ -33,10 +29,14 @@ export default function Dashboard() {
     refetchInterval: 60000, // 1 minute
   });
 
+  // Determine API endpoints based on user role
+  const isClient = user?.role === 'client';
+  const containersEndpoint = isClient ? "/api/customers/me/containers" : "/api/containers";
+
   const { data: containers = [] } = useQuery<any[]>({
-    queryKey: ["/api/containers"],
+    queryKey: [containersEndpoint],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/containers");
+      const response = await apiRequest("GET", containersEndpoint);
       const data = await response.json();
       return Array.isArray(data) ? data : [];
     },
@@ -74,24 +74,6 @@ export default function Dashboard() {
     refetchInterval: 60000, // 1 minute
   });
 
-  const simulateAlert = useMutation({
-    mutationFn: async () => {
-      if (!selectedContainer) throw new Error("Please select a container");
-      const response = await apiRequest("POST", "/api/alerts/simulate", {
-        containerId: selectedContainer,
-        alertType: selectedAlertType,
-        severity: "critical"
-      });
-      return await response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-    },
-    onError: (err: any) => {
-      console.error("Alert simulation failed:", err);
-    }
-  });
 
   // Initialize data on component mount
   useEffect(() => {
@@ -220,76 +202,24 @@ export default function Dashboard() {
             <KPICards stats={stats} />
           </div>
 
-          {/* Test Alert Simulation */}
-          <div className="bg-card border border-border rounded-lg p-4 shadow-soft">
-            <h3 className="text-lg font-semibold mb-4 text-foreground">🚨 Test Alert System</h3>
-            <div className="flex gap-4 items-end flex-wrap">
-              <div className="flex-1">
-                <label className="text-sm font-medium">Container</label>
-                <Select value={selectedContainer} onValueChange={setSelectedContainer}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select container to simulate alert" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {containers?.slice(0, 10).map((container: any) => (
-                      <SelectItem key={container.id} value={container.id}>
-                        {container.containerCode}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex-1">
-                <label className="text-sm font-medium">Alert Type</label>
-                <Select value={selectedAlertType} onValueChange={setSelectedAlertType}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="temperature">Temperature</SelectItem>
-                    <SelectItem value="power">Power</SelectItem>
-                    <SelectItem value="connectivity">Connectivity</SelectItem>
-                    <SelectItem value="door">Door</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                onClick={() => simulateAlert.mutate()}
-                disabled={simulateAlert.isPending || !selectedContainer}
-                className="btn-primary px-4 py-2 rounded-md text-sm"
-              >
-                {simulateAlert.isPending ? "Simulating..." : "🚨 Simulate Alert"}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              This will create a test alert to verify the dashboard alert grouping and scrolling.
-            </p>
-          </div>
 
           {/* Map & Alerts & Fleet Stats */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ height: '600px', minHeight: '600px', maxHeight: '600px', overflow: 'visible' }}>
+            <div className="lg:col-span-2" style={{ height: '600px' }}>
               <ErrorBoundary>
-                <div style={{ height: '600px', width: '100%' }}>
-                  <MapMyIndiaFleetMap containers={containers || []} />
-                </div>
+                  <FleetMap containers={containers || []} />
               </ErrorBoundary>
             </div>
-            <div className="space-y-4">
+            <div style={{ height: '600px' }}>
               <ErrorBoundary>
-                <div style={{ height: '400px', overflow: 'hidden' }}>
+                <div style={{ height: '100%' }}>
                   <AlertPanel alerts={alerts || []} containers={containers || []} />
                 </div>
               </ErrorBoundary>
-              <ErrorBoundary>
-                <div style={{ height: '200px', overflow: 'hidden' }}>
-                  <ContainerFleetStats containers={containers || []} />
-                </div>
-              </ErrorBoundary>
             </div>
           </div>
 
-          {/* Service Requests & WhatsApp */}
+          {/* Service Requests & Fleet Overview */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
             <ErrorBoundary>
               <div className="h-full min-w-0">
@@ -298,7 +228,7 @@ export default function Dashboard() {
             </ErrorBoundary>
             <ErrorBoundary>
               <div className="h-full min-w-0">
-                <WhatsAppHubPanel />
+                <ContainerFleetStats containers={containers || []} />
               </div>
             </ErrorBoundary>
           </div>

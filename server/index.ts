@@ -27,6 +27,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeOrbcommConnection, populateOrbcommDevices } from "./services/orbcomm";
 import { startOrbcommIntegration } from "./services/orbcommIntegration";
+import { startDataUpdateScheduler } from "./services/dataUpdateScheduler";
 import { vectorStore } from "./services/vectorStore";
 import { db } from "./db";
 
@@ -191,6 +192,11 @@ app.use((req, res, next) => {
     try {
       await startOrbcommIntegration();
       console.log('✅ Orbcomm CDH integration started successfully');
+
+      // Start data update scheduler (runs every 15 minutes)
+      console.log('[SERVER] Starting data update scheduler...');
+      startDataUpdateScheduler();
+      console.log('✅ Data update scheduler started successfully');
     } catch (error) {
       console.error('❌ Error starting Orbcomm CDH integration:', error);
     }
