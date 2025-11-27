@@ -711,15 +711,15 @@ export class DatabaseStorage implements IStorage {
 
 
   async getPendingServiceRequests(): Promise<ServiceRequest[]> {
+    // Return all unassigned requests (not completed/cancelled)
+    // This includes requests with any status as long as they don't have a technician assigned
     return await db
       .select()
       .from(serviceRequests)
       .where(and(
         isNull(serviceRequests.assignedTechnicianId),
-        inArray(serviceRequests.status, ['pending', 'scheduled']),
-        notInArray(serviceRequests.status, ['completed', 'cancelled', 'in_progress']),
-        isNull(serviceRequests.actualEndTime),
-        isNull(serviceRequests.actualStartTime)
+        notInArray(serviceRequests.status, ['completed', 'cancelled']),
+        isNull(serviceRequests.actualEndTime)
       ))
       .orderBy(desc(serviceRequests.createdAt));
   }

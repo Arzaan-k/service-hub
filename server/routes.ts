@@ -36,7 +36,6 @@ import { DocumentProcessor } from "./services/documentProcessor";
 import { vectorStore } from "./services/vectorStore";
 import multer from 'multer';
 import { generateJobOrderNumber } from './utils/jobOrderGenerator';
-<<<<<<< HEAD
 import {
   autoPlanTravel,
   autoPlanTravelByTechnician,
@@ -44,10 +43,8 @@ import {
   savePlannedTrip,
   recalculateTripCosts
 } from "./services/travel-planning";
-=======
 import { db } from './db';
 import { sql } from 'drizzle-orm';
->>>>>>> main
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -3739,16 +3736,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Handle FULLY_ASSIGNED case (not an error, but a success response)
+      if (result.code === 'FULLY_ASSIGNED') {
+        return res.json({
+          success: true,
+          code: 'FULLY_ASSIGNED',
+          assignedCount: 0,
+          byTechnician: result.distributionSummary,
+          distributionSummary: result.distributionSummary,
+          assigned: result.assigned,
+          skipped: result.skipped,
+          message: 'All service requests are already assigned.'
+        });
+      }
+
       // Format response to match expected structure
-      // Get technicians to map IDs to names
+      // Get technicians to map IDs to names for backward compatibility
       const allTechnicians = await storage.getAllTechnicians();
       const byTechnician = result.distributionSummary.map((s: any) => {
-        const tech = allTechnicians.find((t: any) => t.id === s.technicianId || t.id === s.techId);
+        const tech = allTechnicians.find((t: any) => t.id === s.technicianId);
         return {
-          technicianId: s.technicianId || s.techId,
-          name: tech?.name || tech?.employeeCode || s.name || s.technicianId || s.techId,
-          newAssignments: s.newAssignments || s.countAssigned || 0,
-          totalActive: s.totalActive || 0
+          technicianId: s.technicianId,
+          name: tech?.name || tech?.employeeCode || s.technicianId,
+          totalAssigned: s.totalAssigned || 0
         };
       });
 
@@ -3756,7 +3766,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: result.success,
         assignedCount: result.assigned.length,
         byTechnician: byTechnician,
-        distributionSummary: result.distributionSummary, // Keep for backward compatibility
+        distributionSummary: result.distributionSummary,
         assigned: result.assigned,
         skipped: result.skipped,
         message: result.success 

@@ -622,98 +622,62 @@ export default function Technicians() {
                           {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
                         </span>
                       </div>
-<<<<<<< HEAD
-                      <Badge className={`${getStatusBadge(tech.status)} rounded-full`}>
-                        {tech.status}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Phone className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-foreground">{tech.phone}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      {typeof (tech as any).baseLocation === "string"
-                        ? ((tech as any).baseLocation || "Not set")
-                        : ( (tech as any).baseLocation?.city || "Not set")}
-                    </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Wrench className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      {(tech as any).specialization || Array.isArray((tech as any).skills) ? (tech as any).skills?.join(", ") : "general"}
-                    </span>
-                    </div>
-                    <div className="flex items-center justify-between pt-3 border-t border-border">
-                      <div className="flex items-center gap-1">
-                        <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                      <span className="text-sm font-medium">{(tech as any).rating ?? (tech as any).averageRating ?? 0}/5</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                      {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
-                      </span>
-                    </div>
-                    {/* Assigned Services Section */}
-                    <div className="mt-3 pt-3 border-t border-border">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-foreground">Assigned Services</span>
-                        <Badge variant="outline" className="text-xs">
-                          {(() => {
-                            const count = assignedServicesData?.[tech.id]?.count ?? assignedServicesData?.[tech.id]?.services?.length ?? 0;
-                            return `${count} ${count === 1 ? 'service' : 'services'}`;
-                          })()}
-                        </Badge>
-                      </div>
-                      {(() => {
-                        const techServices = assignedServicesData?.[tech.id]?.services;
-                        const hasServices = techServices && Array.isArray(techServices) && techServices.length > 0;
-                        
-                        if (!hasServices) {
+                      {/* Assigned Services Section */}
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-foreground">Assigned Services</span>
+                          <Badge variant="outline" className="text-xs">
+                            {(() => {
+                              const count = assignedServicesData?.[tech.id]?.count ?? assignedServicesData?.[tech.id]?.services?.length ?? 0;
+                              return `${count} ${count === 1 ? 'service' : 'services'}`;
+                            })()}
+                          </Badge>
+                        </div>
+                        {(() => {
+                          const techServices = assignedServicesData?.[tech.id]?.services;
+                          const hasServices = techServices && Array.isArray(techServices) && techServices.length > 0;
+                          
+                          if (!hasServices) {
+                            return (
+                              <div className="text-xs text-muted-foreground text-center py-2">
+                                No assigned services
+                              </div>
+                            );
+                          }
+                          
                           return (
-                            <div className="text-xs text-muted-foreground text-center py-2">
-                              No assigned services
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {techServices.slice(0, 3).map((service: any) => (
+                                <Link key={service.id} href={`/service-requests/${service.id}`} className="block">
+                                  <div className="text-xs p-2 bg-muted/50 rounded border border-border hover:bg-muted/70 hover:border-primary transition-colors cursor-pointer">
+                                    <div className="font-medium text-foreground truncate">
+                                      {service.requestNumber || service.id?.slice(0, 8) || 'N/A'}
+                                    </div>
+                                    <div className="text-muted-foreground truncate">
+                                      {service.containerCode || 'N/A'} • <span className="capitalize">{service.status || 'pending'}</span>
+                                    </div>
+                                    {service.issueDescription && (
+                                      <div className="text-muted-foreground truncate text-[10px] mt-1">
+                                        {service.issueDescription.substring(0, 50)}...
+                                      </div>
+                                    )}
+                                    {service.scheduledDate && (
+                                      <div className="text-muted-foreground text-[10px] mt-1">
+                                        📅 {new Date(service.scheduledDate).toLocaleDateString()}
+                                      </div>
+                                    )}
+                                  </div>
+                                </Link>
+                              ))}
+                              {techServices.length > 3 && (
+                                <div className="text-xs text-muted-foreground text-center pt-1">
+                                  +{techServices.length - 3} more
+                                </div>
+                              )}
                             </div>
                           );
-                        }
-                        
-                        return (
-                          <div className="space-y-1 max-h-32 overflow-y-auto">
-                            {techServices.slice(0, 3).map((service: any) => (
-                              <Link key={service.id} href={`/service-requests/${service.id}`} className="block">
-                                <div className="text-xs p-2 bg-muted/50 rounded border border-border hover:bg-muted/70 hover:border-primary transition-colors cursor-pointer">
-                                  <div className="font-medium text-foreground truncate">
-                                    {service.requestNumber || service.id?.slice(0, 8) || 'N/A'}
-                                  </div>
-                                  <div className="text-muted-foreground truncate">
-                                    {service.containerCode || 'N/A'} • <span className="capitalize">{service.status || 'pending'}</span>
-                                  </div>
-                                  {service.issueDescription && (
-                                    <div className="text-muted-foreground truncate text-[10px] mt-1">
-                                      {service.issueDescription.substring(0, 50)}...
-                                    </div>
-                                  )}
-                                  {service.scheduledDate && (
-                                    <div className="text-muted-foreground text-[10px] mt-1">
-                                      📅 {new Date(service.scheduledDate).toLocaleDateString()}
-                                    </div>
-                                  )}
-                                </div>
-                              </Link>
-                            ))}
-                            {techServices.length > 3 && (
-                              <div className="text-xs text-muted-foreground text-center pt-1">
-                                +{techServices.length - 3} more
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-=======
->>>>>>> main
+                        })()}
+                      </div>
                       <div className="mt-4">
                         <button
                           onClick={() => handleEdit(tech)}

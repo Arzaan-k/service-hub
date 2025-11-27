@@ -474,95 +474,127 @@ export class SchedulerService {
   }
 
   /**
-   * Smart Auto-Assign for Internal Technicians with Bucket-Based Capacity Planning
-   * 
-   * Implements "Fairness" logic with capacity buckets:
-   * - Each technician gets up to 3 jobs per day
-   * - Starts scheduling from Today
-   * - If today is full, automatically spills over to Tomorrow, then next day, etc.
-   * - Uses round-robin distribution among internal technicians
+   * Smart Auto-Assign for Internal Technicians with Equal Distribution (Round Robin)
    * 
    * Rules:
-   * - Only INTERNAL technicians (category = 'internal')
-   * - Only requests with status IN ['pending','approved','scheduled'] AND assignedTechnicianId IS NULL
-   * - Bucket capacity: 3 jobs per day per technician
-   * - Date spillover: Automatically finds next available date if today is full
+   * 1. Do not ever assign to third-party technicians
+   * 2. Only assign to technicians where category='internal' AND status IN ('available','active','on_duty')
+   * 3. Fetch all service_requests where assignedTechnicianId IS NULL AND status NOT IN ('completed','cancelled')
+   * 4. Perform "equal distribution": round robin (e.g., 5 techs, 14 tasks = 3-3-3-3-2)
+   * 5. Update each request: assignedTechnicianId, status='scheduled'
+   * 6. Return list of { technicianId, totalAssigned }
+   * 7. If no eligible technicians → return error code NO_INTERNAL_TECHNICIANS
+   * 8. If no unassigned requests → return FULLY_ASSIGNED (not an error)
    */
   async smartAutoAssignPending(): Promise<{
     success: boolean;
+    code?: string;
     assigned: Array<{ requestId: string; techId: string; scheduledDate: string }>;
     skipped: Array<{ requestId: string; reason: string }>;
-    distributionSummary: Array<{ techId: string; countAssigned: number; totalActive: number }>;
+    distributionSummary: Array<{ technicianId: string; totalAssigned: number }>;
   }> {
     try {
       console.log('[AutoAssign] Starting auto-assign for pending requests (internal technicians only)');
 
-      // 1. Get all INTERNAL technicians (regardless of status - all internal techs can take assignments)
+      // 1. Get all technicians and filter for internal only with valid status
       const allTechnicians = await storage.getAllTechnicians();
       
       console.log(`[AutoAssign] Total technicians in database: ${allTechnicians.length}`);
-      if (allTechnicians.length > 0) {
-        console.log(`[AutoAssign] Sample technician categories:`, 
-          allTechnicians.slice(0, 5).map((t: any) => ({ 
-            id: t.id, 
-            category: t.category || '(null)', 
-            status: t.status || '(null)' 
-          }))
-        );
+      
+      // Try to get category field from database if it exists (might not be in schema)
+      const { db } = await import('../db');
+      const { sql } = await import('drizzle-orm');
+      try {
+        const categoryRows = await db.execute(sql`
+          SELECT id, category FROM technicians
+        `);
+        const categoryMap = new Map();
+        (Array.isArray(categoryRows) ? categoryRows : (categoryRows as any).rows || []).forEach((row: any) => {
+          if (row && row.id) categoryMap.set(row.id, row.category);
+        });
+        // Enrich technicians with category field
+        allTechnicians.forEach((tech: any) => {
+          if (!tech.category && categoryMap.has(tech.id)) {
+            tech.category = categoryMap.get(tech.id);
+          }
+        });
+      } catch (error) {
+        // Category field might not exist, that's okay - we'll treat null as internal
+        console.log('[AutoAssign] Category field not accessible, will treat null/undefined as internal');
       }
       
-      // First, try to find explicitly marked internal technicians
-      let internalTechs = allTechnicians
+      // Filter: category='internal' AND status IN ('available','on_duty')
+      // Note: technician_status enum values are: 'available', 'on_duty', 'busy', 'off_duty'
+      // If category field doesn't exist or is null, treat as internal (exclude only explicitly third-party)
+      const eligibleTechs = allTechnicians
         .filter((tech: any) => {
-          // Identify internal vs third-party using category field
           const category = (tech.category || '').toLowerCase();
+          const status = (tech.status || '').toLowerCase();
+          
+          // Exclude third-party technicians
           const isThirdParty = category === 'third-party' || category === 'thirdparty';
-          const isInternal = category === 'internal';
-          // Include ALL internal technicians regardless of status
-          return isInternal && !isThirdParty;
+          if (isThirdParty) return false;
+          
+          // Include if category is 'internal' OR if category is null/undefined (treat as internal)
+          const isInternal = category === 'internal' || !tech.category;
+          
+          // Valid statuses from technician_status enum: 'available', 'on_duty'
+          const isValidStatus = ['available', 'on_duty'].includes(status);
+          
+          return isInternal && isValidStatus;
         })
         // Stable ordering so round-robin is deterministic
         .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
 
-      // Fallback: If no explicitly marked internal techs, treat all non-third-party techs as internal
-      if (internalTechs.length === 0) {
-        console.log('[AutoAssign] No explicitly marked internal technicians found. Using fallback: treating all non-third-party technicians as internal.');
-        internalTechs = allTechnicians
-          .filter((tech: any) => {
-            const category = (tech.category || '').toLowerCase();
-            const isThirdParty = category === 'third-party' || category === 'thirdparty';
-            // Exclude only third-party, include everything else (including null/undefined category)
-            return !isThirdParty;
-          })
-          .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
-        console.log(`[AutoAssign] Fallback found ${internalTechs.length} technicians (non-third-party)`);
-      }
-
       console.log(
-        `[AutoAssign] Internal techs considered (all statuses):`,
-        internalTechs.map((t: any) => ({ 
+        `[AutoAssign] Eligible internal techs (category='internal' AND status IN ('available','on_duty')):`,
+        eligibleTechs.map((t: any) => ({ 
           id: t.id, 
           name: t.name || t.employeeCode,
           status: t.status,
-          category: t.category || '(no category - treated as internal)'
+          category: t.category
         }))
       );
 
-      if (internalTechs.length === 0) {
-        const err: any = new Error('No technicians available for assignment. Please ensure technicians exist in the database and are not marked as third-party.');
+      // Log all technicians for debugging
+      if (allTechnicians.length > 0) {
+        console.log(`[AutoAssign] All technicians sample:`, 
+          allTechnicians.slice(0, 10).map((t: any) => ({ 
+            id: t.id, 
+            name: t.name || t.employeeCode,
+            status: t.status,
+            category: t.category || '(null)'
+          }))
+        );
+      }
+
+      // 7. If no eligible technicians → return error code NO_INTERNAL_TECHNICIANS
+      if (eligibleTechs.length === 0) {
+        // Provide helpful error message
+        const statusCounts = allTechnicians.reduce((acc: any, tech: any) => {
+          const status = (tech.status || 'unknown').toLowerCase();
+          acc[status] = (acc[status] || 0) + 1;
+          return acc;
+        }, {});
+        const categoryCounts = allTechnicians.reduce((acc: any, tech: any) => {
+          const cat = tech.category ? (tech.category || '').toLowerCase() : '(null)';
+          acc[cat] = (acc[cat] || 0) + 1;
+          return acc;
+        }, {});
+        
+        const err: any = new Error(
+          `No eligible internal technicians found. ` +
+          `Technicians must have category='internal' (or null/undefined) AND status IN ('available','on_duty'). ` +
+          `Found ${allTechnicians.length} total technicians. ` +
+          `Status distribution: ${JSON.stringify(statusCounts)}. ` +
+          `Category distribution: ${JSON.stringify(categoryCounts)}.`
+        );
         err.code = 'NO_INTERNAL_TECHNICIANS';
         err.status = 400;
         throw err;
       }
 
-      if (!allTechnicians || allTechnicians.length === 0) {
-        const err: any = new Error('No technicians found in database');
-        err.code = 'NO_TECHNICIANS_FOUND';
-        err.status = 400;
-        throw err;
-      }
-
-      // 2. Get all unassigned requests in allowed statuses
+      // 3. Fetch all service_requests where assignedTechnicianId IS NULL AND status NOT IN ('completed','cancelled')
       const allRequests = await storage.getAllServiceRequests();
       if (!allRequests) {
         const err: any = new Error('Failed to fetch service requests from database');
@@ -571,18 +603,13 @@ export class SchedulerService {
         throw err;
       }
 
-      // Use the same filter as getPendingServiceRequests: pending or scheduled, not completed/cancelled/in_progress
-      const allowedStatuses = new Set(['pending', 'scheduled']);
-      const excludedStatuses = new Set(['completed', 'cancelled', 'in_progress']);
+      const excludedStatuses = new Set(['completed', 'cancelled']);
       let unassignedRequests = allRequests.filter((req: any) => {
         if (!req || !req.id) return false;
         const status = (req.status || '').toLowerCase();
         return (
           !req.assignedTechnicianId &&
-          allowedStatuses.has(status) &&
-          !excludedStatuses.has(status) &&
-          !req.actualStartTime &&
-          !req.actualEndTime
+          !excludedStatuses.has(status)
         );
       });
 
@@ -594,116 +621,120 @@ export class SchedulerService {
       });
 
       console.log(
-        `[AutoAssign] Unassigned SRs considered:`,
+        `[AutoAssign] Unassigned SRs (assignedTechnicianId IS NULL AND status NOT IN ('completed','cancelled')):`,
         unassignedRequests.map((r: any) => ({ id: r.id, number: r.requestNumber, status: r.status }))
       );
 
+      // 8. If no unassigned requests → return FULLY_ASSIGNED (not an error)
       if (unassignedRequests.length === 0) {
-        const err: any = new Error('No unassigned service requests found. All requests are already assigned or in progress.');
-        err.code = 'NO_UNASSIGNED_SERVICE_REQUESTS';
-        err.status = 400;
-        throw err;
+        return {
+          success: true,
+          code: 'FULLY_ASSIGNED',
+          assigned: [],
+          skipped: [],
+          distributionSummary: eligibleTechs.map((tech: any) => ({
+            technicianId: tech.id,
+            totalAssigned: 0
+          }))
+        };
       }
 
-      // 3. Initialize bucket tracking and today's date
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // 4. Perform "equal distribution": round robin
+      // Calculate distribution: for 5 techs and 14 tasks = 3-3-3-3-2
+      const numTechs = eligibleTechs.length;
+      const numRequests = unassignedRequests.length;
+      const baseCount = Math.floor(numRequests / numTechs);
+      const remainder = numRequests % numTechs;
+      
+      // First 'remainder' techs get (baseCount + 1) tasks, rest get baseCount tasks
+      const assignmentsPerTech: number[] = [];
+      for (let i = 0; i < numTechs; i++) {
+        assignmentsPerTech.push(i < remainder ? baseCount + 1 : baseCount);
+      }
 
-      // 4. Round-robin assign each request with bucket capacity planning (3 jobs/day per tech)
+      console.log(`[AutoAssign] Equal distribution: ${numTechs} techs, ${numRequests} tasks = ${assignmentsPerTech.join('-')}`);
+
+      // 4. Round-robin assign each request
       const assigned: Array<{ requestId: string; techId: string; scheduledDate: string }> = [];
       const skipped: Array<{ requestId: string; reason: string }> = [];
       const assignmentsByTech: Record<string, number> = {}; // Track new assignments per tech
-      let techIndex = 0;
+      let requestIndex = 0;
 
-      for (const request of unassignedRequests) {
-        try {
-          const selectedTech = internalTechs[techIndex];
-          const selectedTechId = selectedTech?.id;
+      // Assign requests in round-robin order
+      for (let techIndex = 0; techIndex < numTechs; techIndex++) {
+        const tech = eligibleTechs[techIndex];
+        const techId = tech.id;
+        const targetCount = assignmentsPerTech[techIndex];
+        
+        // Assign 'targetCount' requests to this tech
+        for (let i = 0; i < targetCount && requestIndex < unassignedRequests.length; i++) {
+          const request = unassignedRequests[requestIndex];
+          requestIndex++;
 
-          if (!selectedTechId) {
+          try {
+            // Use today as scheduled date (or existing scheduledDate if present)
+            const scheduledDate = request.scheduledDate ? new Date(request.scheduledDate) : new Date();
+            scheduledDate.setHours(0, 0, 0, 0);
+            const scheduledTimeWindow = request.scheduledTimeWindow || 'ASAP';
+
+            // 5. Update DB with assignment
+            const { db } = await import('../db');
+            const { serviceRequests } = await import('@shared/schema');
+            const { eq } = await import('drizzle-orm');
+
+            await db
+              .update(serviceRequests)
+              .set({
+                assignedTechnicianId: techId,
+                assignedBy: 'AUTO',
+                assignedAt: new Date(),
+                status: 'scheduled',
+                scheduledDate: scheduledDate,
+                scheduledTimeWindow: scheduledTimeWindow,
+                updatedAt: new Date(),
+              } as any)
+              .where(eq(serviceRequests.id, request.id));
+
+            // Update tracking
+            const dateStr = scheduledDate.toISOString().split('T')[0];
+            assigned.push({
+              requestId: request.id,
+              techId: techId,
+              scheduledDate: dateStr,
+            });
+
+            assignmentsByTech[techId] = (assignmentsByTech[techId] || 0) + 1;
+
+            console.log(
+              `[AutoAssign] Assigned ${request.requestNumber} to tech ${techId} on ${dateStr}`
+            );
+
+            // Send WhatsApp notification
+            try {
+              const { customerCommunicationService } = await import('./whatsapp');
+              await customerCommunicationService.notifyServiceRequestUpdate(request.id, 'assigned');
+            } catch (notifError) {
+              console.error(
+                `[AutoAssign] Failed to send WhatsApp notification for request ${request.id}:`,
+                notifError
+              );
+            }
+          } catch (error: any) {
+            console.error(`[AutoAssign] Error processing request ${request.id}:`, error);
             skipped.push({
               requestId: request.id,
-              reason: 'No available technicians in round-robin pool',
+              reason: error.message || 'Processing failed',
             });
-            continue;
           }
-
-          // Advance round-robin pointer for next iteration
-          techIndex = (techIndex + 1) % internalTechs.length;
-
-          // Find next available date for this technician (bucket capacity: 3 jobs/day)
-          const scheduledDate = await this.findNextAvailableDate(selectedTechId, today);
-          const scheduledTimeWindow = request.scheduledTimeWindow || 'ASAP';
-
-          // Update DB with assignment (including assignment audit fields)
-          const { db } = await import('../db');
-          const { serviceRequests } = await import('@shared/schema');
-          const { eq } = await import('drizzle-orm');
-
-          await db
-            .update(serviceRequests)
-            .set({
-              assignedTechnicianId: selectedTechId,
-              assignedBy: 'AUTO',
-              assignedAt: new Date(),
-              status: 'scheduled',
-              scheduledDate: scheduledDate,
-              scheduledTimeWindow: scheduledTimeWindow,
-            } as any)
-            .where(eq(serviceRequests.id, request.id));
-
-          // Update tracking
-          const dateStr = scheduledDate.toISOString().split('T')[0];
-          assigned.push({
-            requestId: request.id,
-            techId: selectedTechId,
-            scheduledDate: dateStr,
-          });
-
-          assignmentsByTech[selectedTechId] = (assignmentsByTech[selectedTechId] || 0) + 1;
-
-          console.log(
-            `[AutoAssign] Assigned ${request.requestNumber} to tech ${selectedTechId} on ${dateStr}`
-          );
-
-          // Send WhatsApp notification
-          try {
-            const { customerCommunicationService } = await import('./whatsapp');
-            await customerCommunicationService.notifyServiceRequestUpdate(request.id, 'assigned');
-          } catch (notifError) {
-            console.error(
-              `[AutoAssign] Failed to send WhatsApp notification for request ${request.id}:`,
-              notifError
-            );
-          }
-        } catch (error: any) {
-          console.error(`[AutoAssign] Error processing request ${request.id}:`, error);
-          skipped.push({
-            requestId: request.id,
-            reason: error.message || 'Processing failed',
-          });
         }
       }
 
-      // 5. Compute final load map for summary (total active jobs per tech)
-      const loadMap: Record<string, number> = {};
-      for (const tech of internalTechs) {
+      // 6. Return list of { technicianId, totalAssigned }
+      const distributionSummary = eligibleTechs.map((tech: any) => {
         const techId = tech.id;
-        const activeServices = await storage.getServiceRequestsByTechnician(techId, true);
-        loadMap[techId] = activeServices.filter((sr: any) => !sr.actualEndTime).length;
-      }
-
-      // 6. Build distribution summary
-      const distributionSummary = internalTechs.map((tech: any) => {
-        const techId = tech.id;
-        const techName = tech.name || tech.employeeCode || techId;
         return {
           technicianId: techId,
-          techId: techId, // Keep both for compatibility
-          name: techName,
-          newAssignments: assignmentsByTech[techId] || 0,
-          countAssigned: assignmentsByTech[techId] || 0, // Keep both for compatibility
-          totalActive: loadMap[techId] || 0,
+          totalAssigned: assignmentsByTech[techId] || 0,
         };
       });
 

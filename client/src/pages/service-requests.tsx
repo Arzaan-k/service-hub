@@ -37,6 +37,7 @@ interface ServiceRequest {
   status: string;
   priority: string;
   issueDescription: string;
+  assignedTechnicianId?: string | null;
   beforePhotos?: string[];
   afterPhotos?: string[];
   resolutionNotes?: string;
@@ -276,12 +277,58 @@ export default function ServiceRequests() {
 
   const filteredRequests = requests?.filter((req: ServiceRequest) => {
     if (activeTab === "all") return true;
+    if (activeTab === "pending") {
+      // Show all unassigned requests (not completed/cancelled) in pending section
+      const assignedTechId = (req as any).assignedTechnicianId;
+      const assignedTechnician = (req as any).assignedTechnician;
+      const hasTechnician =
+        (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
+        !!req.technician ||
+        !!assignedTechnician;
+      const hasNoTechnician = !hasTechnician;
+      const status = (req.status || '').toLowerCase();
+      return hasNoTechnician && 
+             status !== "completed" && 
+             status !== "cancelled";
+    }
+    if (activeTab === "scheduled") {
+      // Show only scheduled requests that have a technician assigned
+      const assignedTechId = (req as any).assignedTechnicianId;
+      const assignedTechnician = (req as any).assignedTechnician;
+      const hasTechnician =
+        (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
+        !!req.technician ||
+        !!assignedTechnician;
+      return req.status === "scheduled" && hasTechnician;
+    }
     return req.status === activeTab;
   });
 
   // Calculate stats
-  const pendingCount = requests?.filter((r: ServiceRequest) => r.status === "pending").length || 0;
-  const scheduledCount = requests?.filter((r: ServiceRequest) => r.status === "scheduled").length || 0;
+  // Pending count: all unassigned requests (not completed/cancelled)
+  const pendingCount = requests?.filter((r: ServiceRequest) => {
+    const assignedTechId = (r as any).assignedTechnicianId;
+    const assignedTechnician = (r as any).assignedTechnician;
+    const hasTechnician =
+      (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
+      !!r.technician ||
+      !!assignedTechnician;
+    const hasNoTechnician = !hasTechnician;
+    const status = (r.status || '').toLowerCase();
+    return hasNoTechnician && 
+           status !== "completed" && 
+           status !== "cancelled";
+  }).length || 0;
+  // Scheduled count: only requests that are scheduled AND have a technician assigned
+  const scheduledCount = requests?.filter((r: ServiceRequest) => {
+    const assignedTechId = (r as any).assignedTechnicianId;
+    const assignedTechnician = (r as any).assignedTechnician;
+    const hasTechnician =
+      (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
+      !!r.technician ||
+      !!assignedTechnician;
+    return r.status === "scheduled" && hasTechnician;
+  }).length || 0;
   const inProgressCount = requests?.filter((r: ServiceRequest) => r.status === "in_progress").length || 0;
   const completedCount = requests?.filter((r: ServiceRequest) => r.status === "completed").length || 0;
 

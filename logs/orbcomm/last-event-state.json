@@ -1,13 +1,6 @@
 {
-<<<<<<< HEAD
-  "lastEventId": "c14785fa-5292-4626-900b-2c4137af0739",
+  "lastEventId": "6fe48e02-6dce-4b09-a0ae-312261e72690",
   "eventSequence": 20,
-  "lastSaved": "2025-11-27T06:08:33.743Z",
+  "lastSaved": "2025-11-27T08:58:45.030Z",
   "totalAlertsReceived": 20
-=======
-  "lastEventId": "75486fda-d8ac-4070-a3ca-7e7169dd2ff5",
-  "eventSequence": 0,
-  "lastSaved": "2025-11-25T15:18:43.138Z",
-  "totalAlertsReceived": 0
->>>>>>> main
 }

@@ -433,42 +433,7 @@ export default function TechnicianProfile() {
     }
   }, [technician, isEditing]);
 
-<<<<<<< HEAD
   // Don't block rendering - always show UI even if data is loading or missing
-=======
-  const completed = Array.isArray(requests)
-    ? requests.filter((r: any) => r.status === "completed")
-    : [];
-
-  if (isTechLoading) {
-    return (
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <Header title="Technician Profile" />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (techError || !technician) {
-    return (
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <Header title="Technician Profile" />
-          <div className="p-6">
-            <Link href="/technicians"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2" />Back</Button></Link>
-            <div className="mt-6 text-destructive">Failed to load technician.</div>
-          </div>
-        </main>
-      </div>
-    );
-  }
->>>>>>> main
 
   return (
     <div className="flex min-h-screen">
@@ -494,12 +459,21 @@ export default function TechnicianProfile() {
                   </div>
                   <div className="flex items-center gap-2">
                     {technician.type === "thirdparty" && (
-                      <Badge className="bg-pink-200 text-pink-800">Third-Party</Badge>
+                      <Badge variant="secondary" className="bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300">Third-Party</Badge>
                     )}
                     <Badge>{technician.status || "available"}</Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsCredentialsConfirmOpen(true)}
+                      disabled={sendCredentialsMutation.isPending}
+                      className="bg-green-600 hover:bg-green-700 text-white border-green-600"
+                    >
+                      <Send className="h-4 w-4 mr-2" />
+                      {sendCredentialsMutation.isPending ? 'Sending...' : 'Send Credentials'}
+                    </Button>
                   </div>
                 </div>
-<<<<<<< HEAD
               )}
             </CardHeader>
             <CardContent className="space-y-4">
@@ -515,48 +489,6 @@ export default function TechnicianProfile() {
                     <div className="flex items-center gap-2 text-sm">
                       <MapPin className="h-4 w-4 text-muted-foreground"/>
                       <span>Location:</span>
-=======
-                <div className="flex items-center gap-2">
-                  {technician.type === "thirdparty" && (
-                    <Badge variant="secondary" className="bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300">Third-Party</Badge>
-                  )}
-                  <Badge>{technician.status || "available"}</Badge>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsCredentialsConfirmOpen(true)}
-                    disabled={sendCredentialsMutation.isPending}
-                    className="bg-green-600 hover:bg-green-700 text-white border-green-600"
-                  >
-                    <Send className="h-4 w-4 mr-2" />
-                    {sendCredentialsMutation.isPending ? 'Sending...' : 'Send Credentials'}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-2 text-sm">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span>{technician.phone || technician.whatsappNumber}</span>
-              </div>
-
-              {/* Location Section */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span>Location:</span>
-                </div>
-                {isEditing ? (
-                  <div className="ml-6 relative">
-                    <Label htmlFor="location">Base Location</Label>
-                    <div className="mt-2">
-                      <MapMyIndiaAutocomplete
-                        value={editForm.baseLocation}
-                        onChange={(value) => setEditForm({ ...editForm, baseLocation: value })}
-                        placeholder="Search for Indian locations (e.g., Mumbai, Delhi, Bangalore)..."
-                        className="w-full"
-                      />
->>>>>>> main
                     </div>
                     {isEditing ? (
                       <div className="ml-6 relative">
@@ -579,7 +511,6 @@ export default function TechnicianProfile() {
                     )}
                   </div>
 
-<<<<<<< HEAD
                   <div className="flex items-center gap-2 text-sm">
                     <Wrench className="h-4 w-4 text-muted-foreground"/>
                     <span>{Array.isArray(technician.skills) ? technician.skills.join(", ") : technician.specialization || "general"}</span>
@@ -592,16 +523,6 @@ export default function TechnicianProfile() {
               ) : (
                 <div className="text-sm text-muted-foreground">Technician data not available</div>
               )}
-=======
-              <div className="flex items-center gap-2 text-sm">
-                <Wrench className="h-4 w-4 text-muted-foreground" />
-                <span>{Array.isArray(technician.skills) ? technician.skills.join(", ") : technician.specialization || "general"}</span>
-              </div>
-              <div className="flex items-center gap-1 text-sm pt-1">
-                <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                <span>{technician.averageRating ?? 0}/5</span>
-              </div>
->>>>>>> main
 
               {/* Edit/Save Buttons */}
               <div className="flex gap-2 pt-4">
@@ -878,7 +799,6 @@ export default function TechnicianProfile() {
                   </Button>
                 </div>
               ) : (() => {
-<<<<<<< HEAD
                 // Use categorized data from backend
                 // For third-party, use tpRequests (legacy format), otherwise use new categorized format
                 let assigned: any[] = [];
@@ -1017,32 +937,6 @@ export default function TechnicianProfile() {
                               <div className="text-xs text-muted-foreground mt-1 italic">
                                 PM Travel Task - Read Only
                               </div>
-=======
-                const source = (technician as any)?.type === 'thirdparty' ? tpRequests : requests;
-                const assigned = Array.isArray(source)
-                  ? source.filter((r: any) => ['scheduled', 'in_progress', 'pending', 'assigned'].includes(r.status))
-                  : [];
-
-                return assigned.length > 0 ? (
-                  <div className="space-y-3">
-                    {assigned.map((r: any) => (
-                      <Link key={r.id} href={`/service-requests/${r.id}`}>
-                        <div className="rounded-md border p-3 hover:bg-accent hover:border-primary transition-colors cursor-pointer">
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="font-medium text-primary hover:underline">SR #{r.requestNumber}</div>
-                            <Badge className={
-                              r.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                                r.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-gray-100 text-gray-800'
-                            }>
-                              {r.status}
-                            </Badge>
-                          </div>
-                          <div className="text-sm mt-1">{r.issueDescription || "Service"}</div>
-                          {r.status === 'in_progress' && r.actualStartTime && (
-                            <div className="mt-2">
-                              <ElapsedTime startTime={r.actualStartTime} />
->>>>>>> main
                             </div>
                           )}
                         </div>
@@ -1222,10 +1116,3 @@ export default function TechnicianProfile() {
     </div>
   );
 }
-
-
-
-
-
-
-

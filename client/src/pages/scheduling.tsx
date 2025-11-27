@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -135,6 +135,23 @@ export default function Scheduling() {
     },
     enabled: canSchedule,
   });
+
+  const derivedPendingRequests = useMemo(() => {
+    if (Array.isArray(pendingRequests) && pendingRequests.length > 0) {
+      return pendingRequests;
+    }
+    if (!Array.isArray(serviceRequests)) return [];
+    return serviceRequests.filter((req: any) => {
+      const assignedTechId = req?.assignedTechnicianId;
+      const assignedTechnician = req?.assignedTechnician;
+      const hasTechnician =
+        (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
+        !!req?.technician ||
+        !!assignedTechnician;
+      const status = (req?.status || '').toLowerCase();
+      return !hasTechnician && status !== 'completed' && status !== 'cancelled';
+    });
+  }, [pendingRequests, serviceRequests]);
 
   const { data: destinationCities = [] } = useQuery({
     queryKey: ["/api/containers/cities"],
@@ -697,7 +714,7 @@ export default function Scheduling() {
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-foreground">
-                        {pendingRequests?.length || 0}
+                        {derivedPendingRequests.length}
                       </p>
                       <p className="text-xs text-muted-foreground">Pending Requests</p>
                     </div>
