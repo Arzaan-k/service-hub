@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
+import { hasPageAccess } from "../services/roleAccess";
 
 export interface AuthRequest extends Request {
   user?: any;

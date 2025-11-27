@@ -5,7 +5,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Enums according to PRD
-export const userRoleEnum = pgEnum("user_role", ["admin", "client", "technician", "coordinator", "super_admin"]);
+export const userRoleEnum = pgEnum("user_role", ["admin", "client", "technician", "coordinator", "super_admin", "senior_technician", "amc"]);
 export const containerStatusEnum = pgEnum("container_status", ["active", "in_service", "maintenance", "retired", "in_transit", "for_sale", "sold"]);
 // Use existing enum from database
 export const containerTypeEnum = pgEnum("container_type", ["refrigerated", "dry", "special", "iot_enabled", "manual"]);
@@ -39,6 +39,7 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true).notNull(),
   whatsappVerified: boolean("whatsapp_verified").default(false).notNull(),
   emailVerified: boolean("email_verified").default(false).notNull(),
+  requiresPasswordReset: boolean("requires_password_reset").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }) as any;
@@ -386,6 +387,19 @@ export const emailVerifications = pgTable("email_verifications", {
   codeHash: text("code_hash").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   attempts: integer("attempts").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Password Reset Tokens (secure password reset flow)
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  tokenHash: text("token_hash").notNull().unique(), // SHA-256 hash of the token
+  expiresAt: timestamp("expires_at").notNull(), // Tokens expire after 1 hour
+  usedAt: timestamp("used_at"), // null if not used yet, timestamp when used
+  createdBy: varchar("created_by").references(() => users.id), // Admin who triggered the reset
+  ipAddress: text("ip_address"), // IP address of the requester
+  userAgent: text("user_agent"), // Browser/device info
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

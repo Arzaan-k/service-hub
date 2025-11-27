@@ -6,7 +6,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,6 +38,8 @@ export default function Clients() {
   const { toast } = useToast();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<Customer | null>(null);
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
   const [formData, setFormData] = useState({
     companyName: "",
@@ -53,6 +55,7 @@ export default function Clients() {
   const user = getCurrentUser();
   const role = (user?.role || "client").toLowerCase();
   const canManage = ["admin", "coordinator", "super_admin"].includes(role);
+
 
   const { data: clients, isLoading } = useQuery({
     queryKey: ["/api/clients"],
@@ -102,7 +105,7 @@ export default function Clients() {
       const created = await res.json();
 
       // The backend automatically creates a user account and sends credentials
-      return { ...created, userCreated: true };
+      return created;
     },
     onSuccess: async (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
@@ -110,13 +113,28 @@ export default function Clients() {
       setIsAddDialogOpen(false);
       resetForm();
 
-      const successMessage = result.userCreated
-        ? (allocation.containerIds.length > 0
-          ? `Client added, user account created, and ${allocation.containerIds.length} container(s) assigned. Credentials sent via email.`
-          : "Client added and user account created. Credentials sent via email.")
-        : (allocation.containerIds.length > 0
-          ? `Client added and ${allocation.containerIds.length} container(s) assigned. User account creation failed.`
-          : "Client added. User account creation failed.");
+      const containerMsg = allocation.containerIds.length > 0
+        ? ` and ${allocation.containerIds.length} container(s) assigned`
+        : "";
+
+      let successMessage = `Client added${containerMsg}.`;
+
+      if (result.userReused) {
+        successMessage = `Client added${containerMsg}. Existing user account reused.`;
+      } else if (result.userCreated !== undefined) {
+        if (result.resetLinkSent) {
+          successMessage = `Client added${containerMsg}. User account created and password setup link sent via email.`;
+        } else if (result.userCreated) {
+          successMessage = `Client added${containerMsg}. User account created. ⚠️ ${result.emailError || 'Email failed - check server logs for password setup link.'}`;
+        } else {
+          successMessage = `Client added${containerMsg}. User account creation failed.`;
+        }
+      }
+
+      // Log reset link in dev mode or when email fails
+      if (result.resetLink) {
+        console.log('🔗 Client password setup link:', result.resetLink);
+      }
 
       toast({
         title: "Success",
@@ -224,9 +242,16 @@ export default function Clients() {
     }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this client?")) {
-      deleteClient.mutate(id);
+  const handleDelete = (client: Customer) => {
+    setClientToDelete(client);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (clientToDelete) {
+      deleteClient.mutate(clientToDelete.id);
+      setIsDeleteDialogOpen(false);
+      setClientToDelete(null);
     }
   };
 
@@ -301,9 +326,17 @@ export default function Clients() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {clients?.map((client: Customer) => {
-              const containerCount = client.containerCount || 0;
+
+          {/* Calculate container count for each client */}
+          {(() => {
+            const clientsWithCounts = clients?.map((client: Customer) => ({
+              ...client,
+              containerCount: (containers || []).filter((container: any) => container.currentCustomerId === client.id).length
+            })) || [];
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {clientsWithCounts.map((client: Customer & { containerCount: number }) => {
+                  const containerCount = client.containerCount;
               return (
               <Card key={client.id} className="card-surface hover:shadow-soft transition-all">
                 <CardHeader className="pb-3">
@@ -378,7 +411,7 @@ export default function Clients() {
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => handleDelete(client.id)}
+                        onClick={() => handleDelete(client)}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -387,7 +420,9 @@ export default function Clients() {
                 </CardContent>
               </Card>
             );})}
-          </div>
+              </div>
+            );
+          })()}
 
           {(!clients || clients.length === 0) && (
             <div className="text-center py-12">
@@ -713,6 +748,75 @@ export default function Clients() {
                 {updateClient.isPending ? "Updating..." : "Update Client"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <i className="fas fa-exclamation-triangle"></i>
+              Delete Client
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              <div className="space-y-3">
+                <p className="font-medium">
+                  Are you sure you want to delete <strong>{clientToDelete?.companyName}</strong>?
+                </p>
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <i className="fas fa-trash-alt text-destructive mt-0.5"></i>
+                    <div>
+                      <p className="text-sm font-medium text-destructive-foreground mb-1">
+                        ⚠️ This action cannot be undone and will:
+                      </p>
+                      <ul className="text-xs text-destructive-foreground space-y-1 ml-4">
+                        <li>• Delete the client account permanently</li>
+                        <li>• Remove all associated user data</li>
+                        <li>• Delete all service requests and history</li>
+                        <li>• Remove all invoices and financial records</li>
+                        <li>• Unassign all containers from this client</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  This will completely remove all data associated with this client from the system.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setClientToDelete(null);
+              }}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmDelete}
+              disabled={deleteClient.isPending}
+              className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {deleteClient.isPending ? (
+                <>
+                  <i className="fas fa-spinner fa-spin mr-2"></i>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-trash-alt mr-2"></i>
+                  Delete Client
+                </>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -47,6 +47,7 @@ export default function ClientProfile() {
   const user = getCurrentUser();
   const isSelfProfile = !params?.id;
   const isAdmin = ["admin", "coordinator", "super_admin"].includes((user?.role || "").toLowerCase());
+  const isSuperAdmin = (user?.role || "").toLowerCase() === "super_admin";
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -117,41 +118,45 @@ export default function ClientProfile() {
   });
 
 
-  const sendCredentialsMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      const response = await fetch(`/api/admin/users/${userId}/send-credentials`, {
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (clientId: string) => {
+      const response = await fetch(`/api/admin/clients/${clientId}/reset-password`, {
         method: 'POST',
         headers: { ...commonHeaders, "Content-Type": "application/json" },
       });
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to send credentials');
+        throw new Error(error.error || 'Failed to reset password');
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Success",
-        description: "New credentials sent via email",
+        description: data.message || "Password reset email sent successfully",
       });
+      // If resetLink is provided (dev mode or email failed), log it
+      if (data.resetLink) {
+        console.log('🔗 Password reset link:', data.resetLink);
+      }
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to send credentials",
+        description: error.message || "Failed to reset password",
         variant: "destructive",
       });
     },
   });
 
-  const handleSendCredentials = () => {
-    if (!cust?.userId) return;
+  const handleResetPassword = () => {
+    if (!cust?.id) return;
     setIsCredentialsConfirmOpen(true);
   };
 
-  const handleConfirmSendCredentials = () => {
-    if (!cust?.userId) return;
-    sendCredentialsMutation.mutate(cust.userId);
+  const handleConfirmResetPassword = () => {
+    if (!cust?.id) return;
+    resetPasswordMutation.mutate(cust.id);
     setIsCredentialsConfirmOpen(false);
   };
 
@@ -320,22 +325,22 @@ export default function ClientProfile() {
               </div>
               <div className="flex items-center gap-2">
                 {isAdmin && !isSelfProfile && (
-                  <>
-                    <Button variant="outline" size="sm" onClick={handleEdit}>
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSendCredentials}
-                      disabled={sendCredentialsMutation.isPending}
-                      className="bg-green-600 hover:bg-green-700 text-white border-green-600"
-                    >
-                      <Send className="h-4 w-4 mr-2" />
-                      {sendCredentialsMutation.isPending ? 'Sending...' : 'Send Credentials'}
-                    </Button>
-                  </>
+                  <Button variant="outline" size="sm" onClick={handleEdit}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                )}
+                {isSuperAdmin && !isSelfProfile && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetPassword}
+                    disabled={resetPasswordMutation.isPending}
+                    className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600"
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {resetPasswordMutation.isPending ? 'Sending...' : 'Reset Password'}
+                  </Button>
                 )}
                 {cust?.customerTier && (
                   <Badge className="border text-xs">{String(cust.customerTier).toUpperCase()}</Badge>
@@ -721,38 +726,39 @@ export default function ClientProfile() {
         </DialogContent>
       </Dialog>
 
-      {/* Send Credentials Confirmation Dialog */}
+      {/* Reset Password Confirmation Dialog */}
       <Dialog open={isCredentialsConfirmOpen} onOpenChange={setIsCredentialsConfirmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <i className="fas fa-exclamation-triangle"></i>
-              Reset Password Warning
+              Reset Password Confirmation
             </DialogTitle>
             <DialogDescription className="text-left">
               <div className="space-y-3">
                 <p className="font-medium">
                   You are about to reset the password for <strong>{cust?.companyName || cust?.name}</strong>.
                 </p>
-                <div className="bg-warning/10 border border-warning/20 rounded-lg p-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <div className="flex items-start gap-2">
-                    <i className="fas fa-shield-alt text-warning mt-0.5"></i>
+                    <i className="fas fa-info-circle text-blue-600 mt-0.5"></i>
                     <div>
-                      <p className="text-sm font-medium text-warning-foreground mb-1">
-                        ⚠️ This action will:
+                      <p className="text-sm font-medium text-blue-900 mb-1">
+                        🔐 This action will:
                       </p>
-                      <ul className="text-xs text-warning-foreground space-y-1 ml-4">
-                        <li>• Generate a new secure password</li>
-                        <li>• Send login credentials via email</li>
-                        <li>• Invalidate the current password</li>
-                        <li>• Require the user to change password after login</li>
+                      <ul className="text-xs text-blue-800 space-y-1 ml-4">
+                        <li>• Generate a secure password reset link</li>
+                        <li>• Send the link via email to: <strong>{cust?.email}</strong></li>
+                        <li>• Link expires in 1 hour</li>
+                        <li>• Link can only be used once</li>
+                        <li>• User will set their own strong password</li>
                       </ul>
                     </div>
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  The user will receive an email with their new login credentials.
-                  For security, they should change their password after first login.
+                  The client will receive an email with a secure link to set their password.
+                  Their login ID is their email: <strong>{cust?.email}</strong>
                 </p>
               </div>
             </DialogDescription>
@@ -767,11 +773,11 @@ export default function ClientProfile() {
               Cancel
             </Button>
             <Button
-              onClick={handleConfirmSendCredentials}
-              disabled={sendCredentialsMutation.isPending}
-              className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={handleConfirmResetPassword}
+              disabled={resetPasswordMutation.isPending}
+              className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
             >
-              {sendCredentialsMutation.isPending ? (
+              {resetPasswordMutation.isPending ? (
                 <>
                   <i className="fas fa-spinner fa-spin mr-2"></i>
                   Sending...
@@ -779,7 +785,7 @@ export default function ClientProfile() {
               ) : (
                 <>
                   <i className="fas fa-key mr-2"></i>
-                  Reset & Send Password
+                  Send Reset Link
                 </>
               )}
             </Button>
