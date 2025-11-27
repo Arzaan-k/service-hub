@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { generateServiceRequestPDF } from "@/lib/pdfGenerator";
+import CourierTracking from "@/components/service-request/courier-tracking";
 
 interface InventoryItem {
   id: string;
@@ -571,11 +572,12 @@ export default function ServiceRequestDetail() {
 
           {/* Main Content Tabs */}
           <Tabs defaultValue="overview" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-6 lg:w-auto">
+            <TabsList className="grid w-full grid-cols-7 lg:w-auto">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="client">Client Info</TabsTrigger>
               <TabsTrigger value="media">Media</TabsTrigger>
               <TabsTrigger value="conversation">Conversation</TabsTrigger>
+              <TabsTrigger value="courier">Courier Tracking</TabsTrigger>
               <TabsTrigger value="timeline">Timeline</TabsTrigger>
               <TabsTrigger value="reports">Reports</TabsTrigger>
             </TabsList>
@@ -1213,6 +1215,11 @@ Example:
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Courier Tracking Tab */}
+            <TabsContent value="courier">
+              <CourierTracking serviceRequestId={id} />
             </TabsContent>
 
             {/* Reports Tab */}

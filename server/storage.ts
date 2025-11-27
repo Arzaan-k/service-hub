@@ -8,6 +8,7 @@ import {
   containerOwnershipHistory,
   alerts,
   serviceRequests,
+  courierShipments,
   invoices,
   whatsappSessions,
   whatsappMessages,
@@ -30,6 +31,8 @@ import {
   type Container,
   type Alert,
   type ServiceRequest,
+  type CourierShipment,
+  type InsertCourierShipment,
   type Invoice,
   type WhatsappSession,
   type ScheduledService,
@@ -129,6 +132,14 @@ export interface IStorage {
   cancelServiceRequest(serviceRequestId: string, reason: string): Promise<ServiceRequest>;
   getServiceRequestTimeline(serviceRequestId: string): Promise<any[]>;
   getScheduledService(id: string): Promise<ScheduledService | undefined>;
+
+  // Courier Shipment operations
+  getCourierShipment(id: string): Promise<any | undefined>;
+  getCourierShipmentByAwb(awbNumber: string): Promise<any | undefined>;
+  getCourierShipmentsByServiceRequest(serviceRequestId: string): Promise<any[]>;
+  createCourierShipment(shipment: any): Promise<any>;
+  updateCourierShipment(id: string, shipment: any): Promise<any>;
+  deleteCourierShipment(id: string): Promise<void>;
 
   // Technician operations
   getAllTechnicians(): Promise<Technician[]>;
@@ -1400,6 +1411,60 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
     return svc;
   }
+
+  // ==================== Courier Shipment Methods ====================
+
+  async getCourierShipment(id: string): Promise<CourierShipment | undefined> {
+    const [shipment] = await db
+      .select()
+      .from(courierShipments)
+      .where(eq(courierShipments.id, id))
+      .limit(1);
+    return shipment;
+  }
+
+  async getCourierShipmentByAwb(awbNumber: string): Promise<CourierShipment | undefined> {
+    const [shipment] = await db
+      .select()
+      .from(courierShipments)
+      .where(eq(courierShipments.awbNumber, awbNumber))
+      .limit(1);
+    return shipment;
+  }
+
+  async getCourierShipmentsByServiceRequest(serviceRequestId: string): Promise<CourierShipment[]> {
+    const shipments = await db
+      .select()
+      .from(courierShipments)
+      .where(eq(courierShipments.serviceRequestId, serviceRequestId))
+      .orderBy(desc(courierShipments.createdAt));
+    return shipments;
+  }
+
+  async createCourierShipment(shipment: InsertCourierShipment): Promise<CourierShipment> {
+    const [newShipment] = await db
+      .insert(courierShipments)
+      .values(shipment)
+      .returning();
+    return newShipment;
+  }
+
+  async updateCourierShipment(id: string, shipment: Partial<InsertCourierShipment>): Promise<CourierShipment> {
+    const [updated] = await db
+      .update(courierShipments)
+      .set({ ...shipment, updatedAt: new Date() })
+      .where(eq(courierShipments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCourierShipment(id: string): Promise<void> {
+    await db
+      .delete(courierShipments)
+      .where(eq(courierShipments.id, id));
+  }
+
+  // ==================== End Courier Shipment Methods ====================
 
   // Enhanced Technician Management Methods according to PRD
   async getTechnicianPerformance(technicianId: string): Promise<any> {
