@@ -109,6 +109,13 @@ export default function Scheduling() {
     action: string;
   } | null>(null);
   const [showPmDialog, setShowPmDialog] = useState(false);
+  const [selectedPmContainer, setSelectedPmContainer] = useState<{
+    containerId: string;
+    containerCode: string;
+    depot: string;
+    customerName: string;
+    daysSincePm: number | null;
+  } | null>(null);
 
   const { data: serviceRequests, isLoading } = useQuery({
     queryKey: ["/api/service-requests"],
@@ -136,20 +143,67 @@ export default function Scheduling() {
     enabled: canSchedule,
   });
 
+  // PM Overview data
+  const { data: pmOverview, isLoading: pmLoading, refetch: refetchPM, error: pmError } = useQuery({
+    queryKey: ["/api/pm/overview"],
+    queryFn: async () => {
+      console.log('[PM Overview] Fetching data...');
+      const res = await apiRequest("GET", "/api/pm/overview");
+      const text = await res.text();
+      console.log('[PM Overview] Raw response:', text.substring(0, 500));
+      try {
+        const data = JSON.parse(text);
+        console.log('[PM Overview] Parsed data:', data);
+        return data;
+      } catch (e) {
+        console.error('[PM Overview] JSON parse error:', e);
+        throw new Error('Invalid JSON response from server');
+      }
+    },
+    enabled: canSchedule && activeTab === "pm-overview",
+    staleTime: 30000,
+  });
+
+  const internalTechnicianIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (Array.isArray(technicians)) {
+      technicians.forEach((tech: any) => {
+        const techId = tech?.id ?? tech?._id ?? tech?.technicianId;
+        if (techId !== undefined && techId !== null) {
+          ids.add(String(techId));
+        }
+      });
+    }
+    return ids;
+  }, [technicians]);
+
+  const technicianDirectoryLoaded = Array.isArray(technicians);
+
+  const requestHasTechnician = (req: any) => {
+    const rawId = req?.assignedTechnicianId;
+    const trimmedId = typeof rawId === "string" ? rawId.trim() : rawId;
+    const normalizedId = trimmedId === undefined || trimmedId === null ? "" : String(trimmedId);
+
+    if (normalizedId) {
+      if (!technicianDirectoryLoaded) {
+        return true;
+      }
+      if (internalTechnicianIds.has(normalizedId)) {
+        return true;
+      }
+    }
+
+    return Boolean(req?.technician);
+  };
+
   const derivedPendingRequests = useMemo(() => {
     if (Array.isArray(pendingRequests) && pendingRequests.length > 0) {
       return pendingRequests;
     }
     if (!Array.isArray(serviceRequests)) return [];
     return serviceRequests.filter((req: any) => {
-      const assignedTechId = req?.assignedTechnicianId;
-      const assignedTechnician = req?.assignedTechnician;
-      const hasTechnician =
-        (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
-        !!req?.technician ||
-        !!assignedTechnician;
       const status = (req?.status || '').toLowerCase();
-      return !hasTechnician && status !== 'completed' && status !== 'cancelled';
+      return !requestHasTechnician(req) && status !== 'completed' && status !== 'cancelled';
     });
   }, [pendingRequests, serviceRequests]);
 
@@ -201,6 +255,7 @@ export default function Scheduling() {
   const [selectedTechnicianId, setSelectedTechnicianId] = useState<string | null>(null);
   const [planPurpose, setPlanPurpose] = useState("pm");
   const [planNotes, setPlanNotes] = useState("");
+  const [pmFilter, setPmFilter] = useState<"all" | "needs_pm" | "overdue" | "never" | "due_soon" | "up_to_date">("overdue");
 
   const autoPlanMutation = useMutation({
     mutationFn: async (payload: AutoPlanFormPayload) => {
@@ -479,11 +534,34 @@ export default function Scheduling() {
       // Refresh service requests to show any new PM tickets
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pm/overview"] });
     },
     onError: (error: any) => {
       toast({
         title: "PM Check Failed",
         description: error?.message || "Failed to run preventive maintenance check",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Sync PM dates from service_history
+  const syncPMDates = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/pm/sync");
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "PM Sync Completed",
+        description: data.message || "PM dates synced from service history",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/pm/overview"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "PM Sync Failed",
+        description: error?.message || "Failed to sync PM dates",
         variant: "destructive",
       });
     },
@@ -612,9 +690,10 @@ export default function Scheduling() {
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex items-center justify-between mb-6">
-              <TabsList className="grid w-[400px] grid-cols-2">
+              <TabsList className="grid w-[500px] grid-cols-3">
                 <TabsTrigger value="daily">Daily Schedule</TabsTrigger>
-                <TabsTrigger value="travel">Technician Travel & Auto PM</TabsTrigger>
+                <TabsTrigger value="pm-overview">PM Overview</TabsTrigger>
+                <TabsTrigger value="travel">Travel & Auto PM</TabsTrigger>
               </TabsList>
             </div>
 
@@ -850,6 +929,263 @@ export default function Scheduling() {
           )}
             </TabsContent>
 
+            {/* PM Overview Tab */}
+            <TabsContent value="pm-overview" className="space-y-6 mt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">PM Overview</h2>
+                  <p className="text-sm text-muted-foreground">
+                    View all containers and their preventive maintenance status based on service history
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => refetchPM()}
+                  disabled={pmLoading}
+                  className="gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${pmLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+
+              {/* PM Summary Cards - Clickable Filters */}
+              {pmOverview?.success && pmOverview?.summary && (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <Card 
+                    className={`border-l-4 border-l-gray-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'all' ? 'ring-2 ring-gray-400 bg-gray-500/20' : 'hover:bg-gray-500/10'}`}
+                    onClick={() => setPmFilter('all')}
+                  >
+                    <CardContent className="p-4">
+                      <p className="text-2xl font-bold">{pmOverview.summary.total}</p>
+                      <p className="text-xs text-muted-foreground">Total Containers</p>
+                    </CardContent>
+                  </Card>
+                  <Card 
+                    className={`border-l-4 border-l-red-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'never' ? 'ring-2 ring-red-400 bg-red-500/30' : 'bg-red-500/10 hover:bg-red-500/20'}`}
+                    onClick={() => setPmFilter('never')}
+                  >
+                    <CardContent className="p-4">
+                      <p className="text-2xl font-bold text-red-400">{pmOverview.summary.never}</p>
+                      <p className="text-xs text-muted-foreground">Never PM'd</p>
+                    </CardContent>
+                  </Card>
+                  <Card 
+                    className={`border-l-4 border-l-orange-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'overdue' ? 'ring-2 ring-orange-400 bg-orange-500/30' : 'bg-orange-500/10 hover:bg-orange-500/20'}`}
+                    onClick={() => setPmFilter('overdue')}
+                  >
+                    <CardContent className="p-4">
+                      <p className="text-2xl font-bold text-orange-400">{pmOverview.summary.overdue}</p>
+                      <p className="text-xs text-muted-foreground">Overdue (90+ days)</p>
+                    </CardContent>
+                  </Card>
+                  <Card 
+                    className={`border-l-4 border-l-yellow-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'due_soon' ? 'ring-2 ring-yellow-400 bg-yellow-500/30' : 'bg-yellow-500/10 hover:bg-yellow-500/20'}`}
+                    onClick={() => setPmFilter('due_soon')}
+                  >
+                    <CardContent className="p-4">
+                      <p className="text-2xl font-bold text-yellow-400">{pmOverview.summary.dueSoon}</p>
+                      <p className="text-xs text-muted-foreground">Due Soon (75-90 days)</p>
+                    </CardContent>
+                  </Card>
+                  <Card 
+                    className={`border-l-4 border-l-green-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'up_to_date' ? 'ring-2 ring-green-400 bg-green-500/30' : 'bg-green-500/10 hover:bg-green-500/20'}`}
+                    onClick={() => setPmFilter('up_to_date')}
+                  >
+                    <CardContent className="p-4">
+                      <p className="text-2xl font-bold text-green-400">{pmOverview.summary.upToDate}</p>
+                      <p className="text-xs text-muted-foreground">Up to Date</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* PM Containers Table */}
+              {pmLoading ? (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-muted-foreground">Loading PM data from service history...</p>
+                  </CardContent>
+                </Card>
+              ) : pmError ? (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+                    <p className="text-lg font-medium text-red-400">Error loading PM data</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {(pmError as any)?.message || 'Unknown error'}
+                    </p>
+                    <Button onClick={() => refetchPM()} className="mt-4">Retry</Button>
+                  </CardContent>
+                </Card>
+              ) : pmOverview?.success && pmOverview?.containers?.length > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5" />
+                      Containers {
+                        pmFilter === 'all' ? '- All' :
+                        pmFilter === 'never' ? '- Never PM\'d' :
+                        pmFilter === 'overdue' ? '- Overdue' :
+                        pmFilter === 'due_soon' ? '- Due Soon' :
+                        pmFilter === 'up_to_date' ? '- Up to Date' :
+                        pmFilter === 'needs_pm' ? '- Needing PM' : ''
+                      }
+                      <Badge variant="outline" className="ml-2">
+                        {(() => {
+                          const filtered = pmOverview.containers.filter((c: any) => {
+                            if (pmFilter === 'all') return true;
+                            if (pmFilter === 'needs_pm') return c.pm_status === 'NEVER' || c.pm_status === 'OVERDUE';
+                            if (pmFilter === 'overdue') return c.pm_status === 'OVERDUE';
+                            if (pmFilter === 'never') return c.pm_status === 'NEVER';
+                            if (pmFilter === 'due_soon') return c.pm_status === 'DUE_SOON';
+                            if (pmFilter === 'up_to_date') return c.pm_status === 'UP_TO_DATE';
+                            return true;
+                          });
+                          return `${filtered.length} containers`;
+                        })()}
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Container ID</TableHead>
+                            <TableHead>Customer</TableHead>
+                            <TableHead>Location</TableHead>
+                            <TableHead>Last PM Date</TableHead>
+                            <TableHead>Days Since PM</TableHead>
+                            <TableHead>Total PM Count</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pmOverview.containers
+                            .filter((c: any) => {
+                              if (pmFilter === 'all') return true;
+                              if (pmFilter === 'needs_pm') return c.pm_status === 'NEVER' || c.pm_status === 'OVERDUE';
+                              if (pmFilter === 'overdue') return c.pm_status === 'OVERDUE';
+                              if (pmFilter === 'never') return c.pm_status === 'NEVER';
+                              if (pmFilter === 'due_soon') return c.pm_status === 'DUE_SOON';
+                              if (pmFilter === 'up_to_date') return c.pm_status === 'UP_TO_DATE';
+                              return true;
+                            })
+                            .slice(0, 100)
+                            .map((container: any) => (
+                            <TableRow key={container.id} className={
+                              container.pm_status === 'NEVER' ? 'bg-red-500/5' :
+                              container.pm_status === 'OVERDUE' ? 'bg-orange-500/5' :
+                              ''
+                            }>
+                              <TableCell className="font-mono font-medium">
+                                {container.container_id}
+                              </TableCell>
+                              <TableCell>{container.customer_name || '-'}</TableCell>
+                              <TableCell>{container.depot || '-'}</TableCell>
+                              <TableCell>
+                                {container.last_pm_date 
+                                  ? new Date(container.last_pm_date).toLocaleDateString('en-IN', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      year: 'numeric'
+                                    })
+                                  : <span className="text-red-400 font-medium">Never</span>}
+                              </TableCell>
+                              <TableCell>
+                                {container.days_since_pm !== null 
+                                  ? <span className={container.days_since_pm > 90 ? 'text-orange-400 font-medium' : ''}>
+                                      {Math.round(container.days_since_pm)} days
+                                    </span>
+                                  : <span className="text-red-400">-</span>}
+                              </TableCell>
+                              <TableCell>{container.pm_count || 0}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    container.pm_status === 'NEVER' ? 'destructive' :
+                                    container.pm_status === 'OVERDUE' ? 'destructive' :
+                                    container.pm_status === 'DUE_SOON' ? 'secondary' :
+                                    'default'
+                                  }
+                                  className={
+                                    container.pm_status === 'NEVER' ? 'bg-red-600' :
+                                    container.pm_status === 'OVERDUE' ? 'bg-orange-600' :
+                                    container.pm_status === 'DUE_SOON' ? 'bg-yellow-600 text-black' :
+                                    'bg-green-600'
+                                  }
+                                >
+                                  {container.pm_status === 'NEVER' ? 'Never PM\'d' :
+                                   container.pm_status === 'OVERDUE' ? `Overdue (${Math.round(container.days_since_pm)}d)` :
+                                   container.pm_status === 'DUE_SOON' ? 'Due Soon' :
+                                   'Up to Date'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {(container.pm_status === 'NEVER' || container.pm_status === 'OVERDUE' || container.pm_status === 'DUE_SOON') && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="gap-1 text-xs border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+                                    onClick={() => {
+                                      setSelectedPmContainer({
+                                        containerId: container.id,
+                                        containerCode: container.container_id,
+                                        depot: container.depot || '',
+                                        customerName: container.customer_name || '',
+                                        daysSincePm: container.days_since_pm,
+                                      });
+                                      setActiveTab("travel");
+                                      toast({
+                                        title: "Schedule PM",
+                                        description: `Navigate to Travel & Auto PM to schedule PM for ${container.container_id}${container.depot ? ` in ${container.depot}` : ''}`,
+                                      });
+                                    }}
+                                  >
+                                    <Plane className="h-3 w-3" />
+                                    Schedule PM
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {(() => {
+                      const filtered = pmOverview.containers.filter((c: any) => {
+                        if (pmFilter === 'all') return true;
+                        if (pmFilter === 'needs_pm') return c.pm_status === 'NEVER' || c.pm_status === 'OVERDUE';
+                        if (pmFilter === 'overdue') return c.pm_status === 'OVERDUE';
+                        if (pmFilter === 'never') return c.pm_status === 'NEVER';
+                        if (pmFilter === 'due_soon') return c.pm_status === 'DUE_SOON';
+                        if (pmFilter === 'up_to_date') return c.pm_status === 'UP_TO_DATE';
+                        return true;
+                      });
+                      return filtered.length > 100 ? (
+                        <p className="text-sm text-muted-foreground mt-4 text-center">
+                          Showing first 100 of {filtered.length} containers
+                        </p>
+                      ) : null;
+                    })()}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-lg font-medium">No PM data available</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      PM data is loaded from service history. Click "Refresh" to load the data.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
             {/* Technician Travel Tab */}
             <TabsContent value="travel" className="space-y-6 mt-6">
               <div>
@@ -858,6 +1194,37 @@ export default function Scheduling() {
                   Generate trips automatically, review costs and PM tasks, then save in one click.
                 </p>
               </div>
+
+              {/* Selected PM Container Banner */}
+              {selectedPmContainer && (
+                <Alert className="border-blue-500/50 bg-blue-500/10">
+                  <Plane className="h-4 w-4 text-blue-400" />
+                  <AlertTitle className="text-blue-400">Scheduling PM for Container</AlertTitle>
+                  <AlertDescription className="flex items-center justify-between">
+                    <div className="text-sm">
+                      <span className="font-mono font-bold">{selectedPmContainer.containerCode}</span>
+                      {selectedPmContainer.customerName && <span> • {selectedPmContainer.customerName}</span>}
+                      {selectedPmContainer.depot && <span> • Location: <strong>{selectedPmContainer.depot}</strong></span>}
+                      {selectedPmContainer.daysSincePm !== null && (
+                        <span className="text-orange-400 ml-2">
+                          ({Math.round(selectedPmContainer.daysSincePm)} days since last PM)
+                        </span>
+                      )}
+                      {selectedPmContainer.daysSincePm === null && (
+                        <span className="text-red-400 ml-2">(Never had PM)</span>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => setSelectedPmContainer(null)}
+                    >
+                      Clear
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
 
               <AutoPlanForm
                 destinations={destinationCities}

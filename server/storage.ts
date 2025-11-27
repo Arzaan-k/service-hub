@@ -54,6 +54,7 @@ import { eq, and, desc, asc, gte, sql, isNull, ilike, inArray, notInArray } from
 import { Pool } from '@neondatabase/serverless';
 
 export interface IStorage {
+  ensureServiceRequestAssignmentColumns(): Promise<void>;
   // RAG operations
   createManual(manual: { title: string; description: string; fileName: string; filePath: string; uploadedBy: string; brand: string; model: string }): Promise<string>;
   getManual(id: string): Promise<any>;
@@ -196,6 +197,18 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  async ensureServiceRequestAssignmentColumns(): Promise<void> {
+    try {
+      await db.execute(sql`
+        ALTER TABLE service_requests
+        ADD COLUMN IF NOT EXISTS assigned_by text,
+        ADD COLUMN IF NOT EXISTS assigned_at timestamptz
+      `);
+    } catch (error) {
+      console.error('[Storage] Failed to ensure service_requests assignment audit columns:', error);
+    }
+  }
+
   // RAG operations
   async createManual(manual: { title: string; description: string; fileName: string; filePath: string; uploadedBy: string; brand: string; model: string }): Promise<string> {
     const result = await db.insert(manuals).values({

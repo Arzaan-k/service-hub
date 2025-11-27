@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -275,31 +275,80 @@ export default function ServiceRequests() {
     return priorityMap[priority] || priorityMap.normal;
   };
 
+  const technicianLookup = useMemo(() => {
+    const map = new Map<string, any>();
+    if (Array.isArray(technicians)) {
+      technicians.forEach((tech: any) => {
+        const techId = tech?.id ?? tech?._id ?? tech?.technicianId;
+        if (techId !== undefined && techId !== null) {
+          map.set(String(techId), tech);
+        }
+      });
+    }
+    return map;
+  }, [technicians]);
+
+  const internalTechnicianIds = useMemo(() => {
+    return new Set(Array.from(technicianLookup.keys()));
+  }, [technicianLookup]);
+
+  const technicianDirectoryLoaded = Array.isArray(technicians);
+
+  const hasAssignedTechnician = (req: ServiceRequest): boolean => {
+    const rawId = (req as any).assignedTechnicianId;
+    const trimmed = typeof rawId === "string" ? rawId.trim() : rawId;
+    const normalizedId = trimmed === undefined || trimmed === null ? "" : String(trimmed);
+
+    if (normalizedId) {
+      if (!technicianDirectoryLoaded) {
+        // Avoid misclassifying while technicians are still loading.
+        return true;
+      }
+      if (internalTechnicianIds.has(normalizedId)) {
+        return true;
+      }
+    }
+
+    // If backend already populated technician relation, respect it.
+    return Boolean((req as any).technician);
+  };
+
+  const getAssignedTechnicianInfo = (req: ServiceRequest) => {
+    if ((req as any).technician) {
+      return {
+        id: (req as any).technician.id,
+        name: (req as any).technician.name || (req as any).technician.employeeCode || (req as any).technician.id,
+        phone: (req as any).technician.phone || (req as any).technician.user?.phoneNumber || (req as any).technician.user?.email
+      };
+    }
+    const rawId = (req as any).assignedTechnicianId;
+    const trimmed = typeof rawId === "string" ? rawId.trim() : rawId;
+    if (trimmed === undefined || trimmed === null) return null;
+    const normalizedId = String(trimmed);
+    const tech = technicianLookup.get(normalizedId);
+    if (tech) {
+      return {
+        id: normalizedId,
+        name: tech.name || tech.employeeCode || tech.whatsappName || normalizedId,
+        phone: tech.phoneNumber || tech.phone || tech.whatsappNumber
+      };
+    }
+    return null;
+  };
+
   const filteredRequests = requests?.filter((req: ServiceRequest) => {
     if (activeTab === "all") return true;
     if (activeTab === "pending") {
-      // Show all unassigned requests (not completed/cancelled) in pending section
-      const assignedTechId = (req as any).assignedTechnicianId;
-      const assignedTechnician = (req as any).assignedTechnician;
-      const hasTechnician =
-        (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
-        !!req.technician ||
-        !!assignedTechnician;
-      const hasNoTechnician = !hasTechnician;
+      // Pending tab shows every request with no technician assigned, regardless of status.
+      const hasNoTechnician = !hasAssignedTechnician(req);
       const status = (req.status || '').toLowerCase();
       return hasNoTechnician && 
              status !== "completed" && 
              status !== "cancelled";
     }
     if (activeTab === "scheduled") {
-      // Show only scheduled requests that have a technician assigned
-      const assignedTechId = (req as any).assignedTechnicianId;
-      const assignedTechnician = (req as any).assignedTechnician;
-      const hasTechnician =
-        (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
-        !!req.technician ||
-        !!assignedTechnician;
-      return req.status === "scheduled" && hasTechnician;
+      // Scheduled tab only shows requests that are in scheduled status AND truly assigned.
+      return req.status === "scheduled" && hasAssignedTechnician(req);
     }
     return req.status === activeTab;
   });
@@ -307,13 +356,7 @@ export default function ServiceRequests() {
   // Calculate stats
   // Pending count: all unassigned requests (not completed/cancelled)
   const pendingCount = requests?.filter((r: ServiceRequest) => {
-    const assignedTechId = (r as any).assignedTechnicianId;
-    const assignedTechnician = (r as any).assignedTechnician;
-    const hasTechnician =
-      (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
-      !!r.technician ||
-      !!assignedTechnician;
-    const hasNoTechnician = !hasTechnician;
+    const hasNoTechnician = !hasAssignedTechnician(r);
     const status = (r.status || '').toLowerCase();
     return hasNoTechnician && 
            status !== "completed" && 
@@ -321,13 +364,7 @@ export default function ServiceRequests() {
   }).length || 0;
   // Scheduled count: only requests that are scheduled AND have a technician assigned
   const scheduledCount = requests?.filter((r: ServiceRequest) => {
-    const assignedTechId = (r as any).assignedTechnicianId;
-    const assignedTechnician = (r as any).assignedTechnician;
-    const hasTechnician =
-      (!!assignedTechId && `${assignedTechId}`.trim().length > 0) ||
-      !!r.technician ||
-      !!assignedTechnician;
-    return r.status === "scheduled" && hasTechnician;
+    return r.status === "scheduled" && hasAssignedTechnician(r);
   }).length || 0;
   const inProgressCount = requests?.filter((r: ServiceRequest) => r.status === "in_progress").length || 0;
   const completedCount = requests?.filter((r: ServiceRequest) => r.status === "completed").length || 0;
@@ -439,7 +476,12 @@ export default function ServiceRequests() {
             </TabsList>
 
             <TabsContent value={activeTab} className="space-y-4">
-              {filteredRequests?.map((request: ServiceRequest) => (
+              {filteredRequests?.map((request: ServiceRequest) => {
+                const requestHasTechnician = hasAssignedTechnician(request);
+                const assignedTech = getAssignedTechnicianInfo(request);
+                const assignButtonLabel = requestHasTechnician ? "Change Technician" : "Assign Technician";
+
+                return (
                 <Card key={(request as any)?._id || request.id} className={`card-surface hover:shadow-soft transition-all overflow-visible ${request.status === 'completed' ? 'bg-green-50/80 dark:bg-green-900/20 border-green-200 dark:border-green-800' : ''}`}>
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between mb-4">
@@ -479,11 +521,14 @@ export default function ServiceRequests() {
                             <span>{request.customer.companyName}</span>
                           </div>
                         )}
-                        {request.technician && (
+                        {assignedTech && (
                           <div className="flex items-center gap-2 text-sm">
                             <UserCheck className="h-4 w-4 text-muted-foreground" />
                             <span className="font-medium">Technician:</span>
-                            <span>{request.technician.name}</span>
+                            <span>{assignedTech.name}</span>
+                            {assignedTech.phone && (
+                              <span className="text-xs text-muted-foreground">({assignedTech.phone})</span>
+                            )}
                           </div>
                         )}
                         {request.scheduledDate && (
@@ -555,13 +600,15 @@ export default function ServiceRequests() {
                     <div className="flex flex-wrap gap-3 pt-4 border-t border-border">
                       {request.status === "pending" && (
                         <div className="flex items-center gap-3 w-full relative z-10 overflow-visible flex-nowrap">
-                          <button
-                            onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
-                            title="Assign Technician"
-                          >
-                            <UserCog className="w-4 h-4" /> Assign Technician
-                          </button>
+                          {!requestHasTechnician && (
+                            <button
+                              onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
+                              title="Assign Technician"
+                            >
+                              <UserCog className="w-4 h-4" /> Assign Technician
+                            </button>
+                          )}
 
                           <button
                             onClick={() => startService.mutate(request.id)}
@@ -586,9 +633,9 @@ export default function ServiceRequests() {
                           <button
                             onClick={() => setLocation(`/assign-technician/${getRequestId(request)}`)}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFD4E3] to-[#FFB899] text-[#111111] hover:opacity-95 font-semibold transition-all duration-300 shadow-sm"
-                            title="Assign Technician"
+                            title={requestHasTechnician ? "Change Technician" : "Assign Technician"}
                           >
-                            <UserCog className="w-4 h-4" /> Assign Technician
+                            <UserCog className="w-4 h-4" /> {assignButtonLabel}
                           </button>
                           <button
                             onClick={() => startService.mutate(request.id)}
@@ -654,7 +701,8 @@ export default function ServiceRequests() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+              );
+              })}
 
               {(!filteredRequests || filteredRequests.length === 0) && (
                 <div className="text-center py-12">

@@ -1,5 +1,7 @@
 import { storage } from "../storage";
 import { generateJobOrderNumber } from "../utils/jobOrderGenerator";
+import { db } from "../db";
+import { sql } from "drizzle-orm";
 
 interface PMAlert {
   containerId: string;
@@ -11,72 +13,82 @@ interface PMAlert {
 
 /**
  * Check all containers for preventive maintenance due dates
+ * Uses service_requests table (machine_status = 'Preventive Maintenance') to determine last PM date
  * Returns containers that are overdue (last PM > 90 days ago)
  */
 export async function checkPreventiveMaintenance(): Promise<PMAlert[]> {
   try {
-    console.log('[PM Check] Starting preventive maintenance check...');
+    console.log('[PM Check] Starting preventive maintenance check using service_requests...');
     
-    const allContainers = await storage.getAllContainers();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const pmAlerts: PMAlert[] = [];
     const PM_THRESHOLD_DAYS = 90; // 3 months
     
-    for (const container of allContainers) {
+    // Get containers needing PM from service_requests
+    const overdueContainers = await db.execute(sql`
+      WITH last_pm AS (
+        SELECT 
+          container_id,
+          MAX(complaint_registration_time) as last_pm_date
+        FROM service_requests
+        WHERE LOWER(machine_status) LIKE '%preventive%'
+          AND container_id IS NOT NULL
+        GROUP BY container_id
+      )
+      SELECT 
+        c.id,
+        c.container_id,
+        c.assigned_client_id as current_customer_id,
+        lp.last_pm_date,
+        COALESCE(EXTRACT(DAY FROM (NOW() - lp.last_pm_date)), 999) as days_since_pm
+      FROM containers c
+      LEFT JOIN last_pm lp ON c.id = lp.container_id
+      WHERE c.status = 'active'
+        AND c.assigned_client_id IS NOT NULL
+        AND (
+          lp.last_pm_date IS NULL 
+          OR EXTRACT(DAY FROM (NOW() - lp.last_pm_date)) > ${PM_THRESHOLD_DAYS}
+        )
+      ORDER BY days_since_pm DESC
+      LIMIT 50
+    `);
+
+    console.log(`[PM Check] Found ${overdueContainers.rows.length} containers needing PM`);
+    
+    const pmAlerts: PMAlert[] = [];
+    
+    for (const row of overdueContainers.rows as any[]) {
       try {
-        // Skip if container doesn't have lastPmDate
-        if (!container.lastPmDate) {
-          // If no lastPmDate, check if container is old enough (created > 90 days ago)
-          if (container.createdAt) {
-            const createdDate = new Date(container.createdAt);
-            const daysSinceCreation = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
-            
-            if (daysSinceCreation >= PM_THRESHOLD_DAYS) {
-              // Container is old enough but never had PM - needs first PM
-              const alert = await createPMServiceRequest(container, daysSinceCreation);
-              if (alert) {
-                pmAlerts.push(alert);
-              }
-            }
-          }
-          continue;
-        }
+        const container = {
+          id: row.id,
+          containerCode: row.container_id,
+          currentCustomerId: row.current_customer_id,
+        };
         
-        const lastPmDate = new Date(container.lastPmDate);
-        lastPmDate.setHours(0, 0, 0, 0);
+        const daysSinceLastPM = row.days_since_pm ? Math.round(Number(row.days_since_pm)) : 999;
         
-        // Calculate days since last PM
-        const daysSinceLastPM = Math.floor((today.getTime() - lastPmDate.getTime()) / (1000 * 60 * 60 * 24));
+        // Check if there's already a pending PM service request for this container
+        const existingRequests = await storage.getAllServiceRequests();
+        const hasPendingPM = existingRequests.some((req: any) => {
+          return (
+            req.containerId === container.id &&
+            req.issueDescription?.toLowerCase().includes('preventive maintenance') &&
+            ['pending', 'approved', 'scheduled'].includes(req.status?.toLowerCase()) &&
+            !req.actualEndTime
+          );
+        });
         
-        // Check if PM is overdue (> 90 days)
-        if (daysSinceLastPM >= PM_THRESHOLD_DAYS) {
-          // Check if there's already a pending PM service request for this container
-          const existingRequests = await storage.getAllServiceRequests();
-          const hasPendingPM = existingRequests.some((req: any) => {
-            return (
-              req.containerId === container.id &&
-              req.issueDescription?.toLowerCase().includes('preventive maintenance') &&
-              ['pending', 'approved', 'scheduled'].includes(req.status?.toLowerCase()) &&
-              !req.actualEndTime
-            );
-          });
-          
-          // Only create new PM request if one doesn't already exist
-          if (!hasPendingPM) {
-            const alert = await createPMServiceRequest(container, daysSinceLastPM);
-            if (alert) {
-              pmAlerts.push(alert);
-            }
+        // Only create new PM request if one doesn't already exist
+        if (!hasPendingPM) {
+          const alert = await createPMServiceRequest(container, daysSinceLastPM);
+          if (alert) {
+            pmAlerts.push(alert);
           }
         }
       } catch (error) {
-        console.error(`[PM Check] Error processing container ${container.id}:`, error);
+        console.error(`[PM Check] Error processing container ${row.id}:`, error);
       }
     }
     
-    console.log(`[PM Check] Found ${pmAlerts.length} containers needing preventive maintenance`);
+    console.log(`[PM Check] Created ${pmAlerts.length} PM service requests`);
     return pmAlerts;
   } catch (error) {
     console.error('[PM Check] Fatal error in checkPreventiveMaintenance:', error);

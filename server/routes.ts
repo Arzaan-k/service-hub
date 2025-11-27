@@ -80,6 +80,7 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+  await storage.ensureServiceRequestAssignmentColumns();
 
   // Serve uploads directory statically
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
@@ -4509,6 +4510,195 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         error: "Failed to run PM check",
+        details: error?.message || String(error),
+      });
+    }
+  });
+
+  // Get PM Overview - containers with their last PM date from service_requests (machine_status = 'Preventive Maintenance')
+  app.get("/api/pm/overview", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+    try {
+      console.log('[API] PM Overview requested');
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      // First, get all containers
+      const containersResult = await db.execute(sql`
+        SELECT 
+          c.id,
+          c.container_id,
+          c.status,
+          c.depot,
+          c.grade,
+          cust.company_name as customer_name
+        FROM containers c
+        LEFT JOIN customers cust ON c.assigned_client_id = cust.id
+        WHERE c.status = 'active'
+        ORDER BY c.container_id
+      `);
+      
+      const containers = containersResult.rows as any[];
+      console.log('[API] Found', containers.length, 'active containers');
+
+      // Get PM records from service_history where work_type contains 'PREVENTIVE'
+      const pmResult = await db.execute(sql`
+        SELECT 
+          UPPER(TRIM(container_number)) as container_id,
+          MAX(complaint_attended_date) as last_pm_date,
+          COUNT(*)::int as pm_count
+        FROM service_history
+        WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+          AND container_number IS NOT NULL
+          AND container_number != ''
+        GROUP BY UPPER(TRIM(container_number))
+      `);
+      
+      const pmRecords = pmResult.rows as any[];
+      console.log('[API] Found PM records for', pmRecords.length, 'containers');
+      
+      // Create a map of container_id -> PM data
+      const pmMap = new Map<string, { last_pm_date: any; pm_count: number }>();
+      for (const row of pmRecords) {
+        if (row.container_id) {
+          pmMap.set(row.container_id, {
+            last_pm_date: row.last_pm_date,
+            pm_count: Number(row.pm_count) || 0
+          });
+        }
+      }
+
+      // Merge container data with PM data
+      const now = new Date();
+      const result = containers.map(container => {
+        // Match by container_id (container number) since service_history uses container_number
+        const containerIdUpper = (container.container_id || '').toUpperCase().trim();
+        const pmData = pmMap.get(containerIdUpper);
+        
+        let daysSincePm: number | null = null;
+        let pmStatus = 'NEVER';
+        
+        if (pmData && pmData.last_pm_date) {
+          const lastPmDate = new Date(pmData.last_pm_date);
+          daysSincePm = Math.floor((now.getTime() - lastPmDate.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (daysSincePm > 90) {
+            pmStatus = 'OVERDUE';
+          } else if (daysSincePm > 75) {
+            pmStatus = 'DUE_SOON';
+          } else {
+            pmStatus = 'UP_TO_DATE';
+          }
+        }
+        
+        return {
+          id: container.id,
+          container_id: container.container_id?.trim() || '',
+          status: container.status,
+          depot: container.depot,
+          grade: container.grade,
+          customer_name: container.customer_name,
+          last_pm_date: pmData?.last_pm_date || null,
+          pm_count: pmData?.pm_count || 0,
+          days_since_pm: daysSincePm,
+          pm_status: pmStatus
+        };
+      });
+
+      // Sort by PM status priority
+      result.sort((a, b) => {
+        const priority: Record<string, number> = { 'NEVER': 1, 'OVERDUE': 2, 'DUE_SOON': 3, 'UP_TO_DATE': 4 };
+        const aPriority = priority[a.pm_status] || 5;
+        const bPriority = priority[b.pm_status] || 5;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+        if (a.days_since_pm === null) return -1;
+        if (b.days_since_pm === null) return 1;
+        return b.days_since_pm - a.days_since_pm;
+      });
+
+      // Get summary counts
+      const summary = {
+        total: result.length,
+        never: result.filter(r => r.pm_status === 'NEVER').length,
+        overdue: result.filter(r => r.pm_status === 'OVERDUE').length,
+        dueSoon: result.filter(r => r.pm_status === 'DUE_SOON').length,
+        upToDate: result.filter(r => r.pm_status === 'UP_TO_DATE').length,
+      };
+
+      console.log('[API] PM Overview summary:', JSON.stringify(summary));
+
+      return res.json({
+        success: true,
+        summary,
+        containers: result,
+      });
+    } catch (error: any) {
+      console.error('[API] PM Overview error:', error);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to get PM overview",
+        details: error?.message || String(error),
+      });
+    }
+  });
+
+  // Sync PM dates from service_requests to containers table
+  app.post("/api/pm/sync", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+    try {
+      console.log('[API] PM Sync requested');
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      // Get PM records from service_requests where machine_status = 'Preventive Maintenance'
+      const pmRecords = await db.execute(sql`
+        SELECT 
+          container_id,
+          MAX(complaint_registration_time) as last_pm_date
+        FROM service_requests
+        WHERE LOWER(machine_status) LIKE '%preventive%'
+          AND container_id IS NOT NULL
+        GROUP BY container_id
+      `);
+      
+      console.log('[API] Found PM records for', pmRecords.rows.length, 'containers');
+      
+      let updated = 0;
+      const now = new Date();
+      
+      for (const row of pmRecords.rows as any[]) {
+        const containerId = row.container_id;
+        const lastPmDate = row.last_pm_date;
+        
+        if (!containerId || !lastPmDate) continue;
+        
+        // Calculate PM status
+        const pmDate = new Date(lastPmDate);
+        const daysSincePm = Math.floor((now.getTime() - pmDate.getTime()) / (1000 * 60 * 60 * 24));
+        let pmStatus = 'UP_TO_DATE';
+        if (daysSincePm > 90) pmStatus = 'OVERDUE';
+        else if (daysSincePm > 75) pmStatus = 'DUE_SOON';
+        
+        // Update container by ID
+        await db.execute(sql`
+          UPDATE containers 
+          SET last_pm_date = ${lastPmDate}, 
+              pm_status = ${pmStatus}::pm_status,
+              updated_at = NOW()
+          WHERE id = ${containerId}
+        `);
+        updated++;
+      }
+
+      console.log('[API] PM Sync completed, updated', updated, 'containers');
+      res.json({
+        success: true,
+        message: `PM dates synced for ${updated} containers from service requests`,
+        updated
+      });
+    } catch (error: any) {
+      console.error('[API] PM Sync error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to sync PM dates",
         details: error?.message || String(error),
       });
     }
