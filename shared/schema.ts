@@ -256,6 +256,24 @@ export const serviceRequests = pgTable("service_requests", {
   inventoryOrderId: text("inventory_order_id"), // Order ID from Inventory System
   inventoryOrderNumber: text("inventory_order_number"), // Order Number from Inventory System
   inventoryOrderCreatedAt: timestamp("inventory_order_created_at"), // When order was created in Inventory System
+  
+  // Coordinator Remarks for Pre-Service Report
+  coordinatorRemarks: text("coordinator_remarks"),
+  remarksAddedBy: varchar("remarks_added_by"),
+  remarksAddedAt: timestamp("remarks_added_at"),
+});
+
+// Service Report PDFs table (new according to PRD)
+export const serviceReportPdfs = pgTable("service_report_pdfs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
+  reportStage: varchar("report_stage").notNull(), // 'initial', 'pre_service', 'post_service', 'complete'
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size"),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  emailedAt: timestamp("emailed_at"),
+  emailRecipients: text("email_recipients").array(),
+  status: varchar("status").default('generated'), // 'generated', 'emailed', 'failed'
 });
 
 // Invoices table (enhanced according to PRD)

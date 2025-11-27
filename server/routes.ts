@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import axios from "axios";
@@ -36,7 +36,10 @@ import { vectorStore } from "./services/vectorStore";
 import multer from 'multer';
 import { generateJobOrderNumber } from './utils/jobOrderGenerator';
 import { db } from './db';
-import { sql } from 'drizzle-orm';
+import { sql, eq, desc } from 'drizzle-orm';
+import { generateServiceReportPDF } from './services/pdfGenerator';
+import { sendEmail } from './services/emailService';
+import { serviceReportPdfs } from '@shared/schema';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -68,6 +71,9 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+
+  // Serve uploads directory statically
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
   // RAG API Endpoints
   app.post("/api/rag/query", authenticateUser, async (req: AuthRequest, res) => {
@@ -4901,6 +4907,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  // --- Service Reports & PDF Generation ---
+
+  // Generate Report
+  app.post("/api/service-requests/:id/generate-report", authenticateUser, async (req: AuthRequest, res) => {
+    const { id } = req.params;
+    const { stage } = req.body; // 'initial', 'pre_service', 'post_service', 'complete'
+    
+    try {
+      console.log(`Generating PDF report for SR ${id}, stage: ${stage}`);
+      
+      // Generate PDF Buffer
+      const pdfBuffer = await generateServiceReportPDF(id, stage);
+      
+      // Save to disk
+      const timestamp = Date.now();
+      const fileName = `${stage.toUpperCase()}_SR-${id}_${timestamp}.pdf`;
+      const uploadDir = path.join(process.cwd(), 'uploads', 'service-reports');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      
+      const filePath = path.join(uploadDir, fileName);
+      fs.writeFileSync(filePath, pdfBuffer);
+      
+      const fileUrl = `/uploads/service-reports/${fileName}`;
+      
+      // Send Email
+      const recipient = 'aiteamcrystal@gmail.com';
+      
+      // Try sending email, but don't fail request if email fails (unless critical)
+      try {
+        await sendEmail({
+            to: recipient,
+            subject: `Service Report: ${stage.toUpperCase().replace('_', ' ')} - SR-${id}`,
+            body: `Please find attached the ${stage.replace('_', ' ')} report for Service Request ${id}.\n\nReference: SR-${id}\nGenerated: ${new Date().toLocaleString()}`,
+            attachments: [{
+                filename: fileName,
+                content: pdfBuffer
+            }]
+        });
+      } catch (emailError) {
+          console.error("Failed to send email:", emailError);
+          // Continue to save report record
+      }
+      
+      // Save to DB
+      const reportId = await db.insert(serviceReportPdfs).values({
+          serviceRequestId: id,
+          reportStage: stage,
+          fileUrl: fileUrl,
+          fileSize: pdfBuffer.length,
+          emailRecipients: [recipient],
+          status: 'emailed',
+          emailedAt: new Date()
+      }).returning({ id: serviceReportPdfs.id });
+      
+      res.json({
+        success: true,
+        reportId: reportId[0].id,
+        fileUrl,
+        emailSent: true,
+        recipients: [recipient]
+      });
+      
+    } catch (error: any) {
+      console.error('Report Generation Error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate report',
+        error: error.message
+      });
+    }
+  });
+
+  // Save Remarks
+  app.patch("/api/service-requests/:id/remarks", authenticateUser, async (req: AuthRequest, res) => {
+      const { id } = req.params;
+      const { remarks } = req.body;
+      
+      try {
+          await storage.updateServiceRequest(id, {
+              coordinatorRemarks: remarks,
+              remarksAddedBy: req.user?.id,
+              remarksAddedAt: new Date()
+          });
+          res.json({ success: true });
+      } catch (e) {
+          res.status(500).json({ error: "Failed to save remarks" });
+      }
+  });
+  
+  // List Reports
+  app.get("/api/service-requests/:id/reports", authenticateUser, async (req, res) => {
+      try {
+        const reports = await db.select().from(serviceReportPdfs)
+            .where(eq(serviceReportPdfs.serviceRequestId, req.params.id))
+            .orderBy(desc(serviceReportPdfs.generatedAt));
+        res.json(reports);
+      } catch (e) {
+          console.error("Failed to list reports:", e);
+          res.status(500).json({ error: "Failed to list reports" });
+      }
+  });
 
   return httpServer;
 }
