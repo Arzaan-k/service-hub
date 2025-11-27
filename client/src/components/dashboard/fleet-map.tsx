@@ -51,7 +51,7 @@ export default function FleetMap({ containers }: FleetMapProps) {
     const hasGps = !!(
       (container.currentLocation?.lat && container.currentLocation?.lng) ||
       (container.locationLat && container.locationLng &&
-       parseFloat(container.locationLat) !== 0 && parseFloat(container.locationLng) !== 0)
+        parseFloat(container.locationLat) !== 0 && parseFloat(container.locationLng) !== 0)
     );
 
     if (hasGps) {
@@ -221,50 +221,46 @@ export default function FleetMap({ containers }: FleetMapProps) {
   }, [containers]);
 
   return (
-    <div className="bg-card border border-dashboard/20 rounded-lg p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="relative z-0 bg-card border border-dashboard/20 rounded-lg p-3 lg:p-6 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-3 lg:mb-4 shrink-0">
         <div className="flex items-center gap-2">
-          <div className="p-2 bg-dashboard/10 rounded-lg">
-            <i className="fas fa-map-marked-alt text-dashboard text-sm"></i>
+          <div className="p-1.5 lg:p-2 bg-dashboard/10 rounded-lg">
+            <i className="fas fa-map-marked-alt text-dashboard text-xs lg:text-sm"></i>
           </div>
-          <h3 className="text-lg font-semibold text-foreground">Real-time Fleet Map</h3>
+          <h3 className="text-sm lg:text-lg font-semibold text-foreground">Real-time Fleet Map</h3>
         </div>
         <div className="flex items-center gap-2">
-          <div className="text-xs text-muted-foreground">
+          <div className="text-[10px] lg:text-xs text-muted-foreground hidden sm:block">
             {stats.withGps} of {stats.total} containers tracked
           </div>
-          <button className="px-3 py-1.5 text-xs font-medium bg-dashboard text-dashboard-foreground rounded-md hover:bg-dashboard/90 transition-smooth">
-            Refresh Map
+          <button className="px-2 py-1 lg:px-3 lg:py-1.5 text-[10px] lg:text-xs font-medium bg-dashboard text-dashboard-foreground rounded-md hover:bg-dashboard/90 transition-smooth">
+            Refresh
           </button>
         </div>
       </div>
 
-      <div ref={mapRef} className="map-container bg-muted/10 rounded-lg h-96"></div>
+      <div ref={mapRef} className="map-container bg-muted/10 rounded-lg flex-1 min-h-0"></div>
 
-      <div className="mt-4 flex flex-wrap gap-4 text-xs">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+      <div className="mt-3 lg:mt-4 flex flex-wrap gap-2 lg:gap-4 text-[10px] lg:text-xs shrink-0">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 lg:w-3 lg:h-3 bg-green-500 rounded-full"></div>
           <span className="text-muted-foreground">Active ({stats.active})</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
-          <span className="text-muted-foreground">Maintenance ({stats.maintenance})</span>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 lg:w-3 lg:h-3 bg-amber-500 rounded-full"></div>
+          <span className="text-muted-foreground">Maint ({stats.maintenance})</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-          <span className="text-muted-foreground">Critical ({stats.critical})</span>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 lg:w-3 lg:h-3 bg-red-500 rounded-full"></div>
+          <span className="text-muted-foreground">Crit ({stats.critical})</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 lg:w-3 lg:h-3 bg-gray-500 rounded-full"></div>
           <span className="text-muted-foreground">Offline ({stats.offline})</span>
         </div>
-        <div className="flex items-center gap-2 ml-4">
-          <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-          <span className="text-muted-foreground">IoT Enabled ({stats.iotEnabled})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-          <span className="text-muted-foreground">GPS Tracked ({stats.withGps})</span>
+        <div className="flex items-center gap-1.5 ml-auto lg:ml-4">
+          <div className="w-2 h-2 lg:w-3 lg:h-3 bg-blue-500 rounded-full"></div>
+          <span className="text-muted-foreground">IoT ({stats.iotEnabled})</span>
         </div>
       </div>
     </div>

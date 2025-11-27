@@ -51,7 +51,43 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
         </button>
       </div>
 
-      <div className="overflow-x-auto min-w-0">
+      {/* Mobile View: Cards */}
+      <div className="lg:hidden space-y-3">
+        {requests.slice(0, 5).map((request) => {
+          const container = containers.find((c) => c.id === request.containerId);
+          return (
+            <div key={request.id} className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-xs font-bold text-primary">{request.requestNumber}</span>
+                    <span className={`px-2 py-0.5 ${getStatusColor(request.status)} text-[10px] font-bold uppercase tracking-wider rounded-md`}>
+                      {request.status}
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs text-foreground/80 font-medium">
+                    {container?.containerCode || container?.containerId || "Unknown"}
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 ${getPriorityColor(request.priority)} text-[10px] font-bold uppercase tracking-wider rounded-md`}>
+                  {request.priority}
+                </span>
+              </div>
+
+              <p className="text-xs text-muted-foreground line-clamp-2 bg-black/20 p-2 rounded-lg">
+                {request.issueDescription || "No description provided."}
+              </p>
+
+              <button className="w-full text-center text-xs font-medium border border-white/10 hover:border-primary/30 hover:bg-primary/10 py-2 rounded-lg transition-colors">
+                View Details
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop View: Table */}
+      <div className="hidden lg:block overflow-x-auto min-w-0">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/10">
@@ -68,20 +104,20 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
               const container = containers.find((c) => c.id === request.containerId);
               return (
                 <tr key={request.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                  <td className="py-4 px-4 font-mono text-xs font-medium text-primary">{request.requestNumber}</td>
-                  <td className="py-4 px-4 font-mono text-xs text-foreground/80">{container?.containerCode || container?.containerId || "Unknown"}</td>
-                  <td className="py-4 px-4 text-foreground/80">{(request.issueDescription || "").substring(0, 28)}{(request.issueDescription || "").length > 28 ? "..." : ""}</td>
-                  <td className="py-4 px-4">
+                  <td className="py-3 px-4 font-mono text-xs font-medium text-primary">{request.requestNumber}</td>
+                  <td className="py-3 px-4 font-mono text-xs text-foreground/80">{container?.containerCode || container?.containerId || "Unknown"}</td>
+                  <td className="py-3 px-4 text-foreground/80">{(request.issueDescription || "").substring(0, 28)}{(request.issueDescription || "").length > 28 ? "..." : ""}</td>
+                  <td className="py-3 px-4">
                     <span className={`px-2.5 py-1 ${getPriorityColor(request.priority)} text-[10px] font-bold uppercase tracking-wider rounded-md`}>
                       {request.priority}
                     </span>
                   </td>
-                  <td className="py-4 px-4">
+                  <td className="py-3 px-4">
                     <span className={`px-2.5 py-1 ${getStatusColor(request.status)} text-[10px] font-bold uppercase tracking-wider rounded-md`}>
                       {request.status}
                     </span>
                   </td>
-                  <td className="py-4 px-4">
+                  <td className="py-3 px-4">
                     <button className="text-muted-foreground hover:text-primary transition-colors text-xs font-medium border border-white/10 hover:border-primary/30 hover:bg-primary/10 px-3 py-1.5 rounded-lg">View</button>
                   </td>
                 </tr>
