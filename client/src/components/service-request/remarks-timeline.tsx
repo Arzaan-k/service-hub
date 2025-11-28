@@ -305,6 +305,16 @@ export default function RemarksTimeline({ serviceRequestId }: RemarksTimelinePro
     }
   };
 
+  // Handle audio play event
+  const handleAudioPlay = (recordingId: string) => {
+    setPlayingId(recordingId);
+  };
+
+  // Handle audio pause/end event
+  const handleAudioPause = () => {
+    setPlayingId(null);
+  };
+
   // Compress audio file before upload
   const compressAudio = async (audioBlob: Blob): Promise<Blob> => {
     try {
