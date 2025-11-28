@@ -147,7 +147,7 @@ if (Array.isArray(queryKey)) {
     endpoint = `/${queryKey.join("/")}`;
   }
 } else {
-  endpoint = queryKey as string;
+  endpoint = queryKey as unknown as string;
 }
 
 console.log('[DEBUG] Endpoint:', endpoint);
@@ -192,12 +192,6 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: 0, // Always refetch
       retry: 3,
-      onError: (error) => {
-        console.error('[Query Error]', error);
-      },
-      onSuccess: (data, query) => {
-        console.log('[Query Success]', query.queryKey, data);
-      },
     },
     mutations: {
       retry: false,
