@@ -1954,27 +1954,28 @@ export default function Scheduling() {
                               </h4>
                               <div className="grid grid-cols-2 gap-2">
                                 {Object.entries(selectedTechForSmartPlan.assignedServices?.byCity || {}).map(([cityKey, services]: [string, any]) => {
-                                  // Extract city name from "City (Client Name)" format
-                                  const cityMatch = cityKey.match(/^(.+?)\s*\(/);
-                                  const cityName = cityMatch ? cityMatch[1].trim() : cityKey;
-                                  const clientName = services[0]?.customerName || '';
+                                  // Display full "City (Client Name)" format
+                                  const displayText = cityKey.includes('(') ? cityKey : `${cityKey}${services[0]?.customerName ? ` (${services[0].customerName})` : ''}`;
                                   
                                   return (
                                     <div 
                                       key={cityKey} 
-                                      className={`p-2 border rounded-lg cursor-pointer transition-all hover:bg-muted/50 ${
+                                      className={`p-3 border rounded-lg cursor-pointer transition-all hover:bg-muted/50 ${
                                         selectedCityForPlan === cityKey ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''
                                       }`}
                                       onClick={() => setSelectedCityForPlan(selectedCityForPlan === cityKey ? "" : cityKey)}
+                                      title={displayText}
                                     >
-                                      <div className="flex items-center justify-between">
+                                      <div className="flex items-center justify-between gap-2">
                                         <div className="flex-1 min-w-0">
-                                          <span className="font-medium text-sm block">{cityName}</span>
-                                          {clientName && (
-                                            <span className="text-xs text-muted-foreground truncate">{clientName}</span>
-                                          )}
+                                          <span className="font-medium text-sm block truncate" title={displayText}>
+                                            {displayText}
+                                          </span>
+                                          <span className="text-xs text-muted-foreground mt-0.5">
+                                            {services.length} service{services.length !== 1 ? 's' : ''}
+                                          </span>
                                         </div>
-                                        <Badge variant="outline" className="ml-2">{services.length}</Badge>
+                                        <Badge variant="outline" className="flex-shrink-0">{services.length}</Badge>
                                       </div>
                                     </div>
                                   );

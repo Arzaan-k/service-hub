@@ -5610,6 +5610,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Consolidated Trip Planning - Services + PM Tasks
   app.post("/api/trips/plan-consolidated", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
     try {
+      console.log('[API] POST /api/trips/plan-consolidated - Request received');
       const {
         technicianId,
         destinationCity,
@@ -5618,6 +5619,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         selectedServices = [],
         selectedPMTasks = []
       } = req.body;
+      
+      console.log('[API] POST /api/trips/plan-consolidated - Payload:', {
+        technicianId,
+        destinationCity,
+        servicesCount: selectedServices?.length || 0,
+        pmTasksCount: selectedPMTasks?.length || 0
+      });
 
       console.log('[API] Planning consolidated trip:', {
         technicianId,
@@ -5823,9 +5831,10 @@ Please check your assigned services for details.`;
     }
   });
 
-  // GET /api/trips/planned - Get all planned trips
+  // GET /api/trips/planned - Get all planned trips (must come before /api/trips/:id)
   app.get("/api/trips/planned", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
     try {
+      console.log('[API] GET /api/trips/planned - Request received');
       const { technicianId, startDate, endDate } = req.query;
       
       const filters: any = {
@@ -5837,6 +5846,7 @@ Please check your assigned services for details.`;
       if (endDate) filters.endDate = new Date(endDate as string);
 
       const trips = await storage.getTechnicianTrips(filters);
+      console.log('[API] GET /api/trips/planned - Found trips:', trips?.length || 0);
       
       // Enrich trips with technician details and costs
       const enrichedTrips = await Promise.all(
@@ -5862,9 +5872,9 @@ Please check your assigned services for details.`;
         success: true,
         trips: enrichedTrips
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('[API] Failed to fetch planned trips:', error);
-      res.status(500).json({ error: "Failed to fetch planned trips" });
+      res.status(500).json({ error: "Failed to fetch planned trips", details: error?.message });
     }
   });
 
