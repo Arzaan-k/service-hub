@@ -97,7 +97,13 @@ export const technicians = pgTable("technicians", {
   pmCost: integer("pm_cost").default(0), // Cost per preventive maintenance task
   tasksPerDay: integer("tasks_per_day").default(3), // Rate: Number of tasks per day for trip planning
 
+  // Current location fields (updated via WhatsApp location sharing)
+  latitude: decimal("latitude", { precision: 10, scale: 7 }), // e.g., 19.0760000
+  longitude: decimal("longitude", { precision: 10, scale: 7 }), // e.g., 72.8777000
+  locationAddress: text("location_address"), // Full formatted address from reverse geocoding
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Containers table (enhanced according to PRD)
@@ -283,12 +289,26 @@ export const serviceRequests = pgTable("service_requests", {
   remarksAddedAt: timestamp("remarks_added_at"),
 });
 
+// Custom type for bytea (binary data) to store PDF buffers
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+  toDriver(value: Buffer): Buffer {
+    return value;
+  },
+  fromDriver(value: Buffer): Buffer {
+    return value;
+  },
+});
+
 // Service Report PDFs table (new according to PRD)
 export const serviceReportPdfs = pgTable("service_report_pdfs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
   reportStage: varchar("report_stage").notNull(), // 'initial', 'pre_service', 'post_service', 'complete'
-  fileUrl: text("file_url").notNull(),
+  fileUrl: text("file_url"), // Optional - kept for backward compatibility
+  pdfData: bytea("pdf_data"), // PDF stored as binary data in database
   fileSize: integer("file_size"),
   generatedAt: timestamp("generated_at").defaultNow().notNull(),
   emailedAt: timestamp("emailed_at"),

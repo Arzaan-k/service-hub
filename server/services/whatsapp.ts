@@ -2027,6 +2027,20 @@ async function handleButtonClick(buttonId: string, from: string, user: any, role
         await handleInvoiceResponse(from, false, session, storage);
         return;
       }
+      
+      // Upload Location Button Handler
+      if (buttonId === 'upload_location') {
+        // Set conversation state to await location
+        await storage.updateWhatsappSession(session.id, {
+          conversationState: {
+            ...session.conversationState,
+            flow: 'technician_location_upload',
+            step: 'awaiting_location'
+          }
+        });
+        await sendTextMessage(from, "📍 Please share your current location using WhatsApp's 'Send your current location' option.\n\n👉 Tap the attachment (📎) icon → Location → Send your current location");
+        return;
+      }
     }
   }
 
@@ -3036,6 +3050,15 @@ What would you like to do?`;
     return;
   }
 
+  // Handle technician service view from schedule list (view_service_ prefix)
+  if (user.role === 'technician' && listId.startsWith('view_service_')) {
+    const { storage } = await import('../storage');
+    const { showServiceDetails } = await import('./whatsapp-technician-flows');
+    const serviceId = listId.replace('view_service_', '');
+    await showServiceDetails(from, serviceId, storage);
+    return;
+  }
+
   // Handle service request container selection (client flow)
   if (conversationState.flow === 'service_request' && conversationState.step === 'awaiting_container_selection') {
     await serviceRequestViaWhatsApp.handleContainerListSelection(listId, from, user, session);
@@ -3124,7 +3147,9 @@ What would you like to do?`;
     return;
   }
 
-  await sendTextMessage(from, `Selected option: ${listId}`);
+  // Fallback: Log unhandled list selection but don't expose raw ID to user
+  console.log(`[WhatsApp] Unhandled list selection: ${listId} from ${from}`);
+  await sendTextMessage(from, '⚠️ This option is not available. Please try again or send "Hi" to return to the main menu.');
 }
 
 // Handle media messages (photos, videos, documents) with role-based handling
@@ -4711,6 +4736,8 @@ export async function processIncomingMessage(message: any, from: string): Promis
       await handleTextMessage(message, user, session);
     } else if (message.type === 'interactive') {
       await handleInteractiveMessage(message, user, null, session);
+    } else if (message.type === 'location') {
+      await handleLocationMessage(message, user, session);
     } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
       await handleMediaMessage(message, user, session);
     }
@@ -5242,6 +5269,135 @@ async function handleClientTextMessage(text: string, from: string, user: any, se
     const value = trimmed.toLowerCase() === 'no preference' ? 'No preference' : trimmed;
     await finalizePreferredContactSelection(value, from, user, session);
     return;
+  }
+}
+
+/**
+ * Reverse geocode coordinates to get a formatted address
+ * Uses OpenStreetMap Nominatim API (free, no API key required)
+ */
+async function reverseGeocode(latitude: number, longitude: number): Promise<string> {
+  try {
+    const axios = (await import('axios')).default;
+    const response = await axios.get(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+      {
+        headers: {
+          'User-Agent': 'ServiceHub/1.0 (contact@servicehub.com)',
+          'Accept-Language': 'en'
+        },
+        timeout: 10000
+      }
+    );
+    
+    if (response.data && response.data.display_name) {
+      return response.data.display_name;
+    }
+    
+    // Fallback: construct address from parts
+    const addr = response.data?.address || {};
+    const parts = [
+      addr.road || addr.neighbourhood,
+      addr.suburb || addr.village,
+      addr.city || addr.town || addr.county,
+      addr.state,
+      addr.postcode,
+      addr.country
+    ].filter(Boolean);
+    
+    return parts.length > 0 ? parts.join(', ') : `${latitude}, ${longitude}`;
+  } catch (error) {
+    console.error('[WhatsApp] Reverse geocoding failed:', error);
+    return `${latitude}, ${longitude}`;
+  }
+}
+
+/**
+ * Handle WhatsApp location messages from technicians
+ * Updates technician's current location in database
+ */
+async function handleLocationMessage(message: any, user: any, session: any): Promise<void> {
+  const from = message.from;
+  const { storage } = await import('../storage');
+  const { db } = await import('../db');
+  const { technicians } = await import('@shared/schema');
+  const { eq } = await import('drizzle-orm');
+  
+  try {
+    // Extract location data from WhatsApp message
+    const locationData = message.location;
+    if (!locationData || !locationData.latitude || !locationData.longitude) {
+      console.error('[WhatsApp] Invalid location data received:', message);
+      await sendTextMessage(from, '❌ Could not read location data. Please try sharing your location again.');
+      return;
+    }
+    
+    const latitude = parseFloat(locationData.latitude);
+    const longitude = parseFloat(locationData.longitude);
+    
+    console.log(`[WhatsApp] Location received from ${from}: lat=${latitude}, lng=${longitude}`);
+    
+    // Only process for technicians
+    if (user.role !== 'technician') {
+      console.log(`[WhatsApp] Location message from non-technician user ${from}, ignoring`);
+      await sendTextMessage(from, '📍 Location received. This feature is only available for technicians.');
+      return;
+    }
+    
+    // Get technician record
+    const technician = await storage.getTechnicianByUserId(user.id);
+    if (!technician) {
+      console.error(`[WhatsApp] No technician record found for user ${user.id}`);
+      await sendTextMessage(from, '❌ Could not find your technician profile. Please contact support.');
+      return;
+    }
+    
+    // Reverse geocode to get address
+    const locationAddress = await reverseGeocode(latitude, longitude);
+    console.log(`[WhatsApp] Reverse geocoded address: ${locationAddress}`);
+    
+    // Update technician location in database
+    await db.update(technicians)
+      .set({
+        latitude: String(latitude),
+        longitude: String(longitude),
+        locationAddress: locationAddress,
+        updatedAt: new Date()
+      })
+      .where(eq(technicians.id, technician.id));
+    
+    console.log(`[WhatsApp] ✅ Updated location for technician ${technician.id}`);
+    
+    // Clear the location upload flow state first
+    try {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: {
+          ...session.conversationState,
+          flow: null,
+          step: null
+        }
+      });
+    } catch (sessionError) {
+      console.error('[WhatsApp] Error updating session state:', sessionError);
+      // Continue anyway - location was saved
+    }
+    
+    // Send confirmation message with menu buttons (single message instead of two)
+    await sendInteractiveButtons(
+      from,
+      `✅ Location updated successfully!\n\n` +
+      `📍 *Address:*\n${locationAddress}\n\n` +
+      `🌐 *Coordinates:*\nLat: ${latitude.toFixed(6)}\nLng: ${longitude.toFixed(6)}\n\n` +
+      `Your location has been saved to your profile.`,
+      [
+        { id: 'view_schedule', title: '📅 View Schedule' },
+        { id: 'upload_location', title: '📍 Upload Location' }
+      ]
+    );
+    
+  } catch (error) {
+    console.error('[WhatsApp] Error handling location message:', error);
+    await sendTextMessage(from, '❌ Failed to save your location. Please try again.');
   }
 }
 

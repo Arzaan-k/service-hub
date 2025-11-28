@@ -46,8 +46,13 @@ export function calculateDuration(startTime: Date | string, endTime: Date | stri
 /**
  * Format date for display
  */
-export function formatDate(date: Date | string): string {
+export function formatDate(date: Date | string | null | undefined): string {
+  if (!date) return 'Not scheduled';
   const d = new Date(date);
+  // Check for invalid date (epoch time issue)
+  if (isNaN(d.getTime()) || d.getFullYear() < 2000) {
+    return 'Not scheduled';
+  }
   return d.toLocaleDateString('en-IN', { 
     day: '2-digit', 
     month: '2-digit', 
@@ -58,8 +63,13 @@ export function formatDate(date: Date | string): string {
 /**
  * Format time for display
  */
-export function formatTime(date: Date | string): string {
+export function formatTime(date: Date | string | null | undefined): string {
+  if (!date) return 'Not scheduled';
   const d = new Date(date);
+  // Check for invalid date (epoch time issue - shows as 1970)
+  if (isNaN(d.getTime()) || d.getFullYear() < 2000) {
+    return 'Not scheduled';
+  }
   return d.toLocaleString('en-IN', {
     day: '2-digit',
     month: '2-digit',
