@@ -2785,6 +2785,192 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/technicians/location-overview - Get technician locations with assignments and PM recommendations
+  app.get("/api/technicians/location-overview", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (_req, res) => {
+    try {
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+      
+      // Get all technicians with their base locations
+      const technicians = await storage.getAllTechnicians();
+      
+      // Get all active service requests with container locations
+      const allServiceRequests = await storage.getAllServiceRequests();
+      const activeRequests = allServiceRequests.filter((sr: any) => 
+        ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'].includes((sr.status || '').toLowerCase())
+      );
+      
+      // Get PM data for containers by city
+      const pmResult = await db.execute(sql`
+        WITH pm_data AS (
+          SELECT 
+            UPPER(TRIM(container_number)) as container_id,
+            MAX(complaint_attended_date) as last_pm_date
+          FROM service_history
+          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+            AND container_number IS NOT NULL
+            AND container_number != ''
+          GROUP BY UPPER(TRIM(container_number))
+        )
+        SELECT 
+          c.id,
+          c.container_id as container_code,
+          c.depot as city,
+          c.assigned_client_id as customer_id,
+          cust.company_name as customer_name,
+          CASE 
+            WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+            ELSE 'UP_TO_DATE'
+          END as pm_status,
+          CASE 
+            WHEN pm.last_pm_date IS NULL THEN 999
+            ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+          END as days_since_pm
+        FROM containers c
+        LEFT JOIN customers cust ON c.assigned_client_id = cust.id
+        LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+        WHERE c.status = 'active'
+          AND c.depot IS NOT NULL
+          AND c.depot != ''
+          AND (pm.last_pm_date IS NULL OR EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75)
+        ORDER BY days_since_pm DESC
+      `);
+      
+      // Group PM needs by city
+      const pmByCity: Record<string, any[]> = {};
+      for (const row of pmResult.rows as any[]) {
+        const city = (row.city || 'Unknown').trim();
+        if (!pmByCity[city]) pmByCity[city] = [];
+        pmByCity[city].push({
+          id: row.id,
+          containerCode: row.container_code,
+          customerId: row.customer_id,
+          customerName: row.customer_name,
+          pmStatus: row.pm_status,
+          daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
+        });
+      }
+      
+      // Build technician location data
+      const technicianLocations: any[] = [];
+      
+      for (const tech of technicians) {
+        // Get technician's assigned services
+        const techServices = activeRequests.filter((sr: any) => sr.assignedTechnicianId === tech.id);
+        
+        // Group services by city/depot
+        const servicesByCity: Record<string, any[]> = {};
+        for (const sr of techServices) {
+          const container = sr.container || await storage.getContainer(sr.containerId).catch(() => null);
+          const city = container?.depot || container?.currentLocation?.city || 'Unknown';
+          if (!servicesByCity[city]) servicesByCity[city] = [];
+          servicesByCity[city].push({
+            id: sr.id,
+            requestNumber: sr.requestNumber,
+            status: sr.status,
+            priority: sr.priority,
+            issueDescription: sr.issueDescription,
+            scheduledDate: sr.scheduledDate,
+            containerCode: container?.containerCode || sr.containerId,
+            customerName: sr.customer?.companyName || 'Unknown',
+          });
+        }
+        
+        // Determine current/last known location
+        const baseLocation = typeof tech.baseLocation === 'string' 
+          ? tech.baseLocation 
+          : tech.baseLocation?.city || tech.baseLocation?.address || 'Unknown';
+        
+        // Find next scheduled service
+        const scheduledServices = techServices
+          .filter((sr: any) => sr.scheduledDate && new Date(sr.scheduledDate) >= new Date())
+          .sort((a: any, b: any) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
+        
+        const nextService = scheduledServices[0];
+        let nextLocation = null;
+        if (nextService) {
+          const container = nextService.container || await storage.getContainer(nextService.containerId).catch(() => null);
+          nextLocation = {
+            city: container?.depot || container?.currentLocation?.city || 'Unknown',
+            scheduledDate: nextService.scheduledDate,
+            serviceId: nextService.id,
+            requestNumber: nextService.requestNumber,
+          };
+        }
+        
+        // Calculate PM recommendations for cities where technician has services or is based
+        const relevantCities = new Set<string>([baseLocation]);
+        Object.keys(servicesByCity).forEach(city => relevantCities.add(city));
+        if (nextLocation?.city) relevantCities.add(nextLocation.city);
+        
+        const pmRecommendations: Record<string, any> = {};
+        for (const city of relevantCities) {
+          const cityPms = pmByCity[city] || [];
+          if (cityPms.length > 0) {
+            pmRecommendations[city] = {
+              count: cityPms.length,
+              overdue: cityPms.filter(pm => pm.pmStatus === 'OVERDUE').length,
+              never: cityPms.filter(pm => pm.pmStatus === 'NEVER').length,
+              dueSoon: cityPms.filter(pm => pm.pmStatus === 'DUE_SOON').length,
+              containers: cityPms.slice(0, 10), // Top 10 for preview
+            };
+          }
+        }
+        
+        technicianLocations.push({
+          id: tech.id,
+          name: tech.name || tech.employeeCode,
+          employeeCode: tech.employeeCode,
+          baseLocation,
+          currentCity: baseLocation, // Always use baseLocation as current location
+          status: tech.status,
+          phone: tech.phone,
+          assignedServices: {
+            total: techServices.length,
+            byCity: servicesByCity,
+          },
+          nextService: nextLocation,
+          pmRecommendations,
+          score: techServices.length + Object.values(pmRecommendations).reduce((acc: number, pm: any) => acc + pm.count, 0),
+        });
+      }
+      
+      // Sort by score (technicians with most work in PM-needed areas first)
+      technicianLocations.sort((a, b) => b.score - a.score);
+      
+      // Get all unique cities with PM needs
+      const citiesWithPmNeeds = Object.entries(pmByCity).map(([city, containers]) => ({
+        city,
+        totalPmNeeded: containers.length,
+        overdue: containers.filter(c => c.pmStatus === 'OVERDUE').length,
+        never: containers.filter(c => c.pmStatus === 'NEVER').length,
+        dueSoon: containers.filter(c => c.pmStatus === 'DUE_SOON').length,
+        topContainers: containers.slice(0, 5),
+      })).sort((a, b) => b.totalPmNeeded - a.totalPmNeeded);
+      
+      res.json({
+        success: true,
+        technicians: technicianLocations,
+        citiesWithPmNeeds,
+        summary: {
+          totalTechnicians: technicianLocations.length,
+          totalActiveServices: activeRequests.length,
+          totalCitiesWithPm: citiesWithPmNeeds.length,
+          totalPmNeeded: Object.values(pmByCity).reduce((acc, arr) => acc + arr.length, 0),
+        },
+      });
+    } catch (error: any) {
+      console.error("[API] Error fetching technician location overview:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to fetch technician location overview",
+        details: error?.message,
+      });
+    }
+  });
+
   // Get assigned services for a technician
   app.get("/api/technicians/:id/assigned-services", authenticateUser, async (req, res) => {
     try {
@@ -3878,6 +4064,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/technicians/:id", authenticateUser, requireRole("admin"), async (req, res) => {
     try {
+      console.log("[PUT /api/technicians/:id] Updating technician:", req.params.id, "with body:", req.body);
       // Fetch existing to get userId
       const existing = await storage.getTechnician(req.params.id);
       if (!existing) {
@@ -3903,20 +4090,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.updateUser(existing.userId, userUpdate);
       }
 
+      // Format baseLocation: if it's a string, convert to { city: string }, otherwise keep as is
+      let formattedBaseLocation = undefined;
+      if (body.baseLocation !== undefined) {
+        if (typeof body.baseLocation === 'string' && body.baseLocation.trim()) {
+          formattedBaseLocation = { city: body.baseLocation.trim() };
+        } else if (typeof body.baseLocation === 'object' && body.baseLocation !== null) {
+          formattedBaseLocation = body.baseLocation;
+        }
+      } else if (body.baseLocationCity) {
+        formattedBaseLocation = { city: body.baseLocationCity };
+      } else if (body.home_location) {
+        formattedBaseLocation = typeof body.home_location === 'string' ? { city: body.home_location } : body.home_location;
+      }
+
       const payload: any = {
         experienceLevel: body.experienceLevel ?? body.experience_level,
         skills: Array.isArray(body.skills)
           ? body.skills
           : (body.specialization ? [body.specialization] : undefined),
-        baseLocation: body.baseLocation ?? body.home_location ?? (body.baseLocationCity ? { city: body.baseLocationCity } : undefined),
+        ...(formattedBaseLocation !== undefined && { baseLocation: formattedBaseLocation }),
         serviceAreas: body.serviceAreas ?? body.service_areas,
         status: body.status,
         averageRating: body.averageRating ?? body.rating,
         totalJobsCompleted: body.totalJobsCompleted ?? body.servicesCompleted,
       };
-      // Remove undefined keys so we don't overwrite with null/undefined
-      Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
+      console.log("[PUT /api/technicians/:id] Payload:", payload);
       const technician = await storage.updateTechnician(req.params.id, payload);
       if (!technician) {
         return res.status(404).json({ error: "Technician not found" });
@@ -4758,6 +4958,531 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         error: "Failed to get PM overview",
         details: error?.message || String(error),
+      });
+    }
+  });
+
+  // Get PM Overview grouped by Client - shows pending PM counts per client
+  app.get("/api/pm/clients-summary", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+    try {
+      console.log('[API] PM Clients Summary requested');
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      // Get containers with their customers and PM status from service_history
+      const clientPmResult = await db.execute(sql`
+        WITH pm_data AS (
+          SELECT 
+            UPPER(TRIM(container_number)) as container_id,
+            MAX(complaint_attended_date) as last_pm_date
+          FROM service_history
+          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+            AND container_number IS NOT NULL
+            AND container_number != ''
+          GROUP BY UPPER(TRIM(container_number))
+        ),
+        container_pm AS (
+          SELECT 
+            c.id as container_id,
+            c.container_id as container_code,
+            c.depot,
+            c.assigned_client_id,
+            cust.id as customer_id,
+            cust.company_name as customer_name,
+            pm.last_pm_date,
+            CASE 
+              WHEN pm.last_pm_date IS NULL THEN 999
+              ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+            END as days_since_pm,
+            (CASE 
+              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              ELSE 'UP_TO_DATE'
+            END)::text as pm_status
+          FROM containers c
+          LEFT JOIN customers cust ON c.assigned_client_id = cust.id
+          LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+          WHERE c.status = 'active'
+            AND c.assigned_client_id IS NOT NULL
+        )
+        SELECT 
+          customer_id,
+          customer_name,
+          COUNT(*) as total_containers,
+          COUNT(CASE WHEN pm_status = 'NEVER' THEN 1 END) as never_pm,
+          COUNT(CASE WHEN pm_status = 'OVERDUE' THEN 1 END) as overdue,
+          COUNT(CASE WHEN pm_status = 'DUE_SOON' THEN 1 END) as due_soon,
+          COUNT(CASE WHEN pm_status = 'UP_TO_DATE' THEN 1 END) as up_to_date,
+          COUNT(CASE WHEN pm_status IN ('NEVER', 'OVERDUE', 'DUE_SOON') THEN 1 END) as pending_pm
+        FROM container_pm
+        WHERE customer_id IS NOT NULL
+        GROUP BY customer_id, customer_name
+        ORDER BY pending_pm DESC, customer_name
+      `);
+
+      const clients = (clientPmResult.rows as any[]).map(row => ({
+        customerId: row.customer_id,
+        customerName: row.customer_name || 'Unknown Client',
+        totalContainers: Number(row.total_containers) || 0,
+        neverPm: Number(row.never_pm) || 0,
+        overdue: Number(row.overdue) || 0,
+        dueSoon: Number(row.due_soon) || 0,
+        upToDate: Number(row.up_to_date) || 0,
+        pendingPm: Number(row.pending_pm) || 0,
+      }));
+
+      console.log('[API] PM Clients Summary found', clients.length, 'clients');
+
+      return res.json({
+        success: true,
+        clients,
+        summary: {
+          totalClients: clients.length,
+          clientsWithPendingPm: clients.filter(c => c.pendingPm > 0).length,
+          totalPendingPm: clients.reduce((sum, c) => sum + c.pendingPm, 0),
+        }
+      });
+    } catch (error: any) {
+      console.error('[API] PM Clients Summary error:', error);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to get PM clients summary",
+        details: error?.message || String(error),
+      });
+    }
+  });
+
+  // Get containers needing PM for a specific client
+  app.get("/api/pm/client/:customerId", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+    try {
+      const { customerId } = req.params;
+      console.log('[API] PM Client containers requested for:', customerId);
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      const result = await db.execute(sql`
+        WITH pm_data AS (
+          SELECT 
+            UPPER(TRIM(container_number)) as container_id,
+            MAX(complaint_attended_date) as last_pm_date,
+            COUNT(*)::int as pm_count
+          FROM service_history
+          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+            AND container_number IS NOT NULL
+            AND container_number != ''
+          GROUP BY UPPER(TRIM(container_number))
+        )
+        SELECT 
+          c.id,
+          c.container_id,
+          c.depot,
+          c.grade,
+          cust.company_name as customer_name,
+          pm.last_pm_date,
+          COALESCE(pm.pm_count, 0) as pm_count,
+          CASE 
+            WHEN pm.last_pm_date IS NULL THEN NULL
+            ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+          END as days_since_pm,
+          (CASE 
+            WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+            ELSE 'UP_TO_DATE'
+          END)::text as pm_status_text
+        FROM containers c
+        LEFT JOIN customers cust ON c.assigned_client_id = cust.id
+        LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+        WHERE c.status = 'active'
+          AND c.assigned_client_id = ${customerId}
+        ORDER BY 
+          CASE 
+            WHEN pm.last_pm_date IS NULL THEN 1
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 2
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 3
+            ELSE 4
+          END,
+          CASE WHEN pm.last_pm_date IS NULL THEN NULL ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) END DESC NULLS FIRST
+      `);
+
+      const containers = (result.rows as any[]).map(row => ({
+        id: row.id,
+        containerId: row.container_id,
+        depot: row.depot,
+        grade: row.grade,
+        customerName: row.customer_name,
+        lastPmDate: row.last_pm_date,
+        pmCount: row.pm_count,
+        daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
+        pmStatus: row.pm_status_text,
+      }));
+
+      // Get customer info
+      const customerResult = await db.execute(sql`
+        SELECT id, company_name, contact_person, phone, email 
+        FROM customers WHERE id = ${customerId}
+      `);
+      const customer = (customerResult.rows as any[])[0] || null;
+
+      const pendingContainers = containers.filter(c => 
+        c.pmStatus === 'NEVER' || c.pmStatus === 'OVERDUE' || c.pmStatus === 'DUE_SOON'
+      );
+
+      return res.json({
+        success: true,
+        customer: customer ? {
+          id: customer.id,
+          companyName: customer.company_name,
+          contactPerson: customer.contact_person,
+          phone: customer.phone,
+          email: customer.email,
+        } : null,
+        containers,
+        summary: {
+          total: containers.length,
+          pendingPm: pendingContainers.length,
+          never: containers.filter(c => c.pmStatus === 'NEVER').length,
+          overdue: containers.filter(c => c.pmStatus === 'OVERDUE').length,
+          dueSoon: containers.filter(c => c.pmStatus === 'DUE_SOON').length,
+          upToDate: containers.filter(c => c.pmStatus === 'UP_TO_DATE').length,
+        }
+      });
+    } catch (error: any) {
+      console.error('[API] PM Client containers error:', error);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to get PM client containers",
+        details: error?.message || String(error),
+      });
+    }
+  });
+
+  // Assign all pending PMs for a client to a technician
+  app.post("/api/pm/assign-client-bulk", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { customerId, technicianId, technicianType, scheduledDate, scheduledTimeWindow, containerIds } = req.body;
+      
+      if (!customerId || !technicianId) {
+        return res.status(400).json({ error: "customerId and technicianId are required" });
+      }
+
+      const isThirdParty = technicianType === 'thirdparty';
+      console.log('[API] Bulk PM assignment for client:', customerId, 'to', isThirdParty ? 'third-party' : 'internal', 'technician:', technicianId);
+      if (containerIds?.length) {
+        console.log('[API] Assigning specific containers:', containerIds.length);
+      }
+
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      // Get technician info based on type
+      let technician: any = null;
+      if (isThirdParty) {
+        // Get third-party technician from JSON file
+        const thirdPartyList = readThirdPartyList();
+        technician = thirdPartyList.find((t: any) => t.id === technicianId || t._id === technicianId);
+        if (!technician) {
+          return res.status(404).json({ error: "Third-party technician not found" });
+        }
+        technician.name = technician.name || technician.contactName;
+      } else {
+        technician = await storage.getTechnician(technicianId);
+        if (!technician) {
+          return res.status(404).json({ error: "Technician not found" });
+        }
+      }
+
+      // Get customer info
+      const customerResult = await db.execute(sql`
+        SELECT id, company_name FROM customers WHERE id = ${customerId}
+      `);
+      const customer = (customerResult.rows as any[])[0];
+      if (!customer) {
+        return res.status(404).json({ error: "Customer not found" });
+      }
+
+      let pendingContainers: any[];
+
+      // If specific containerIds are provided, use those
+      if (containerIds && Array.isArray(containerIds) && containerIds.length > 0) {
+        // Get the specified containers - use IN clause with joined IDs
+        const containerIdsList = containerIds.map((id: string) => `'${id.replace(/'/g, "''")}'`).join(',');
+        const containerResult = await db.execute(sql.raw(`
+          WITH pm_data AS (
+            SELECT 
+              UPPER(TRIM(container_number)) as container_id,
+              MAX(complaint_attended_date) as last_pm_date
+            FROM service_history
+            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+              AND container_number IS NOT NULL
+              AND container_number != ''
+            GROUP BY UPPER(TRIM(container_number))
+          )
+          SELECT 
+            c.id,
+            c.container_id as container_code,
+            c.depot,
+            CASE 
+              WHEN pm.last_pm_date IS NULL THEN 999
+              ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+            END as days_since_pm,
+            (CASE 
+              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              ELSE 'UP_TO_DATE'
+            END)::text as pm_status
+          FROM containers c
+          LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+          WHERE c.id IN (${containerIdsList})
+          ORDER BY days_since_pm DESC
+        `));
+        pendingContainers = containerResult.rows as any[];
+      } else {
+        // Get all containers needing PM for this client
+        const containerResult = await db.execute(sql`
+          WITH pm_data AS (
+            SELECT 
+              UPPER(TRIM(container_number)) as container_id,
+              MAX(complaint_attended_date) as last_pm_date
+            FROM service_history
+            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+              AND container_number IS NOT NULL
+              AND container_number != ''
+            GROUP BY UPPER(TRIM(container_number))
+          )
+          SELECT 
+            c.id,
+            c.container_id as container_code,
+            c.depot,
+            CASE 
+              WHEN pm.last_pm_date IS NULL THEN 999
+              ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+            END as days_since_pm,
+            (CASE 
+              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              ELSE 'UP_TO_DATE'
+            END)::text as pm_status
+          FROM containers c
+          LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+          WHERE c.status = 'active'
+            AND c.assigned_client_id = ${customerId}
+            AND (
+              pm.last_pm_date IS NULL 
+              OR EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75
+            )
+          ORDER BY days_since_pm DESC
+        `);
+        pendingContainers = containerResult.rows as any[];
+      }
+      console.log('[API] Found', pendingContainers.length, 'containers needing PM');
+      if (pendingContainers.length === 0) {
+        return res.json({ 
+          success: true, 
+          message: "No containers needing PM for this client",
+          assignedCount: 0,
+          serviceRequests: [] 
+        });
+      }
+      console.log('[API] First container:', JSON.stringify(pendingContainers[0], null, 2));
+
+      // Get admin user for createdBy
+      const allUsers = await storage.getAllUsers();
+      const adminUser = allUsers.find((u: any) => ['admin', 'super_admin'].includes(u.role?.toLowerCase()));
+      const createdBy = req.user?.id || adminUser?.id || allUsers[0]?.id;
+      
+      if (!createdBy) {
+        console.error('[API] No valid createdBy user found');
+        return res.status(400).json({ error: "No valid user found for creating service requests" });
+      }
+      console.log('[API] Using createdBy:', createdBy);
+
+      const schedDate = scheduledDate ? new Date(scheduledDate) : new Date();
+      schedDate.setHours(9, 0, 0, 0); // Default to 9 AM
+      const timeWindow = scheduledTimeWindow || '09:00-17:00';
+
+      const createdServiceRequests: any[] = [];
+
+      for (const container of pendingContainers) {
+        // Check if there's already a pending PM service request for this container
+        const existingRequests = await storage.getAllServiceRequests();
+        const hasPendingPM = existingRequests.some((req: any) => {
+          return (
+            req.containerId === container.id &&
+            req.issueDescription?.toLowerCase().includes('preventive maintenance') &&
+            ['pending', 'approved', 'scheduled'].includes(req.status?.toLowerCase()) &&
+            !req.actualEndTime
+          );
+        });
+
+        if (hasPendingPM) {
+          // Update existing PM request to assign to technician
+          const existingPM = existingRequests.find((req: any) => 
+            req.containerId === container.id &&
+            req.issueDescription?.toLowerCase().includes('preventive maintenance') &&
+            ['pending', 'approved', 'scheduled'].includes(req.status?.toLowerCase())
+          );
+          if (existingPM) {
+            console.log('[API] Updating existing PM request:', existingPM.id, 'isThirdParty:', isThirdParty);
+            if (isThirdParty) {
+              // For third-party, update status and store in excelData
+              const existingExcelData = typeof existingPM.excelData === 'string' 
+                ? JSON.parse(existingPM.excelData || '{}') 
+                : (existingPM.excelData || {});
+              await storage.updateServiceRequest(existingPM.id, {
+                assignedTechnicianId: null, // Clear internal assignment
+                status: 'scheduled',
+                scheduledDate: schedDate,
+                scheduledTimeWindow: timeWindow,
+                excelData: {
+                  ...existingExcelData,
+                  thirdPartyTechnicianId: technicianId,
+                  thirdPartyTechnicianName: technician.name,
+                  technicianType: 'thirdparty',
+                },
+              } as any);
+              // Track in third-party assignments
+              const tpList = readThirdPartyList();
+              const tpIdx = tpList.findIndex((t: any) => t.id === technicianId || t._id === technicianId);
+              if (tpIdx >= 0) {
+                const entry = tpList[tpIdx];
+                const current = Array.isArray(entry.assignedServices) ? entry.assignedServices : [];
+                if (!current.includes(existingPM.id)) current.push(existingPM.id);
+                tpList[tpIdx] = { ...entry, assignedServices: current };
+                writeThirdPartyList(tpList);
+              }
+            } else {
+              await storage.updateServiceRequest(existingPM.id, {
+                assignedTechnicianId: technicianId,
+                status: 'scheduled',
+                scheduledDate: schedDate,
+                scheduledTimeWindow: timeWindow,
+              });
+            }
+            createdServiceRequests.push({
+              id: existingPM.id,
+              requestNumber: existingPM.requestNumber,
+              containerId: container.id,
+              containerCode: container.container_code,
+              status: 'scheduled',
+              isNew: false,
+              isThirdParty,
+            });
+          }
+          continue;
+        }
+
+        // Create new PM service request
+        const timestamp = Date.now() + createdServiceRequests.length;
+        const requestNumber = `SR-PM-${timestamp}`;
+        const daysSincePm = container.days_since_pm ? Math.round(Number(container.days_since_pm)) : 'Never';
+
+        const serviceRequestData: any = {
+          requestNumber: requestNumber,
+          containerId: container.id,
+          customerId: customerId,
+          priority: container.pm_status === 'OVERDUE' || container.pm_status === 'NEVER' ? 'high' : 'normal',
+          status: 'scheduled',
+          issueDescription: `Preventive Maintenance - Container ${container.container_code} (${daysSincePm} days since last PM)`,
+          requestedAt: new Date(),
+          createdBy: createdBy,
+          workType: 'SERVICE-AT SITE',
+          jobType: 'FOC',
+          scheduledDate: schedDate,
+          scheduledTimeWindow: timeWindow,
+        };
+
+        if (isThirdParty) {
+          // For third-party, don't set assignedTechnicianId, store in excelData instead
+          serviceRequestData.excelData = {
+            thirdPartyTechnicianId: technicianId,
+            thirdPartyTechnicianName: technician.name,
+            technicianType: 'thirdparty',
+          };
+        } else {
+          serviceRequestData.assignedTechnicianId = technicianId;
+        }
+
+        console.log('[API] Creating PM service request:', { 
+          requestNumber, 
+          containerId: container.id, 
+          customerId,
+          isThirdParty 
+        });
+        
+        let serviceRequest: any;
+        try {
+          serviceRequest = await storage.createServiceRequest(serviceRequestData);
+        } catch (createError: any) {
+          console.error('[API] Failed to create service request:', createError?.message);
+          throw createError;
+        }
+
+        // For third-party, also update the assignment list
+        if (isThirdParty) {
+          const tpList = readThirdPartyList();
+          const tpIdx = tpList.findIndex((t: any) => t.id === technicianId || t._id === technicianId);
+          if (tpIdx >= 0) {
+            const entry = tpList[tpIdx];
+            const current = Array.isArray(entry.assignedServices) ? entry.assignedServices : [];
+            if (!current.includes(serviceRequest.id)) current.push(serviceRequest.id);
+            tpList[tpIdx] = { ...entry, assignedServices: current };
+            writeThirdPartyList(tpList);
+          }
+        }
+
+        createdServiceRequests.push({
+          id: serviceRequest.id,
+          requestNumber: requestNumber,
+          containerId: container.id,
+          containerCode: container.container_code,
+          status: 'scheduled',
+          isNew: true,
+          isThirdParty,
+        });
+      }
+
+      console.log('[API] Bulk PM assignment created', createdServiceRequests.length, 'service requests');
+
+      // Broadcast update event
+      if (typeof (global as any).broadcast === 'function') {
+        (global as any).broadcast({
+          type: 'service_request_assigned',
+          timestamp: new Date().toISOString(),
+          data: {
+            technicianId,
+            customerId,
+            count: createdServiceRequests.length,
+          },
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: `Assigned ${createdServiceRequests.length} PM service requests to ${isThirdParty ? 'third-party ' : ''}technician`,
+        assignedCount: createdServiceRequests.length,
+        serviceRequests: createdServiceRequests,
+        customer: {
+          id: customer.id,
+          companyName: customer.company_name,
+        },
+        technician: {
+          id: technician.id,
+          name: technician.name || (technician as any).employeeCode,
+          type: isThirdParty ? 'thirdparty' : 'internal',
+        },
+      });
+    } catch (error: any) {
+      console.error('[API] Bulk PM assignment error:', error);
+      console.error('[API] Error stack:', error?.stack);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to assign PMs",
+        details: error?.message || String(error),
+        stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined,
       });
     }
   });
@@ -5690,10 +6415,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/scheduling/confirm-trip - Confirm trip and assign PM tasks
   app.post("/api/scheduling/confirm-trip", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
     try {
-      const { techId, plan } = req.body;
+      const { techId, plan, selectedTaskIds } = req.body;
+
+      console.log('[API] confirm-trip request:', { 
+        techId, 
+        planCity: plan?.city,
+        dailyPlanDays: plan?.dailyPlan?.length,
+        selectedTaskIds: selectedTaskIds?.length,
+        pmCount: plan?.pmCount,
+      });
 
       if (!techId || !plan) {
         return res.status(400).json({ error: "techId and plan are required" });
+      }
+      
+      // Check if plan has any tasks
+      const totalTasks = plan.dailyPlan?.reduce((acc: number, day: any) => acc + (day.tasks?.length || 0), 0) || 0;
+      if (totalTasks === 0) {
+        return res.status(400).json({ error: "No tasks selected. Please select at least one PM task." });
       }
 
       const technician = await storage.getTechnician(techId);
@@ -5711,8 +6450,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tasks: any[] = [];
       const pmServiceRequestIds: string[] = [];
       
+      console.log('[API] Processing daily plan with', plan.dailyPlan?.length, 'days');
+      
       for (const day of plan.dailyPlan || []) {
+        console.log('[API] Processing day:', day.date, 'with', day.tasks?.length, 'tasks');
         for (const task of day.tasks || []) {
+          if (!task.containerId) {
+            console.warn('[API] Task missing containerId:', task);
+            continue; // Skip tasks without containerId
+          }
           tasks.push({
             containerId: task.containerId,
             taskType: task.type === 'PM' ? 'pm' : 'inspection',
@@ -5731,6 +6477,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
+      
+      console.log('[API] Created', tasks.length, 'tasks,', pmServiceRequestIds.length, 'PM service request IDs');
 
       // Use costs from plan if provided, otherwise auto-calculate
       let costs = plan.costs;

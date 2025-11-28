@@ -25,10 +25,12 @@ class WebSocketClient {
 
     this.isIntentionallyClosed = false;
 
-    // Determine WebSocket URL
+    // Determine WebSocket URL - use same origin for proxy support
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws`;
+    // Use environment variable if available, otherwise construct from current location
+    const wsUrl = import.meta.env.VITE_WS_URL ||
+                  import.meta.env.VITE_WEBSOCKET_URL ||
+                  `${protocol}//${window.location.host}/ws`;
 
     console.log('Connecting to WebSocket:', wsUrl);
 
