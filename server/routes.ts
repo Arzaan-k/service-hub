@@ -48,7 +48,7 @@ import { db } from './db';
 import { sql, eq, desc } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
-import { serviceReportPdfs } from '@shared/schema';
+import { serviceReportPdfs, serviceRequests } from '@shared/schema';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -81,6 +81,43 @@ const upload = multer({
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   await storage.ensureServiceRequestAssignmentColumns();
+
+  // Third-party technicians helper functions (defined early for use throughout routes)
+  const thirdPartyDir = path.join(process.cwd(), "server", "data");
+  const thirdPartyFile = path.join(thirdPartyDir, "thirdparty-technicians.json");
+  const thirdPartyAssignFile = path.join(thirdPartyDir, "thirdparty-assignments.json");
+  
+  function readThirdPartyListHelper(): any[] {
+    try {
+      if (!fs.existsSync(thirdPartyFile)) return [];
+      const raw = fs.readFileSync(thirdPartyFile, "utf8");
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  
+  function writeThirdPartyListHelper(list: any[]) {
+    if (!fs.existsSync(thirdPartyDir)) fs.mkdirSync(thirdPartyDir, { recursive: true });
+    fs.writeFileSync(thirdPartyFile, JSON.stringify(list, null, 2), "utf8");
+  }
+  
+  function readThirdPartyAssignmentsHelper(): any[] {
+    try {
+      if (!fs.existsSync(thirdPartyAssignFile)) return [];
+      const raw = fs.readFileSync(thirdPartyAssignFile, "utf8");
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  
+  function writeThirdPartyAssignmentsHelper(list: any[]) {
+    if (!fs.existsSync(thirdPartyDir)) fs.mkdirSync(thirdPartyDir, { recursive: true });
+    fs.writeFileSync(thirdPartyAssignFile, JSON.stringify(list, null, 2), "utf8");
+  }
 
   // Serve uploads directory statically
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
@@ -1439,8 +1476,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // If not found as internal, check if it's a third-party technician
         if (!technician) {
-          const { readThirdPartyList } = await import('./services/third-party-technicians');
-          const tpList = readThirdPartyList();
+          const tpList = readThirdPartyListHelper();
           thirdPartyTechnician = tpList.find((t: any) => 
             (t.id === request.assignedTechnicianId || t._id === request.assignedTechnicianId)
           );
@@ -1450,8 +1486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Legacy: Check excelData for third-party assignment and sync to DB if needed
       const thirdPartyTechId = (request.excelData as any)?.thirdPartyTechnicianId;
       if (thirdPartyTechId && !request.assignedTechnicianId) {
-        const { readThirdPartyList } = await import('./services/third-party-technicians');
-        const tpList = readThirdPartyList();
+        const tpList = readThirdPartyListHelper();
         const tpTech = tpList.find((t: any) => 
           (t.id === thirdPartyTechId || t._id === thirdPartyTechId)
         );
@@ -2863,40 +2898,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Third-party technicians - lightweight file-backed store to avoid JSON/HTML mismatch
-  const thirdPartyDir = path.join(process.cwd(), "server", "data");
-  const thirdPartyFile = path.join(thirdPartyDir, "thirdparty-technicians.json");
-  function readThirdPartyList(): any[] {
-    try {
-      if (!fs.existsSync(thirdPartyFile)) return [];
-      const raw = fs.readFileSync(thirdPartyFile, "utf8");
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  function writeThirdPartyList(list: any[]) {
-    if (!fs.existsSync(thirdPartyDir)) fs.mkdirSync(thirdPartyDir, { recursive: true });
-    fs.writeFileSync(thirdPartyFile, JSON.stringify(list, null, 2), "utf8");
-  }
-
-  // Third-party assignments file-backed store
-  const thirdPartyAssignFile = path.join(thirdPartyDir, "thirdparty-assignments.json");
-  function readThirdPartyAssignments(): any[] {
-    try {
-      if (!fs.existsSync(thirdPartyAssignFile)) return [];
-      const raw = fs.readFileSync(thirdPartyAssignFile, "utf8");
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  function writeThirdPartyAssignments(list: any[]) {
-    if (!fs.existsSync(thirdPartyDir)) fs.mkdirSync(thirdPartyDir, { recursive: true });
-    fs.writeFileSync(thirdPartyAssignFile, JSON.stringify(list, null, 2), "utf8");
-  }
+  // Third-party technicians - use helper functions defined at top of registerRoutes
+  // Aliases for backward compatibility with existing code
+  const readThirdPartyList = readThirdPartyListHelper;
+  const writeThirdPartyList = writeThirdPartyListHelper;
+  const readThirdPartyAssignments = readThirdPartyAssignmentsHelper;
+  const writeThirdPartyAssignments = writeThirdPartyAssignmentsHelper;
 
   // GET: /api/thirdparty-technicians
   app.get("/api/thirdparty-technicians", authenticateUser, async (_req, res) => {
@@ -4574,7 +4581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get technicians to map IDs to names for backward compatibility
       const allTechnicians = await storage.getAllTechnicians();
       const byTechnician = result.distributionSummary.map((s: any) => {
-        const tech = allTechnicians.find((t: any) => t.id === s.technicianId);
+        const tech = allTechnicians.find((t: any) => t.id === s.technicianId) as any;
         return {
           technicianId: s.technicianId,
           name: tech?.name || tech?.employeeCode || s.technicianId,
@@ -5828,8 +5835,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       status: 'scheduled',
                       scheduledDate: scheduledDate,
                       scheduledTimeWindow: '09:00-17:00',
-                      assignedBy: req.user?.id || 'AUTO',
-                      assignedAt: new Date(),
                       // Store booking status and metadata in excelData field
                       excelData: sql`COALESCE(${serviceRequests.excelData}, '{}'::jsonb) || ${JSON.stringify(bookingMetadata)}::jsonb`,
                     })
@@ -5871,8 +5876,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   status: newStatus,
                   scheduledDate: scheduledDate,
                   scheduledTimeWindow: '09:00-17:00',
-                  assignedBy: req.user?.id || 'AUTO',
-                  assignedAt: new Date(),
                   // Store booking status and metadata in excelData field
                   excelData: sql`COALESCE(${serviceRequests.excelData}, '{}'::jsonb) || ${JSON.stringify(bookingMetadata)}::jsonb`,
                 })
@@ -6333,7 +6336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startDate: trip.startDate,
         endDate: trip.endDate,
         purpose: trip.purpose,
-        notes: trip.notes,
+        notes: trip.notes ?? undefined,
         costs,
         tasks: enrichedTasks,
       });
@@ -6364,7 +6367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (destinationCity) filters.destinationCity = destinationCity as string;
       if (tripStatus) filters.tripStatus = tripStatus as string;
 
-      let technicianProfile;
+      let technicianProfile: any;
       const userRole = (req.user?.role || "").toLowerCase();
       if (isTechnicianRole(userRole)) {
         technicianProfile = await storage.getTechnicianByUserId(req.user!.id);
@@ -6660,8 +6663,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 status: newStatus,
                 scheduledDate: scheduledDate,
                 scheduledTimeWindow: '09:00-17:00',
-                assignedBy: req.user?.id || 'AUTO',
-                assignedAt: new Date(),
                 // Store booking status and metadata in excelData field
                 excelData: sql`COALESCE(${serviceRequests.excelData}, '{}'::jsonb) || ${JSON.stringify(bookingMetadata)}::jsonb`,
               })
@@ -7311,7 +7312,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check for duplicate alerts - prevent spamming
       const existingAlerts = await storage.getAlertsByContainer(containerId);
-      const recentAlert = existingAlerts.find(a =>
+      const recentAlert = existingAlerts.find((a: any) =>
         a.alertType === alertType &&
         a.status === 'open' &&
         // Check if alert was created in the last 2 minutes
