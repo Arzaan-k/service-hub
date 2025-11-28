@@ -29,7 +29,21 @@ import {
   Plane,
   Eye,
   AlertTriangle,
+  Building2,
+  Users,
+  ArrowLeft,
+  Square,
+  CheckSquare,
+  Navigation,
+  TrendingUp,
+  Truck,
+  Target,
+  Zap,
+  ChevronRight,
+  Phone,
+  Wrench,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import TripDetailSheet from "@/components/scheduling/trip-detail-sheet";
 import { AutoPlanForm, AutoPlanFormPayload } from "@/components/travel/auto-plan-form";
 import { AutoPlanLoader } from "@/components/travel/auto-plan-loader";
@@ -132,6 +146,30 @@ export default function Scheduling() {
       return await res.json();
     },
   });
+
+  // Third-party technicians for PM assignment
+  const { data: thirdPartyTechnicians } = useQuery({
+    queryKey: ["/api/thirdparty-technicians"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/thirdparty-technicians");
+      return await res.json();
+    },
+  });
+
+  // Technician location overview with PM recommendations
+  const { data: locationOverview, isLoading: locationLoading, refetch: refetchLocationOverview } = useQuery({
+    queryKey: ["/api/technicians/location-overview"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/technicians/location-overview");
+      return await res.json();
+    },
+    enabled: canSchedule && activeTab === "tech-locations",
+  });
+
+  // State for smart assign feature
+  const [selectedTechForSmartPlan, setSelectedTechForSmartPlan] = useState<any | null>(null);
+  const [selectedCityForPlan, setSelectedCityForPlan] = useState<string>("");
+  const [showSmartPlanDialog, setShowSmartPlanDialog] = useState(false);
 
   const { data: pendingRequests } = useQuery({
     queryKey: ["/api/service-requests/pending"],
@@ -256,6 +294,55 @@ export default function Scheduling() {
   const [planPurpose, setPlanPurpose] = useState("pm");
   const [planNotes, setPlanNotes] = useState("");
   const [pmFilter, setPmFilter] = useState<"all" | "needs_pm" | "overdue" | "never" | "due_soon" | "up_to_date">("overdue");
+  const [selectedClient, setSelectedClient] = useState<{
+    customerId: string;
+    customerName: string;
+    pendingPm: number;
+  } | null>(null);
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [assignTechnicianId, setAssignTechnicianId] = useState<string>("");
+  const [assignDate, setAssignDate] = useState(new Date().toISOString().split("T")[0]);
+  const [selectedContainerIds, setSelectedContainerIds] = useState<Set<string>>(new Set());
+  const [selectedPmTaskIds, setSelectedPmTaskIds] = useState<Set<string>>(new Set());
+
+  // Initialize selectedPmTaskIds when pmPlanData changes
+  useEffect(() => {
+    if (pmPlanData?.dailyPlan) {
+      const allTaskIds = new Set<string>();
+      pmPlanData.dailyPlan.forEach(day => {
+        day.tasks.forEach(task => {
+          if (task.id) allTaskIds.add(task.id);
+        });
+      });
+      setSelectedPmTaskIds(allTaskIds);
+    } else {
+      setSelectedPmTaskIds(new Set());
+    }
+  }, [pmPlanData]);
+
+  // PM Clients Summary - Group by client (defined after selectedClient state)
+  const { data: pmClientsSummary, isLoading: pmClientsLoading, refetch: refetchPMClients } = useQuery({
+    queryKey: ["/api/pm/clients-summary"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/pm/clients-summary");
+      if (!res.ok) throw new Error("Failed to fetch PM clients summary");
+      return await res.json();
+    },
+    enabled: canSchedule && activeTab === "pm-overview",
+    staleTime: 30000,
+  });
+
+  // PM containers for selected client (defined after selectedClient state)
+  const { data: clientPmContainers, isLoading: clientPmLoading, refetch: refetchClientPm } = useQuery({
+    queryKey: ["/api/pm/client", selectedClient?.customerId],
+    queryFn: async () => {
+      if (!selectedClient?.customerId) return null;
+      const res = await apiRequest("GET", `/api/pm/client/${selectedClient.customerId}`);
+      if (!res.ok) throw new Error("Failed to fetch client PM containers");
+      return await res.json();
+    },
+    enabled: canSchedule && activeTab === "pm-overview" && !!selectedClient?.customerId,
+  });
 
   const autoPlanMutation = useMutation({
     mutationFn: async (payload: AutoPlanFormPayload) => {
@@ -304,9 +391,22 @@ export default function Scheduling() {
       if (!pmPlanData || !pmPlanData.techId) {
         throw new Error("Plan not ready");
       }
+      // Filter daily plan to only include selected tasks
+      const filteredDailyPlan = pmPlanData.dailyPlan.map(day => ({
+        ...day,
+        tasks: day.tasks.filter(task => selectedPmTaskIds.has(task.id))
+      })).filter(day => day.tasks.length > 0);
+      
+      const filteredPlan = {
+        ...pmPlanData,
+        dailyPlan: filteredDailyPlan,
+        pmCount: selectedPmTaskIds.size,
+      };
+      
       const res = await apiRequest("POST", "/api/scheduling/confirm-trip", {
         techId: pmPlanData.techId,
-        plan: pmPlanData,
+        plan: filteredPlan,
+        selectedTaskIds: Array.from(selectedPmTaskIds),
       });
       if (!res.ok) {
         const errorText = await res.text();
@@ -567,6 +667,55 @@ export default function Scheduling() {
     },
   });
 
+  // Bulk assign PMs for a client to a technician
+  const bulkAssignPMMutation = useMutation({
+    mutationFn: async (payload: { customerId: string; technicianId: string; scheduledDate: string; containerIds?: string[] }) => {
+      // Check if it's a third-party technician
+      const isThirdParty = payload.technicianId.startsWith('thirdparty:');
+      const actualTechId = isThirdParty 
+        ? payload.technicianId.replace('thirdparty:', '') 
+        : payload.technicianId;
+      
+      const res = await apiRequest("POST", "/api/pm/assign-client-bulk", {
+        customerId: payload.customerId,
+        technicianId: actualTechId,
+        technicianType: isThirdParty ? 'thirdparty' : 'internal',
+        scheduledDate: payload.scheduledDate,
+        scheduledTimeWindow: "09:00-17:00",
+        containerIds: payload.containerIds, // Optional: if not provided, assigns all pending containers
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error('[PM Assign] Error response:', errorData);
+        throw new Error(errorData.details || errorData.error || "Failed to assign PMs");
+      }
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "PMs Assigned Successfully",
+        description: `Assigned ${data.assignedCount} PM service requests to ${data.technician?.name || 'technician'}`,
+      });
+      setShowAssignDialog(false);
+      setSelectedClient(null);
+      setAssignTechnicianId("");
+      setSelectedContainerIds(new Set());
+      // Refresh all relevant queries
+      queryClient.invalidateQueries({ queryKey: ["/api/pm/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pm/clients-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/assigned-services-summary"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Assignment Failed",
+        description: error?.message || "Failed to assign PMs to technician",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Listen for PM alerts via WebSocket
   useEffect(() => {
     if (!canSchedule) return; // Only admins/coordinators see PM alerts
@@ -690,9 +839,13 @@ export default function Scheduling() {
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex items-center justify-between mb-6">
-              <TabsList className="grid w-[500px] grid-cols-3">
+              <TabsList className="grid w-[700px] grid-cols-4">
                 <TabsTrigger value="daily">Daily Schedule</TabsTrigger>
                 <TabsTrigger value="pm-overview">PM Overview</TabsTrigger>
+                <TabsTrigger value="tech-locations" className="gap-1">
+                  <Navigation className="h-4 w-4" />
+                  Smart Assign
+                </TabsTrigger>
                 <TabsTrigger value="travel">Travel & Auto PM</TabsTrigger>
               </TabsList>
             </div>
@@ -933,24 +1086,342 @@ export default function Scheduling() {
             <TabsContent value="pm-overview" className="space-y-6 mt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-foreground">PM Overview</h2>
-                  <p className="text-sm text-muted-foreground">
-                    View all containers and their preventive maintenance status based on service history
-                  </p>
+                  {selectedClient ? (
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedClient(null);
+                          setSelectedContainerIds(new Set());
+                        }}
+                        className="gap-1 text-muted-foreground hover:text-foreground"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                        Back to Clients
+                      </Button>
+                      <div>
+                        <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+                          <Building2 className="h-6 w-6" />
+                          {selectedClient.customerName}
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedClient.pendingPm} containers need preventive maintenance
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <h2 className="text-2xl font-bold text-foreground">PM Overview</h2>
+                      <p className="text-sm text-muted-foreground">
+                        View all containers and their preventive maintenance status based on service history
+                      </p>
+                    </>
+                  )}
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => refetchPM()}
-                  disabled={pmLoading}
-                  className="gap-2"
-                >
-                  <RefreshCw className={`h-4 w-4 ${pmLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                  {selectedClient && clientPmContainers?.success && (
+                    <Button
+                      onClick={() => setShowAssignDialog(true)}
+                      disabled={clientPmContainers.summary.pendingPm === 0}
+                      className="gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700"
+                    >
+                      <Users className="h-4 w-4" />
+                      {selectedContainerIds.size > 0 
+                        ? `Assign ${selectedContainerIds.size} Selected` 
+                        : `Assign All ${clientPmContainers.summary.pendingPm} Pending`}
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      refetchPM();
+                      refetchPMClients();
+                      if (selectedClient) refetchClientPm();
+                    }}
+                    disabled={pmLoading || pmClientsLoading}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${pmLoading || pmClientsLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
               </div>
 
-              {/* PM Summary Cards - Clickable Filters */}
-              {pmOverview?.success && pmOverview?.summary && (
+              {/* Client Cards Section - Shows when no client is selected */}
+              {!selectedClient && pmClientsSummary?.success && pmClientsSummary?.clients?.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Building2 className="h-5 w-5" />
+                      Clients with Pending PMs
+                    </h3>
+                    <Badge variant="outline" className="text-sm">
+                      {pmClientsSummary.summary.clientsWithPendingPm} clients • {pmClientsSummary.summary.totalPendingPm} total PMs
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {pmClientsSummary.clients
+                      .filter((client: any) => client.pendingPm > 0)
+                      .map((client: any) => (
+                        <Card
+                          key={client.customerId}
+                          className="cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-l-4 border-l-orange-500"
+                          onClick={() => {
+                            setSelectedContainerIds(new Set()); // Clear selections when changing clients
+                            setSelectedClient({
+                              customerId: client.customerId,
+                              customerName: client.customerName,
+                              pendingPm: client.pendingPm,
+                            });
+                          }}
+                        >
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-base flex items-center gap-2">
+                              <Building2 className="h-4 w-4 text-muted-foreground" />
+                              {client.customerName}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-2xl font-bold text-orange-500">{client.pendingPm}</span>
+                              <span className="text-xs text-muted-foreground">PMs Pending</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              {client.neverPm > 0 && (
+                                <div className="bg-red-500/10 text-red-500 px-2 py-1 rounded text-center">
+                                  {client.neverPm} Never
+                                </div>
+                              )}
+                              {client.overdue > 0 && (
+                                <div className="bg-orange-500/10 text-orange-500 px-2 py-1 rounded text-center">
+                                  {client.overdue} Overdue
+                                </div>
+                              )}
+                              {client.dueSoon > 0 && (
+                                <div className="bg-yellow-500/10 text-yellow-600 px-2 py-1 rounded text-center">
+                                  {client.dueSoon} Due Soon
+                                </div>
+                              )}
+                            </div>
+                            <div className="mt-3 text-xs text-muted-foreground">
+                              {client.totalContainers} total containers • {client.upToDate} up to date
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                  </div>
+                  {pmClientsSummary.clients.filter((c: any) => c.pendingPm === 0).length > 0 && (
+                    <div className="text-sm text-muted-foreground text-center py-2">
+                      {pmClientsSummary.clients.filter((c: any) => c.pendingPm === 0).length} clients have all PMs up to date
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Client-specific container list */}
+              {selectedClient && (
+                <div className="space-y-4">
+                  {clientPmLoading ? (
+                    <Card>
+                      <CardContent className="p-8 text-center">
+                        <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-muted-foreground">Loading containers...</p>
+                      </CardContent>
+                    </Card>
+                  ) : clientPmContainers?.success ? (
+                    <>
+                      {/* Summary for selected client */}
+                      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                        <Card className="border-l-4 border-l-gray-500">
+                          <CardContent className="p-4">
+                            <p className="text-2xl font-bold">{clientPmContainers.summary.total}</p>
+                            <p className="text-xs text-muted-foreground">Total Containers</p>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-red-500 bg-red-500/10">
+                          <CardContent className="p-4">
+                            <p className="text-2xl font-bold text-red-400">{clientPmContainers.summary.never}</p>
+                            <p className="text-xs text-muted-foreground">Never PM'd</p>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-orange-500 bg-orange-500/10">
+                          <CardContent className="p-4">
+                            <p className="text-2xl font-bold text-orange-400">{clientPmContainers.summary.overdue}</p>
+                            <p className="text-xs text-muted-foreground">Overdue (90+ days)</p>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-yellow-500 bg-yellow-500/10">
+                          <CardContent className="p-4">
+                            <p className="text-2xl font-bold text-yellow-400">{clientPmContainers.summary.dueSoon}</p>
+                            <p className="text-xs text-muted-foreground">Due Soon (75-90 days)</p>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-green-500 bg-green-500/10">
+                          <CardContent className="p-4">
+                            <p className="text-2xl font-bold text-green-400">{clientPmContainers.summary.upToDate}</p>
+                            <p className="text-xs text-muted-foreground">Up to Date</p>
+                          </CardContent>
+                        </Card>
+                        <Card className={`border-l-4 border-l-blue-500 ${selectedContainerIds.size > 0 ? 'bg-blue-500/20 ring-2 ring-blue-400' : 'bg-blue-500/10'}`}>
+                          <CardContent className="p-4">
+                            <p className="text-2xl font-bold text-blue-400">{selectedContainerIds.size}</p>
+                            <p className="text-xs text-muted-foreground">Selected for PM</p>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {/* Containers table for selected client */}
+                      <Card>
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="flex items-center gap-2">
+                              <Package className="h-5 w-5" />
+                              Containers for {selectedClient.customerName}
+                              <Badge variant="outline" className="ml-2">
+                                {clientPmContainers.summary.pendingPm} need PM
+                              </Badge>
+                            </CardTitle>
+                            <div className="flex items-center gap-2">
+                              {selectedContainerIds.size > 0 && (
+                                <Badge className="bg-blue-500 text-white">
+                                  {selectedContainerIds.size} selected
+                                </Badge>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const pendingContainers = clientPmContainers.containers.filter(
+                                    (c: any) => c.pmStatus === 'NEVER' || c.pmStatus === 'OVERDUE' || c.pmStatus === 'DUE_SOON'
+                                  );
+                                  if (selectedContainerIds.size === pendingContainers.length) {
+                                    setSelectedContainerIds(new Set());
+                                  } else {
+                                    setSelectedContainerIds(new Set(pendingContainers.map((c: any) => c.id)));
+                                  }
+                                }}
+                              >
+                                {(() => {
+                                  const pendingContainers = clientPmContainers.containers.filter(
+                                    (c: any) => c.pmStatus === 'NEVER' || c.pmStatus === 'OVERDUE' || c.pmStatus === 'DUE_SOON'
+                                  );
+                                  return selectedContainerIds.size === pendingContainers.length ? 'Deselect All' : 'Select All Pending';
+                                })()}
+                              </Button>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-12">Select</TableHead>
+                                  <TableHead>Container ID</TableHead>
+                                  <TableHead>Location</TableHead>
+                                  <TableHead>Last PM Date</TableHead>
+                                  <TableHead>Days Since PM</TableHead>
+                                  <TableHead>PM Count</TableHead>
+                                  <TableHead>Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {clientPmContainers.containers.map((container: any) => {
+                                  const needsPm = container.pmStatus === 'NEVER' || container.pmStatus === 'OVERDUE' || container.pmStatus === 'DUE_SOON';
+                                  const isSelected = selectedContainerIds.has(container.id);
+                                  return (
+                                  <TableRow key={container.id} className={`
+                                    ${container.pmStatus === 'NEVER' ? 'bg-red-500/5' :
+                                    container.pmStatus === 'OVERDUE' ? 'bg-orange-500/5' :
+                                    container.pmStatus === 'DUE_SOON' ? 'bg-yellow-500/5' : ''}
+                                    ${isSelected ? 'ring-2 ring-blue-400 ring-inset bg-blue-500/10' : ''}
+                                  `}>
+                                    <TableCell>
+                                      {needsPm && (
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={(checked) => {
+                                            const newSet = new Set(selectedContainerIds);
+                                            if (checked) {
+                                              newSet.add(container.id);
+                                            } else {
+                                              newSet.delete(container.id);
+                                            }
+                                            setSelectedContainerIds(newSet);
+                                          }}
+                                        />
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="font-mono font-medium">
+                                      {container.containerId}
+                                    </TableCell>
+                                    <TableCell>{container.depot || '-'}</TableCell>
+                                    <TableCell>
+                                      {container.lastPmDate 
+                                        ? new Date(container.lastPmDate).toLocaleDateString('en-IN', {
+                                            day: '2-digit',
+                                            month: 'short',
+                                            year: 'numeric'
+                                          })
+                                        : <span className="text-red-400 font-medium">Never</span>}
+                                    </TableCell>
+                                    <TableCell>
+                                      {container.daysSincePm !== null 
+                                        ? <span className={container.daysSincePm > 90 ? 'text-orange-400 font-medium' : ''}>
+                                            {container.daysSincePm} days
+                                          </span>
+                                        : <span className="text-red-400">-</span>}
+                                    </TableCell>
+                                    <TableCell>{container.pmCount || 0}</TableCell>
+                                    <TableCell>
+                                      <Badge
+                                        className={
+                                          container.pmStatus === 'NEVER' ? 'bg-red-600' :
+                                          container.pmStatus === 'OVERDUE' ? 'bg-orange-600' :
+                                          container.pmStatus === 'DUE_SOON' ? 'bg-yellow-600 text-black' :
+                                          'bg-green-600'
+                                        }
+                                      >
+                                        {container.pmStatus === 'NEVER' ? 'Never PM\'d' :
+                                         container.pmStatus === 'OVERDUE' ? 'Overdue' :
+                                         container.pmStatus === 'DUE_SOON' ? 'Due Soon' :
+                                         'Up to Date'}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </>
+                  ) : (
+                    <Card>
+                      <CardContent className="p-8 text-center">
+                        <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-400" />
+                        <p className="text-lg font-medium text-red-400">Error loading client data</p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          {clientPmContainers?.error || clientPmContainers?.details || 'Unable to fetch containers for this client'}
+                        </p>
+                        <Button
+                          variant="outline"
+                          onClick={() => refetchClientPm()}
+                          className="mt-4"
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Try Again
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+
+              {/* PM Summary Cards - Clickable Filters (only when no client selected) */}
+              {!selectedClient && pmOverview?.success && pmOverview?.summary && (
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   <Card 
                     className={`border-l-4 border-l-gray-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'all' ? 'ring-2 ring-gray-400 bg-gray-500/20' : 'hover:bg-gray-500/10'}`}
@@ -1000,15 +1471,15 @@ export default function Scheduling() {
                 </div>
               )}
 
-              {/* PM Containers Table */}
-              {pmLoading ? (
+              {/* PM Containers Table - Only show when no client is selected */}
+              {!selectedClient && pmLoading ? (
                 <Card>
                   <CardContent className="p-8 text-center">
                     <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
                     <p className="text-muted-foreground">Loading PM data from service history...</p>
                   </CardContent>
                 </Card>
-              ) : pmError ? (
+              ) : !selectedClient && pmError ? (
                 <Card>
                   <CardContent className="p-8 text-center">
                     <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
@@ -1019,7 +1490,7 @@ export default function Scheduling() {
                     <Button onClick={() => refetchPM()} className="mt-4">Retry</Button>
                   </CardContent>
                 </Card>
-              ) : pmOverview?.success && pmOverview?.containers?.length > 0 ? (
+              ) : !selectedClient && pmOverview?.success && pmOverview?.containers?.length > 0 ? (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -1173,7 +1644,7 @@ export default function Scheduling() {
                     })()}
                   </CardContent>
                 </Card>
-              ) : (
+              ) : !selectedClient ? (
                 <Card>
                   <CardContent className="p-8 text-center">
                     <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -1181,6 +1652,274 @@ export default function Scheduling() {
                     <p className="text-sm text-muted-foreground mt-1">
                       PM data is loaded from service history. Click "Refresh" to load the data.
                     </p>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </TabsContent>
+
+            {/* Smart Assign / Tech Locations Tab */}
+            <TabsContent value="tech-locations" className="space-y-6 mt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2">
+                    <Navigation className="h-6 w-6 text-blue-500" />
+                    Smart Assign
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Click on a technician to see PM recommendations for their location
+                  </p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => refetchLocationOverview()}
+                  disabled={locationLoading}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${locationLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+
+              {locationLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : locationOverview?.success ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Left: Technician List */}
+                  <div className="lg:col-span-1 space-y-3">
+                    <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                      Technicians ({locationOverview.technicians?.length || 0})
+                    </h3>
+                    <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
+                      {locationOverview.technicians?.map((tech: any) => (
+                        <Card 
+                          key={tech.id}
+                          className={`cursor-pointer transition-all hover:shadow-md ${
+                            selectedTechForSmartPlan?.id === tech.id 
+                              ? 'ring-2 ring-blue-500 bg-blue-500/5' 
+                              : 'hover:bg-muted/50'
+                          }`}
+                          onClick={() => setSelectedTechForSmartPlan(
+                            selectedTechForSmartPlan?.id === tech.id ? null : tech
+                          )}
+                        >
+                          <CardContent className="p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
+                                {tech.name?.charAt(0) || 'T'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{tech.name}</p>
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <MapPin className="h-3 w-3" />
+                                  <span className="truncate">{tech.baseLocation || 'Unknown'}</span>
+                                </div>
+                              </div>
+                              {tech.nextService && (
+                                <div className="text-right">
+                                  <div className="flex items-center gap-1 text-xs text-green-500">
+                                    <Navigation className="h-3 w-3" />
+                                    <span>{tech.nextService.city}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {tech.assignedServices?.total > 0 && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {tech.assignedServices.total} services
+                                </Badge>
+                                {Object.keys(tech.pmRecommendations || {}).length > 0 && (
+                                  <Badge className="text-xs bg-orange-500/20 text-orange-400">
+                                    {Object.values(tech.pmRecommendations || {}).reduce((a: number, b: any) => a + (b.count || 0), 0)} PM nearby
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Right: Selected Technician Details & PM Recommendations */}
+                  <div className="lg:col-span-2">
+                    {selectedTechForSmartPlan ? (
+                      <Card className="h-full">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold">
+                                {selectedTechForSmartPlan.name?.charAt(0) || 'T'}
+                              </div>
+                              <div>
+                                <CardTitle>{selectedTechForSmartPlan.name}</CardTitle>
+                                <p className="text-sm text-muted-foreground">{selectedTechForSmartPlan.employeeCode}</p>
+                              </div>
+                            </div>
+                            <Badge className={selectedTechForSmartPlan.status === 'available' ? 'bg-green-500' : ''}>
+                              {selectedTechForSmartPlan.status}
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {/* Location Info */}
+                          <div className="grid grid-cols-2 gap-4 p-3 bg-muted/50 rounded-lg">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Current Location</p>
+                              <p className="font-medium flex items-center gap-1">
+                                <MapPin className="h-4 w-4 text-blue-500" />
+                                {selectedTechForSmartPlan.baseLocation || 'Unknown'}
+                              </p>
+                            </div>
+                            {selectedTechForSmartPlan.nextService && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">Next Service</p>
+                                <p className="font-medium flex items-center gap-1">
+                                  <Navigation className="h-4 w-4 text-green-500" />
+                                  {selectedTechForSmartPlan.nextService.city}
+                                  <span className="text-xs text-muted-foreground">
+                                    ({selectedTechForSmartPlan.nextService.requestNumber})
+                                  </span>
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Assigned Services by City */}
+                          {Object.keys(selectedTechForSmartPlan.assignedServices?.byCity || {}).length > 0 && (
+                            <div>
+                              <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                                <Wrench className="h-4 w-4 text-orange-500" />
+                                Assigned Services by City
+                              </h4>
+                              <div className="grid grid-cols-2 gap-2">
+                                {Object.entries(selectedTechForSmartPlan.assignedServices?.byCity || {}).map(([city, services]: [string, any]) => (
+                                  <div 
+                                    key={city} 
+                                    className={`p-2 border rounded-lg cursor-pointer transition-all hover:bg-muted/50 ${
+                                      selectedCityForPlan === city ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''
+                                    }`}
+                                    onClick={() => setSelectedCityForPlan(selectedCityForPlan === city ? "" : city)}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium text-sm">{city}</span>
+                                      <Badge variant="outline">{services.length}</Badge>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* PM Recommendations */}
+                          {Object.keys(selectedTechForSmartPlan.pmRecommendations || {}).length > 0 && (
+                            <div>
+                              <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                                <Target className="h-4 w-4 text-red-500" />
+                                PM Recommendations (Click to plan)
+                              </h4>
+                              <div className="grid grid-cols-2 gap-2">
+                                {Object.entries(selectedTechForSmartPlan.pmRecommendations || {}).map(([city, pm]: [string, any]) => (
+                                  <div 
+                                    key={city}
+                                    className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                                      selectedCityForPlan === city 
+                                        ? 'ring-2 ring-orange-500 bg-orange-500/10 border-orange-500' 
+                                        : 'hover:bg-orange-500/5'
+                                    }`}
+                                    onClick={() => setSelectedCityForPlan(selectedCityForPlan === city ? "" : city)}
+                                  >
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="font-medium">{city}</span>
+                                      <Badge className="bg-orange-500">{pm.count} PM</Badge>
+                                    </div>
+                                    <div className="flex gap-2 text-xs">
+                                      {pm.overdue > 0 && <span className="text-red-400">{pm.overdue} overdue</span>}
+                                      {pm.never > 0 && <span className="text-orange-400">{pm.never} never</span>}
+                                      {pm.dueSoon > 0 && <span className="text-yellow-400">{pm.dueSoon} due soon</span>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Plan Trip Button */}
+                          {selectedCityForPlan && (
+                            <div className="pt-4 border-t">
+                              <div className="bg-blue-500/10 rounded-lg p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="font-medium">Plan Trip to {selectedCityForPlan}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      {selectedTechForSmartPlan.assignedServices?.byCity?.[selectedCityForPlan]?.length || 0} existing services + 
+                                      {selectedTechForSmartPlan.pmRecommendations?.[selectedCityForPlan]?.count || 0} PM tasks
+                                    </p>
+                                  </div>
+                                  <Button
+                                    className="gap-2"
+                                    onClick={() => {
+                                      setAutoPlanParams({
+                                        technicianId: selectedTechForSmartPlan.id,
+                                        destinationCity: selectedCityForPlan,
+                                        startDate: new Date().toISOString().split('T')[0],
+                                        endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                                      });
+                                      setActiveTab("travel");
+                                      toast({
+                                        title: "Planning trip...",
+                                        description: `Creating trip for ${selectedTechForSmartPlan.name} to ${selectedCityForPlan}`,
+                                      });
+                                      planTripMutation.mutate({
+                                        technicianId: selectedTechForSmartPlan.id,
+                                        destinationCity: selectedCityForPlan,
+                                        startDate: new Date().toISOString().split('T')[0],
+                                        endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                                      });
+                                    }}
+                                  >
+                                    <Plane className="h-4 w-4" />
+                                    Plan Trip
+                                    <ChevronRight className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {!selectedCityForPlan && Object.keys(selectedTechForSmartPlan.pmRecommendations || {}).length > 0 && (
+                            <Alert className="border-blue-500/50 bg-blue-500/5">
+                              <Zap className="h-4 w-4" />
+                              <AlertDescription>
+                                Click on a city above to see service + PM details and plan a combined trip
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Card className="h-full flex items-center justify-center">
+                        <CardContent className="text-center py-12">
+                          <User className="h-16 w-16 mx-auto mb-4 text-muted-foreground/30" />
+                          <h3 className="font-medium text-lg mb-2">Select a Technician</h3>
+                          <p className="text-sm text-muted-foreground max-w-sm">
+                            Click on a technician from the list to see their location, assigned services, and PM recommendations
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Failed to load technician location data</p>
+                    <Button variant="outline" className="mt-4" onClick={() => refetchLocationOverview()}>
+                      Try Again
+                    </Button>
                   </CardContent>
                 </Card>
               )}
@@ -1323,44 +2062,112 @@ export default function Scheduling() {
                     )}
 
                     <div className="mt-4">
-                      <Label className="text-muted-foreground mb-2 block">Daily Schedule</Label>
+                      <div className="flex items-center justify-between mb-2">
+                        <Label className="text-muted-foreground">Daily Schedule</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">
+                            {selectedPmTaskIds.size} of {pmPlanData.dailyPlan.reduce((acc, day) => acc + day.tasks.length, 0)} selected
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const allTaskIds = new Set<string>();
+                              pmPlanData.dailyPlan.forEach(day => {
+                                day.tasks.forEach(task => {
+                                  if (task.id) allTaskIds.add(task.id);
+                                });
+                              });
+                              if (selectedPmTaskIds.size === allTaskIds.size) {
+                                setSelectedPmTaskIds(new Set());
+                              } else {
+                                setSelectedPmTaskIds(allTaskIds);
+                              }
+                            }}
+                            className="text-xs h-7"
+                          >
+                            {selectedPmTaskIds.size === pmPlanData.dailyPlan.reduce((acc, day) => acc + day.tasks.length, 0) 
+                              ? "Deselect All" 
+                              : "Select All"}
+                          </Button>
+                        </div>
+                      </div>
                       <div className="space-y-2">
-                        {pmPlanData.dailyPlan.map((day, idx) => (
-                          <div key={idx} className="border rounded-lg p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="font-medium">
-                                {new Date(day.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
-                              </span>
-                              <Badge variant="outline">{day.tasks.length} tasks</Badge>
-                            </div>
-                            <div className="space-y-1">
-                              {day.tasks.map((task, taskIdx) => (
-                                <div key={taskIdx} className="flex items-center gap-2 text-sm">
-                                  <Badge 
-                                    variant={task.type === 'PM' ? 'default' : 'secondary'}
-                                    className={task.type === 'PM' ? 'bg-orange-500/20 text-orange-400 border-orange-400/30' : ''}
-                                  >
-                                    {task.type === 'PM' ? '🛠 Preventive Maintenance' : 'BREAKDOWN'}
-                                  </Badge>
-                                  <span className="text-muted-foreground">
-                                    {task.siteName || `Container ${task.containerId.substring(0, 8)}`}
+                        {pmPlanData.dailyPlan.map((day, idx) => {
+                          const dayTaskIds = day.tasks.map(t => t.id);
+                          const selectedCount = dayTaskIds.filter(id => selectedPmTaskIds.has(id)).length;
+                          return (
+                            <div key={idx} className="border rounded-lg p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    checked={selectedCount === day.tasks.length}
+                                    onCheckedChange={(checked) => {
+                                      const newSet = new Set(selectedPmTaskIds);
+                                      day.tasks.forEach(task => {
+                                        if (checked) {
+                                          newSet.add(task.id);
+                                        } else {
+                                          newSet.delete(task.id);
+                                        }
+                                      });
+                                      setSelectedPmTaskIds(newSet);
+                                    }}
+                                  />
+                                  <span className="font-medium">
+                                    {new Date(day.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
                                   </span>
                                 </div>
-                              ))}
+                                <Badge variant="outline">{selectedCount}/{day.tasks.length} tasks</Badge>
+                              </div>
+                              <div className="space-y-1 ml-6">
+                                {day.tasks.map((task, taskIdx) => (
+                                  <div 
+                                    key={taskIdx} 
+                                    className={`flex items-center gap-2 text-sm p-1 rounded ${
+                                      selectedPmTaskIds.has(task.id) ? 'bg-orange-50 dark:bg-orange-950/20' : 'opacity-50'
+                                    }`}
+                                  >
+                                    <Checkbox
+                                      checked={selectedPmTaskIds.has(task.id)}
+                                      onCheckedChange={(checked) => {
+                                        const newSet = new Set(selectedPmTaskIds);
+                                        if (checked) {
+                                          newSet.add(task.id);
+                                        } else {
+                                          newSet.delete(task.id);
+                                        }
+                                        setSelectedPmTaskIds(newSet);
+                                      }}
+                                    />
+                                    <Badge 
+                                      variant={task.type === 'PM' ? 'default' : 'secondary'}
+                                      className={task.type === 'PM' ? 'bg-orange-500/20 text-orange-400 border-orange-400/30' : ''}
+                                    >
+                                      {task.type === 'PM' ? '🛠 Preventive Maintenance' : 'BREAKDOWN'}
+                                    </Badge>
+                                    <span className="text-muted-foreground">
+                                      {task.siteName || `Container ${task.containerId.substring(0, 8)}`}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
                     <div className="flex gap-2 pt-4">
                       <Button
                         onClick={() => confirmTripMutation.mutate()}
-                        disabled={confirmTripMutation.isPending}
+                        disabled={confirmTripMutation.isPending || selectedPmTaskIds.size === 0}
                         className="flex-1 gap-2"
                       >
                         <CheckCircle className="h-4 w-4" />
-                        {confirmTripMutation.isPending ? "Confirming..." : "Confirm & Send"}
+                        {confirmTripMutation.isPending 
+                          ? "Confirming..." 
+                          : `Confirm & Send (${selectedPmTaskIds.size} PMs)`}
                       </Button>
                       <Button
                         variant="outline"
@@ -1605,6 +2412,151 @@ export default function Scheduling() {
               }}
             />
           )}
+
+          {/* Bulk PM Assignment Dialog */}
+          <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-orange-500" />
+                  Assign PMs to Technician
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedContainerIds.size > 0 
+                    ? `Assign ${selectedContainerIds.size} selected containers for PM to a technician`
+                    : `Assign all ${clientPmContainers?.summary?.pendingPm || 0} pending PMs for ${selectedClient?.customerName} to a technician`}
+                </DialogDescription>
+              </DialogHeader>
+              {selectedClient && (
+                <div className="space-y-4 py-4">
+                  <div className="rounded-lg border p-4 bg-orange-50 dark:bg-orange-950/20">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">Client:</span>
+                        <span className="font-bold">{selectedClient.customerName}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">Containers to Assign:</span>
+                        <Badge variant={selectedContainerIds.size > 0 ? "default" : "destructive"} className={selectedContainerIds.size > 0 ? "bg-blue-500" : ""}>
+                          {selectedContainerIds.size > 0 
+                            ? `${selectedContainerIds.size} selected`
+                            : `${clientPmContainers?.summary?.pendingPm || 0} all pending`}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Show selected containers if any */}
+                  {selectedContainerIds.size > 0 && clientPmContainers?.containers && (
+                    <div className="rounded-lg border p-3 max-h-32 overflow-y-auto bg-blue-50 dark:bg-blue-950/20">
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Selected Containers:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {clientPmContainers.containers
+                          .filter((c: any) => selectedContainerIds.has(c.id))
+                          .map((c: any) => (
+                            <Badge key={c.id} variant="outline" className="text-xs font-mono">
+                              {c.containerId}
+                            </Badge>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="assign-technician">Select Technician</Label>
+                    <Select value={assignTechnicianId} onValueChange={setAssignTechnicianId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a technician..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Internal Technicians */}
+                        {technicians && technicians.length > 0 && (
+                          <>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
+                              Internal Technicians
+                            </div>
+                            {technicians.map((tech: any) => (
+                              <SelectItem key={tech.id} value={tech.id}>
+                                <span className="flex items-center gap-2">
+                                  <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                                  {tech.name || tech.employeeCode} {tech.baseLocation ? `(${typeof tech.baseLocation === 'string' ? tech.baseLocation : tech.baseLocation?.city || ''})` : ''}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                        {/* Third-Party Technicians */}
+                        {thirdPartyTechnicians && thirdPartyTechnicians.length > 0 && (
+                          <>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 mt-1 border-t">
+                              Third-Party Technicians
+                            </div>
+                            {thirdPartyTechnicians.map((tech: any) => (
+                              <SelectItem key={`tp-${tech.id}`} value={`thirdparty:${tech.id}`}>
+                                <span className="flex items-center gap-2">
+                                  <span className="h-2 w-2 rounded-full bg-orange-500"></span>
+                                  {tech.name || tech.contactName} {tech.baseLocation ? `(${tech.baseLocation})` : ''}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="assign-date">Scheduled Date</Label>
+                    <input
+                      type="date"
+                      id="assign-date"
+                      value={assignDate}
+                      onChange={(e) => setAssignDate(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md bg-background"
+                      min={new Date().toISOString().split("T")[0]}
+                    />
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowAssignDialog(false);
+                    setAssignTechnicianId("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (selectedClient && assignTechnicianId) {
+                      bulkAssignPMMutation.mutate({
+                        customerId: selectedClient.customerId,
+                        technicianId: assignTechnicianId,
+                        scheduledDate: assignDate,
+                        containerIds: selectedContainerIds.size > 0 ? Array.from(selectedContainerIds) : undefined,
+                      });
+                    }
+                  }}
+                  disabled={!assignTechnicianId || bulkAssignPMMutation.isPending}
+                  className="gap-2 bg-gradient-to-r from-orange-500 to-orange-600"
+                >
+                  {bulkAssignPMMutation.isPending ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Assigning...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4" />
+                      Assign {selectedContainerIds.size > 0 ? selectedContainerIds.size : (clientPmContainers?.summary?.pendingPm || 0)} PMs
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* PM Alert Dialog */}
           <Dialog open={showPmDialog} onOpenChange={setShowPmDialog}>

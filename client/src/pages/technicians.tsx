@@ -82,6 +82,18 @@ export default function Technicians() {
     },
   });
 
+  // Fetch cities for location dropdown
+  const { data: citiesData = [] } = useQuery({
+    queryKey: ["/api/containers/cities"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/containers/cities");
+      return await res.json();
+    },
+    enabled: authReady && !!authToken,
+  });
+
+  const cities = Array.isArray(citiesData) ? citiesData.map((c: any) => c.city_name || c.city || c).filter(Boolean).sort() : [];
+
   // Fetch assigned services summary for all technicians (single request)
   const { data: assignedServicesData, refetch: refetchAssignedServices } = useQuery({
     queryKey: ["/api/technicians/assigned-services-summary"],
@@ -125,12 +137,20 @@ export default function Technicians() {
       refetchAssignedServices();
     };
 
+    const handleTechnicianUpdated = () => {
+      console.log("[Technicians] Technician updated event received, refreshing technicians list...");
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/technicians/location-overview"] });
+    };
+
     websocket.on("service_request_assigned", handleServiceAssigned);
     websocket.on("service_request_updated", handleServiceAssigned);
+    websocket.on("technician_updated", handleTechnicianUpdated);
 
     return () => {
       websocket.off("service_request_assigned", handleServiceAssigned);
       websocket.off("service_request_updated", handleServiceAssigned);
+      websocket.off("technician_updated", handleTechnicianUpdated);
     };
   }, [queryClient, refetchAssignedServices]);
 
@@ -259,7 +279,7 @@ export default function Technicians() {
       const payload = {
         experienceLevel: data.experienceLevel,
         specialization: data.specialization,
-        baseLocation: data.baseLocation,
+        baseLocation: data.baseLocation, // This will be a string from the Select dropdown
         status: data.status,
         averageRating: data.rating,
         totalJobsCompleted: data.servicesCompleted,
@@ -270,6 +290,10 @@ export default function Technicians() {
       };
       console.log("Updating technician with payload:", payload);
       const res = await apiRequest("PUT", `/api/technicians/${id}`, payload);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to update technician");
+      }
       const json = await res.json();
       return {
         ...json,
@@ -280,19 +304,26 @@ export default function Technicians() {
         baseLocation: typeof json.baseLocation === 'object' ? json.baseLocation?.city : data.baseLocation,
       };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
+    onSuccess: async () => {
+      // Invalidate all related queries to ensure UI updates
+      await queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/technicians/location-overview"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/technicians/assigned-services-summary"] });
+      // Refetch immediately to ensure fresh data
+      await queryClient.refetchQueries({ queryKey: ["/api/technicians"] });
       setIsEditDialogOpen(false);
       resetForm();
       toast({
         title: "Success",
-        description: "Technician updated successfully",
+        description: "Technician location updated successfully",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("[Technicians] Failed to update technician:", error);
+      const errorMessage = error?.message || error?.response?.data?.error || "Failed to update technician";
       toast({
         title: "Error",
-        description: "Failed to update technician",
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -363,6 +394,11 @@ export default function Technicians() {
 
   const handleUpdate = () => {
     if (selectedTech) {
+      console.log("[Technicians] Updating technician:", {
+        id: selectedTech.id,
+        location: formData.baseLocation,
+        formData: formData
+      });
       updateTechnician.mutate({ id: selectedTech.id, data: formData });
     }
   };
@@ -567,17 +603,18 @@ export default function Technicians() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
+                      {/* Location - Prominent */}
+                      <div className="flex items-center gap-2 text-sm p-2 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <MapPin className="h-4 w-4 text-blue-500" />
+                        <span className="font-semibold text-blue-700 dark:text-blue-300">
+                          {typeof (tech as any).baseLocation === "string"
+                            ? ((tech as any).baseLocation || "📍 Not set - Click Edit")
+                            : ((tech as any).baseLocation?.city || "📍 Not set - Click Edit")}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-2 text-sm">
                         <Phone className="h-4 w-4 text-muted-foreground" />
                         <span className="text-foreground">{tech.phone}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <MapPin className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">
-                          {typeof (tech as any).baseLocation === "string"
-                            ? ((tech as any).baseLocation || "Not set")
-                            : ((tech as any).baseLocation?.city || "Not set")}
-                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <Wrench className="h-4 w-4 text-muted-foreground" />
@@ -907,13 +944,25 @@ export default function Technicians() {
               />
             </div>
             <div>
-              <Label htmlFor="location">Base Location</Label>
-              <Input
-                id="location"
+              <Label htmlFor="location">Current City / Location *</Label>
+              <Select
                 value={formData.baseLocation}
-                onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
-                placeholder="City, State"
-              />
+                onValueChange={(value) => setFormData({ ...formData, baseLocation: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select city..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {cities.map((city: string) => (
+                    <SelectItem key={city} value={city}>
+                      {city}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {cities.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">No cities available. Using containers will populate this list.</p>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -1020,12 +1069,25 @@ export default function Technicians() {
               />
             </div>
             <div>
-              <Label htmlFor="edit-location">Base Location</Label>
-              <Input
-                id="edit-location"
+              <Label htmlFor="edit-location">Current City / Location *</Label>
+              <Select
                 value={formData.baseLocation}
-                onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
-              />
+                onValueChange={(value) => setFormData({ ...formData, baseLocation: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select city..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {cities.map((city: string) => (
+                    <SelectItem key={city} value={city}>
+                      {city}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {cities.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">No cities available. Using containers will populate this list.</p>
+              )}
             </div>
           </div>
           <DialogFooter>

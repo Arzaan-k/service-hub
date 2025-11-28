@@ -312,33 +312,8 @@ export default function TripDetailSheet({ tripId, open, onOpenChange, onUpdate }
               {!trip.tasks || trip.tasks.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No tasks assigned yet</p>
-                  {canEdit && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-4"
-                      onClick={async () => {
-                        try {
-                          await apiRequest("POST", `/api/scheduling/travel/trips/${tripId}/auto-assign-tasks`);
-                          queryClient.invalidateQueries({ queryKey: ["/api/scheduling/travel/trips", tripId] });
-                          toast({
-                            title: "Tasks Auto-Assigned",
-                            description: "PM tasks have been automatically assigned to this trip",
-                          });
-                          onUpdate();
-                        } catch (error: any) {
-                          toast({
-                            title: "Failed to Assign Tasks",
-                            description: error.message || "An error occurred",
-                            variant: "destructive",
-                          });
-                        }
-                      }}
-                    >
-                      Auto-Assign Tasks
-                    </Button>
-                  )}
+                  <p>No PM tasks assigned to this trip</p>
+                  <p className="text-sm mt-2">Tasks are assigned when creating the trip via Auto Plan</p>
                 </div>
               ) : (
                 <Table>
