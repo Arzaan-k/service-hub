@@ -560,10 +560,25 @@ export default function TechnicianProfile() {
                         </div>
                       </div>
                     ) : (
-                      <div className="ml-6 text-sm">
-                        {typeof technician.baseLocation === "object"
-                          ? technician.baseLocation?.city
-                          : technician.baseLocation || "Not set"}
+                      <div className="ml-6 text-sm space-y-1">
+                        {/* Show WhatsApp-shared location if available */}
+                        {technician.locationAddress ? (
+                          <>
+                            <div className="text-foreground">{technician.locationAddress}</div>
+                            {(technician.latitude && technician.longitude) && (
+                              <div className="text-xs text-muted-foreground">
+                                Lat: {Number(technician.latitude).toFixed(6)}, Lng: {Number(technician.longitude).toFixed(6)}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          /* Fallback to baseLocation if no WhatsApp location */
+                          <div>
+                            {typeof technician.baseLocation === "object"
+                              ? technician.baseLocation?.city
+                              : technician.baseLocation || "Not set"}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

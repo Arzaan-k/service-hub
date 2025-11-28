@@ -30,13 +30,16 @@ import {
  * Send technician main menu
  */
 export async function sendTechnicianMainMenu(from: string, user: any, storage: any): Promise<void> {
-  const technician = await storage.getTechnician(user.id);
+  // IMPORTANT: Use getTechnicianByUserId, not getTechnician
+  // user.id is the USER ID, not the technician ID
+  const technician = await storage.getTechnicianByUserId(user.id);
   
   await sendInteractiveButtons(
     from,
     `🔧 Welcome to Service Hub!\n\nIdentifying your profile...\n✓ Verified: ${user.name}\nRole: Technician\nID: ${technician?.employeeCode || 'N/A'}\n\nPlease select an option below:`,
     [
-      { id: 'view_schedule', title: '📅 View Schedule' }
+      { id: 'view_schedule', title: '📅 View Schedule' },
+      { id: 'upload_location', title: '📍 Upload Location' }
     ]
   );
 }
@@ -66,19 +69,15 @@ export async function showActiveServicesMenu(from: string, user: any, session: a
   }
   
   const buttons = [
-    { id: 'view_schedule', title: '📅 View Schedule' }
+    { id: 'view_schedule', title: '📅 View Schedule' },
+    { id: 'upload_location', title: '📍 Upload Location' }
   ];
   
-  // Add end service buttons for each active service
-  activeServices.forEach((service: any, index: number) => {
-    const buttonId = activeServices.length === 1 
-      ? 'end_service' 
-      : `end_service_${index + 1}`;
-    const buttonTitle = activeServices.length === 1
-      ? '🛑 End Service'
-      : `🛑 End Service ${index + 1}`;
-    buttons.push({ id: buttonId, title: buttonTitle });
-  });
+  // Add end service buttons for each active service (max 1 more button due to WhatsApp 3-button limit)
+  if (activeServices.length === 1) {
+    buttons.push({ id: 'end_service', title: '🛑 End Service' });
+  }
+  // Note: If more than 1 active service, user needs to use View Schedule to end specific services
   
   await sendInteractiveButtons(from, message, buttons);
 }
@@ -111,10 +110,20 @@ export async function showScheduleForToday(from: string, technician: any, sessio
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   
-  // Get services scheduled for today
+  // Get ALL services assigned to this technician (not filtered by date initially)
   const allServices = await storage.getTechnicianSchedule(technician.id);
+  
+  // Filter for today's services - include services without scheduled date (newly assigned)
   const todayServices = allServices.filter((s: any) => {
+    // Include services without scheduled date (newly assigned, not yet scheduled)
+    if (!s.scheduledDate) {
+      return true;
+    }
     const scheduled = new Date(s.scheduledDate);
+    // Check for valid date
+    if (isNaN(scheduled.getTime()) || scheduled.getFullYear() < 2000) {
+      return true; // Include if date is invalid (treat as unscheduled)
+    }
     return scheduled >= today && scheduled < tomorrow;
   });
   
@@ -191,7 +200,10 @@ export async function showScheduleForPrevious(from: string, technician: any, ses
   }).slice(0, 10); // Limit to last 10
   
   if (previousServices.length === 0) {
-    await sendTextMessage(from, '📋 You have no completed services in history.');
+    await sendInteractiveButtons(from, '📋 You have no completed services in history.', [
+      { id: 'view_schedule', title: '📅 View Schedule' },
+      { id: 'back_to_menu', title: '🏠 Main Menu' }
+    ]);
     return;
   }
   
@@ -241,7 +253,10 @@ export async function showScheduleForFuture(from: string, technician: any, sessi
   }).slice(0, 10);
   
   if (futureServices.length === 0) {
-    await sendTextMessage(from, '📋 You have no upcoming services scheduled.');
+    await sendInteractiveButtons(from, '📋 You have no upcoming services scheduled.', [
+      { id: 'view_schedule', title: '📅 View Schedule' },
+      { id: 'back_to_menu', title: '🏠 Main Menu' }
+    ]);
     return;
   }
   

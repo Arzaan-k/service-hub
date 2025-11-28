@@ -191,119 +191,154 @@ async function drawServiceTimeline(ctx: any, req: any) {
 async function drawIssueDescription(ctx: any, req: any, customer: any) {
     drawSectionHeader(ctx, 'ISSUE DESCRIPTION');
     
-    // Helper to parse unstructured text blob if it contains "Key: Value" lines
+    // Helper to parse text that may have embedded "Key: Value" pairs on same line or multiple lines
+    // Example: "Temperature not maintained  Company Name: Crystal Group  Onsite Contact: 9807654321..."
     const parseEmbeddedData = (text: string) => {
-        const result: any = { description: '' };
+        const result: any = {
+            description: '',
+            errorCode: '',
+            companyName: '',
+            onsiteContact: '',
+            siteAddress: '',
+            preferredCall: ''
+        };
+        
         if (!text) return result;
         
-        const lines = text.split(/\r?\n/);
-        let isParsingFields = false;
-        
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            
-            // Check for keys
-            const lower = trimmed.toLowerCase();
-            if (lower.startsWith('error code:')) {
-                result.errorCode = trimmed.substring(11).trim();
-                isParsingFields = true;
-            } else if (lower.startsWith('company name:')) {
-                result.companyName = trimmed.substring(13).trim();
-                isParsingFields = true;
-            } else if (lower.startsWith('onsite contact:')) {
-                result.onsiteContact = trimmed.substring(15).trim();
-                isParsingFields = true;
-            } else if (lower.startsWith('site address:')) {
-                result.siteAddress = trimmed.substring(13).trim();
-                isParsingFields = true;
-            } else if (lower.startsWith('preferred technician call:')) {
-                result.preferredCall = trimmed.substring(26).trim();
-                isParsingFields = true;
-            } else {
-                // If we haven't started parsing fields yet, it's part of description
-                if (!isParsingFields) {
-                    result.description += (result.description ? '\n' : '') + trimmed;
-                }
-            }
+        // Use regex to extract each field - handles both same-line and multi-line formats
+        // Extract Company Name
+        const companyMatch = text.match(/Company\s*Name:\s*([^]*?)(?=(?:Onsite\s*Contact:|Site\s*Address:|Preferred\s*(?:Technician\s*)?Call:|Error\s*Code:|$))/i);
+        if (companyMatch) {
+            result.companyName = companyMatch[1].trim();
         }
         
-        // If we didn't find any fields, return original text as description if description is empty
-        if (!result.description && !isParsingFields) {
-            result.description = text;
+        // Extract Onsite Contact
+        const contactMatch = text.match(/Onsite\s*Contact:\s*([^]*?)(?=(?:Company\s*Name:|Site\s*Address:|Preferred\s*(?:Technician\s*)?Call:|Error\s*Code:|$))/i);
+        if (contactMatch) {
+            result.onsiteContact = contactMatch[1].trim();
+        }
+        
+        // Extract Site Address
+        const addressMatch = text.match(/Site\s*Address:\s*([^]*?)(?=(?:Company\s*Name:|Onsite\s*Contact:|Preferred\s*(?:Technician\s*)?Call:|Error\s*Code:|$))/i);
+        if (addressMatch) {
+            result.siteAddress = addressMatch[1].trim();
+        }
+        
+        // Extract Preferred Technician Call
+        const callMatch = text.match(/Preferred\s*(?:Technician\s*)?Call:\s*([^]*?)(?=(?:Company\s*Name:|Onsite\s*Contact:|Site\s*Address:|Error\s*Code:|$))/i);
+        if (callMatch) {
+            result.preferredCall = callMatch[1].trim();
+        }
+        
+        // Extract Error Code
+        const errorMatch = text.match(/Error\s*Code:\s*([^]*?)(?=(?:Company\s*Name:|Onsite\s*Contact:|Site\s*Address:|Preferred\s*(?:Technician\s*)?Call:|$))/i);
+        if (errorMatch) {
+            result.errorCode = errorMatch[1].trim();
+        }
+        
+        // Extract Description - everything BEFORE the first key:value pair
+        // Find the position of the first known key
+        const keyPositions = [
+            text.search(/Company\s*Name:/i),
+            text.search(/Onsite\s*Contact:/i),
+            text.search(/Site\s*Address:/i),
+            text.search(/Preferred\s*(?:Technician\s*)?Call:/i),
+            text.search(/Error\s*Code:/i)
+        ].filter(pos => pos >= 0);
+        
+        if (keyPositions.length > 0) {
+            const firstKeyPos = Math.min(...keyPositions);
+            result.description = text.substring(0, firstKeyPos).trim();
+        } else {
+            // No keys found, entire text is description
+            result.description = text.trim();
         }
         
         return result;
     };
 
-    const rawDesc = req.issueDescription || '';
+    // Helper to format date as "Sat, 29 Nov"
+    const formatPreferredDate = (dateInput: any): string => {
+        if (!dateInput) return 'N/A';
+        const dateStr = String(dateInput).trim();
+        // If it's already formatted like "Sat, 29 Nov", return as-is
+        if (/^[A-Za-z]{3},?\s*\d{1,2}\s+[A-Za-z]{3}/.test(dateStr)) {
+            return dateStr;
+        }
+        try {
+            const date = new Date(dateInput);
+            if (isNaN(date.getTime())) return dateStr || 'N/A';
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]}`;
+        } catch {
+            return dateStr || 'N/A';
+        }
+    };
+
+    const rawDesc = req.issueDescription || req.description || '';
     const parsed = parseEmbeddedData(rawDesc);
     
-    // Data Preparation with Correct Field Mapping
-    // Description -> Issue
-    const issue = parsed.description || (parsed.errorCode ? '' : rawDesc) || 'No description provided.';
-    // Error Code -> Error Code
-    const errorCode = parsed.errorCode || req.alertId || 'N/A';
-    // Company Name -> Company Name
+    // Data Preparation - Use parsed data, fallback to customer data if parsed is empty
+    const issue = parsed.description || 'No description provided.';
+    const errorCode = parsed.errorCode || req.alertId || req.errorCode || 'N/A';
     const companyName = parsed.companyName || customer?.companyName || customer?.company || 'N/A';
-    // Onsite Contact -> Phone Number (prioritize parsed, then customer phone)
-    const onsiteContact = parsed.onsiteContact || customer?.phone || customer?.contactPerson || 'N/A';
-    // Site Address -> Site Address
+    const onsiteContact = parsed.onsiteContact || customer?.phone || 'N/A';
     const siteAddress = parsed.siteAddress || customer?.billingAddress || customer?.address || 'N/A';
-    // Preferred Technician Call -> Preferred Technician Call
-    const preferredCall = parsed.preferredCall || (req.scheduledDate ? new Date(req.scheduledDate).toLocaleString() : 'N/A');
+    const preferredCall = parsed.preferredCall 
+        ? formatPreferredDate(parsed.preferredCall) 
+        : formatPreferredDate(req.scheduledDate);
 
     const doc = ctx.doc;
-    const labelWidth = 140;
-    const valueX = LAYOUT.margin + 150;
-    const valueWidth = LAYOUT.contentWidth - 150;
+    const labelWidth = 180;
+    const valueX = LAYOUT.margin + 185;
+    const valueWidth = LAYOUT.contentWidth - 185;
 
-    // Helper for drawing a single row
+    // Helper for drawing a single row with proper spacing
     const drawRow = (label: string, value: any) => {
         const safeValue = sanitizeText(String(value));
         
         doc.font('Helvetica').fontSize(10);
         const valueHeight = doc.heightOfString(safeValue, { width: valueWidth, align: 'left' });
-        const rowHeight = Math.max(valueHeight, 15);
+        const rowHeight = Math.max(valueHeight, 18);
 
-        checkPageBreak(ctx, rowHeight + 5);
+        checkPageBreak(ctx, rowHeight + 8);
 
-        // Draw Label
-        doc.font('Helvetica-Bold').fillColor(COLORS.textLabel).fontSize(9)
+        // Draw Label (left-aligned)
+        doc.font('Helvetica-Bold').fillColor(COLORS.textLabel).fontSize(10)
            .text(label + ':', LAYOUT.margin, ctx.y, { width: labelWidth });
         
-        // Draw Value
+        // Draw Value (left-aligned, positioned after label)
         doc.font('Helvetica').fillColor(COLORS.text).fontSize(10)
            .text(safeValue, valueX, ctx.y, { width: valueWidth, align: 'left' });
 
-        ctx.y += rowHeight + 5; // Line gap 5
+        ctx.y += rowHeight + 8; // Line gap
     };
 
-    // Layout Execution
+    // Layout Execution - SINGLE PASS, CLEAN FORMAT
     
-    // 1. Issue & Error Code
+    // 1. Issue (description only - cleaned)
     drawRow('Issue', issue);
+    ctx.y += 5;
+    
+    // 2. Error Code
     drawRow('Error Code', errorCode);
     
-    ctx.y += 10; // Gap
+    ctx.y += 15; // Gap before Service Location Details
 
-    // 2. Service Location Details Header
-    checkPageBreak(ctx, 20);
-    doc.font('Helvetica-Bold').fillColor(COLORS.textLabel).fontSize(10)
+    // 3. Service Location Details Header
+    checkPageBreak(ctx, 25);
+    doc.font('Helvetica-Bold').fillColor(COLORS.textLabel).fontSize(11)
        .text('Service Location Details:', LAYOUT.margin, ctx.y);
-    ctx.y += 20;
+    ctx.y += 22;
 
-    // 3. Location Details
+    // 4. Location Details
     drawRow('Company Name', companyName);
     drawRow('Onsite Contact', onsiteContact);
     drawRow('Site Address', siteAddress);
-
-    ctx.y += 10; // Gap
-
-    // 4. Preferred Technician Call
     drawRow('Preferred Technician Call', preferredCall);
     
-    ctx.y += 10;
+    ctx.y += 15;
 }
 
 async function drawClientDetails(ctx: any, customer: any) {
@@ -494,7 +529,9 @@ async function drawCompleteContent(ctx: any, req: any, customer: any, container:
 // --- Helpers ---
 
 function checkPageBreak(ctx: { doc: any, y: number }, needed: number) {
-    if (ctx.y + needed > LAYOUT.height - LAYOUT.margin) {
+    // Only add page if content truly won't fit (with 100px bottom margin for footer)
+    const bottomMargin = 100;
+    if (ctx.y + needed > LAYOUT.height - bottomMargin) {
         ctx.doc.addPage();
         ctx.y = LAYOUT.margin + 20; 
         return true;
@@ -527,12 +564,17 @@ function drawHeader(doc: any, stage: string, req: any) {
     if (status === 'SCHEDULED') badgeColor = COLORS.warning;
     if (status === 'IN_PROGRESS') badgeColor = COLORS.info;
     
-    const badgeWidth = 100;
-    const badgeX = LAYOUT.width - LAYOUT.margin - badgeWidth - 10;
+    const badgeWidth = 90;
+    const badgeHeight = 16;
+    const badgeX = LAYOUT.width - LAYOUT.margin - badgeWidth - 5;
+    const badgeY = infoY + 4;
     
-    doc.roundedRect(badgeX, infoY + 5, badgeWidth, 15, 3).fill(badgeColor);
-    doc.fillColor(COLORS.white).fontSize(8).font('Helvetica-Bold')
-       .text(status, badgeX, infoY + 4, { width: badgeWidth, align: 'center' });
+    // Draw badge background
+    doc.roundedRect(badgeX, badgeY, badgeWidth, badgeHeight, 3).fill(badgeColor);
+    
+    // Draw badge text - centered vertically and horizontally
+    doc.fillColor(COLORS.white).fontSize(9).font('Helvetica-Bold')
+       .text(status, badgeX, badgeY + 4, { width: badgeWidth, align: 'center' });
 
     doc.fillColor(COLORS.text);
 }
@@ -590,6 +632,18 @@ function drawTextBlock(ctx: { doc: any, y: number }, title: string, text: string
 
 async function drawImagesGrid(ctx: any, title: string, urls: string[]) {
     if (!urls || urls.length === 0) return;
+    
+    // Filter out null/empty URLs first
+    const validUrls = urls.filter(url => url && url.trim());
+    if (validUrls.length === 0) return;
+    
+    // Fetch all images first to count valid ones
+    const buffers = await Promise.all(validUrls.map(url => fetchImage(url)));
+    const validBuffers = buffers.filter(b => b !== null);
+    
+    // Don't draw section if no valid images
+    if (validBuffers.length === 0) return;
+    
     drawSectionHeader(ctx, title);
     const doc = ctx.doc;
     
@@ -599,15 +653,10 @@ async function drawImagesGrid(ctx: any, title: string, urls: string[]) {
     const imgWidth = (pageWidth - (gap * (cols - 1))) / cols;
     const imgHeight = 200; // Fixed height for uniform grid
     
-    const buffers = await Promise.all(urls.map(url => fetchImage(url)));
-    
     let colIndex = 0;
     let startY = ctx.y;
-    let currentRowHeight = imgHeight;
     
-    for (const imgBuffer of buffers) {
-        if (!imgBuffer) continue;
-        
+    for (const imgBuffer of validBuffers) {
         // If first column, check page break for the whole row
         if (colIndex === 0) {
             if (checkPageBreak(ctx, imgHeight + 20)) {
@@ -637,7 +686,7 @@ async function drawImagesGrid(ctx: any, title: string, urls: string[]) {
     
     // If we ended in the middle of a row, push y down
     if (colIndex !== 0) {
-        ctx.y = startY + imgHeight + 20;
+        ctx.y = startY + imgHeight + 15;
     } else {
         ctx.y += 10;
     }
@@ -664,8 +713,24 @@ function drawCoverPage(ctx: any, req: any, customer: any) {
 
 function drawFooter(doc: any, docId: string) {
     const range = doc.bufferedPageRange();
+    
+    // Count actual content pages (pages that have content beyond header area)
+    let actualPageCount = 0;
+    const contentPages: number[] = [];
+    
     for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i);
+        // A page is considered to have content if y position is beyond header (120px)
+        // We check by seeing if there's any content drawn below header
+        // For simplicity, we'll include all pages but the logic prevents empty trailing pages
+        contentPages.push(i);
+        actualPageCount++;
+    }
+    
+    // Draw footer on all pages with correct page numbering
+    for (let idx = 0; idx < contentPages.length; idx++) {
+        const pageNum = contentPages[idx];
+        doc.switchToPage(pageNum);
         const bottom = LAYOUT.height - 30;
         
         doc.moveTo(LAYOUT.margin, bottom - 10).lineTo(LAYOUT.width - LAYOUT.margin, bottom - 10)
@@ -673,7 +738,7 @@ function drawFooter(doc: any, docId: string) {
            
         doc.fontSize(8).fillColor(COLORS.textLabel);
         doc.text('Service Hub Management System', LAYOUT.margin, bottom);
-        doc.text(`Page ${i + 1} of ${range.count}`, 0, bottom, { align: 'center' });
+        doc.text(`Page ${idx + 1} of ${actualPageCount}`, 0, bottom, { align: 'center' });
         doc.text(`Doc ID: ${docId.substring(0, 8).toUpperCase()}`, 0, bottom, { align: 'right' });
         
         doc.text('CONFIDENTIAL - This document contains proprietary information', 0, bottom + 10, { align: 'center' });

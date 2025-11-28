@@ -8159,7 +8159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- Service Reports & PDF Generation ---
 
-  // Generate Report
+  // Generate Report - PDF stored in database, NOT on disk
   app.post("/api/service-requests/:id/generate-report", authenticateUser, async (req: AuthRequest, res) => {
     const { id } = req.params;
     const { stage } = req.body; // 'initial', 'pre_service', 'post_service', 'complete'
@@ -8167,26 +8167,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log(`Generating PDF report for SR ${id}, stage: ${stage}`);
       
-      // Generate PDF Buffer
+      // Generate PDF Buffer (in memory only, no disk save)
       const pdfBuffer = await generateServiceReportPDF(id, stage);
       
-      // Save to disk
-      const timestamp = Date.now();
-      const fileName = `${stage.toUpperCase()}_SR-${id}_${timestamp}.pdf`;
-      const uploadDir = path.join(process.cwd(), 'uploads', 'service-reports');
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-      
-      const filePath = path.join(uploadDir, fileName);
-      fs.writeFileSync(filePath, pdfBuffer);
-      
-      const fileUrl = `/uploads/service-reports/${fileName}`;
+      const fileName = `${stage.toUpperCase()}_SR-${id}_${Date.now()}.pdf`;
       
       // Send Email
       const recipient = 'aiteamcrystal@gmail.com';
       
-      // Try sending email, but don't fail request if email fails (unless critical)
+      // Try sending email, but don't fail request if email fails
       try {
         await sendEmail({
             to: recipient,
@@ -8202,11 +8191,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Continue to save report record
       }
       
-      // Save to DB
+      // Save PDF buffer directly to database (no disk storage)
       const reportId = await db.insert(serviceReportPdfs).values({
           serviceRequestId: id,
           reportStage: stage,
-          fileUrl: fileUrl,
+          pdfData: pdfBuffer, // Store PDF as binary in database
           fileSize: pdfBuffer.length,
           emailRecipients: [recipient],
           status: 'emailed',
@@ -8216,7 +8205,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         success: true,
         reportId: reportId[0].id,
-        fileUrl,
         emailSent: true,
         recipients: [recipient]
       });
@@ -8228,6 +8216,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: 'Failed to generate report',
         error: error.message
       });
+    }
+  });
+  
+  // Get PDF from database
+  app.get("/api/service-reports/:reportId/download", authenticateUser, async (req: AuthRequest, res) => {
+    const { reportId } = req.params;
+    
+    try {
+      const reports = await db.select().from(serviceReportPdfs).where(eq(serviceReportPdfs.id, reportId));
+      
+      if (reports.length === 0) {
+        return res.status(404).json({ message: 'Report not found' });
+      }
+      
+      const report = reports[0];
+      
+      if (!report.pdfData) {
+        return res.status(404).json({ message: 'PDF data not found in database' });
+      }
+      
+      const fileName = `${report.reportStage.toUpperCase()}_SR-${report.serviceRequestId}.pdf`;
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Content-Length', report.pdfData.length);
+      res.send(report.pdfData);
+      
+    } catch (error: any) {
+      console.error('PDF Download Error:', error);
+      res.status(500).json({ message: 'Failed to download PDF', error: error.message });
     }
   });
 
