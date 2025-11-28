@@ -229,17 +229,9 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Sign Up Link */}
+          {/* Forgot Password Link */}
           <div className="mt-6 text-center">
             <p className="text-xs lg:text-sm text-muted-foreground">
-              Don't have an account?{" "}
-              <button
-                onClick={() => setLocation("/signup")}
-                className="text-primary hover:underline font-medium"
-              >
-                Create Account
-              </button>
-              <span className="mx-2">•</span>
               <button onClick={() => setForgotOpen(true)} className="text-primary hover:underline font-medium">Forgot password?</button>
             </p>
           </div>

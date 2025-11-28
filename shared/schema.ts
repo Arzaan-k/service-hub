@@ -89,10 +89,13 @@ export const technicians = pgTable("technicians", {
   // Wage breakdown fields
   grade: text("grade"), // e.g., "S1", "S2", "S3"
   designation: text("designation"), // e.g., "Sr. Technician", "Jr. Technician"
-  hotelAllowance: integer("hotel_allowance").default(0), // ₹800
-  localTravelAllowance: integer("local_travel_allowance").default(0), // ₹400
-  foodAllowance: integer("food_allowance").default(0), // ₹300
-  personalAllowance: integer("personal_allowance").default(0), // ₹100 (PA)
+  hotelAllowance: integer("hotel_allowance").default(0),
+  localTravelAllowance: integer("local_travel_allowance").default(0),
+  foodAllowance: integer("food_allowance").default(0),
+  personalAllowance: integer("personal_allowance").default(0),
+  serviceRequestCost: integer("service_request_cost").default(0), // Cost per service request
+  pmCost: integer("pm_cost").default(0), // Cost per preventive maintenance task
+  tasksPerDay: integer("tasks_per_day").default(3), // Rate: Number of tasks per day for trip planning
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

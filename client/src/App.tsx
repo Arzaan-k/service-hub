@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { isAuthenticated, getCurrentUser, initTestAuth } from "./lib/auth";
 
 import Login from "@/pages/login";
-import SignUp from "@/pages/signup";
+// SignUp import removed - account creation disabled
 import Dashboard from "@/pages/dashboard";
 import ClientDashboard from "@/pages/client-dashboard";
 import Containers from "@/pages/containers";
@@ -58,7 +58,6 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      <Route path="/signup" component={SignUp} />
       <Route path="/force-password-reset" component={ForcePasswordReset} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/client-dashboard">

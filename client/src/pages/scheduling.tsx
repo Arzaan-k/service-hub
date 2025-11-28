@@ -42,12 +42,17 @@ import {
   ChevronRight,
   Phone,
   Wrench,
+  FileText,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import TripDetailSheet from "@/components/scheduling/trip-detail-sheet";
 import { AutoPlanForm, AutoPlanFormPayload } from "@/components/travel/auto-plan-form";
 import { AutoPlanLoader } from "@/components/travel/auto-plan-loader";
 import { AutoPlanError } from "@/components/travel/auto-plan-error";
+import { ConsolidatedTripCard } from "@/components/scheduling/consolidated-trip-card";
+import { TripFinancePDF } from "@/components/trips/trip-finance-pdf";
+import { PlannedTripsList } from "@/components/trips/planned-trips-list";
 import { TechnicianCard } from "@/components/travel/technician-card";
 import { CostTable, CostState } from "@/components/travel/cost-table";
 import { TaskTable, TaskDraft } from "@/components/travel/task-table";
@@ -170,6 +175,12 @@ export default function Scheduling() {
   const [selectedTechForSmartPlan, setSelectedTechForSmartPlan] = useState<any | null>(null);
   const [selectedCityForPlan, setSelectedCityForPlan] = useState<string>("");
   const [showSmartPlanDialog, setShowSmartPlanDialog] = useState(false);
+
+  // Removed trip filters as per user request
+
+  // State for PDF preview
+  const [showPDFPreview, setShowPDFPreview] = useState(false);
+  const [pdfData, setPdfData] = useState<any>(null);
 
   const { data: pendingRequests } = useQuery({
     queryKey: ["/api/service-requests/pending"],
@@ -711,6 +722,153 @@ export default function Scheduling() {
       toast({
         title: "Assignment Failed",
         description: error?.message || "Failed to assign PMs to technician",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Plan trip mutation (for consolidated trips with services + PM)
+  const planTripMutation = useMutation({
+    mutationFn: async (params: {
+      technicianId: string;
+      destinationCity: string;
+      startDate: string;
+      endDate: string;
+      selectedServices?: string[];
+      selectedPMTasks?: string[];
+    }) => {
+      // Use consolidated trip planning if services/PMs are specified, otherwise use regular trip planning
+      const endpoint = params.selectedServices?.length || params.selectedPMTasks?.length
+        ? "/api/trips/plan-consolidated"
+        : "/api/trips/plan";
+
+      const res = await apiRequest("POST", endpoint, params);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "Failed to plan trip" }));
+        const error: any = new Error(errorData.error || "Failed to plan trip");
+        error.response = { data: errorData };
+        throw error;
+      }
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      const isConsolidated = data?.summary?.totalTasks > 0;
+      toast({
+        title: isConsolidated ? "Consolidated Trip Planned Successfully" : "Trip Planned Successfully",
+        description: isConsolidated
+          ? `Trip created with ${data.summary.totalTasks} tasks (${data.summary.serviceTasks} services + ${data.summary.pmTasks} PMs)`
+          : `Trip created for technician to ${data?.destinationCity || 'destination'}`,
+      });
+      // Refresh data
+      refetchLocationOverview();
+      // Switch to travel tab to show the planned trip
+      setActiveTab("travel");
+      // Refresh planned trips list
+      queryClient.invalidateQueries({ queryKey: ["/api/trips/planned"] });
+    },
+    onError: (error: any) => {
+      const errorMessage = error?.response?.data?.error || error?.message || "Failed to plan trip";
+      toast({
+        title: "Trip Planning Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // PDF Generation for Finance Approval
+  const generateTripPDF = useMutation({
+    mutationFn: async () => {
+      if (!pmPlanData) throw new Error("No trip data available");
+
+      const pdfData = {
+        tripData: pmPlanData,
+        technician: technicians?.find((t: any) => t.id === pmPlanData.techId),
+        selectedTasks: Array.from(selectedPmTaskIds),
+        generatedAt: new Date().toISOString(),
+        generatedBy: getCurrentUser()?.name || 'System',
+      };
+
+      const res = await apiRequest("POST", "/api/trips/generate-finance-pdf", pdfData);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to generate PDF");
+      }
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      // Prepare data for PDF component
+      const technician = technicians?.find((t: any) => t.id === pmPlanData.techId);
+      const selectedTasks = Array.from(selectedPmTaskIds);
+
+      // Get service requests (simplified for now - would need proper API call)
+      const selectedServiceRequests = []; // Would be populated from API
+
+      // Get PM containers (simplified for now - would need proper API call)
+      const pmContainers = pmPlanData.dailyPlan.flatMap((day: any) =>
+        day.tasks.filter((task: any) => selectedTasks.includes(task.id) && task.type === 'PM')
+          .map((task: any) => ({
+            containerCode: task.containerId,
+            customerName: 'Customer Name', // Would be populated from API
+            pmDetails: {
+              lastPmDate: task.lastPmDate,
+              daysSincePm: task.daysSincePm,
+              pmStatus: task.pmStatus
+            }
+          }))
+      );
+
+      // Calculate wage breakdown
+      const wageBreakdown = {
+        taskBreakdown: {
+          serviceRequests: { count: selectedServiceRequests.length, rate: 2500, total: selectedServiceRequests.length * 2500 },
+          pmTasks: { count: pmContainers.length, rate: 1800, total: pmContainers.length * 1800 }
+        },
+        allowances: {
+          dailyAllowance: {
+            rate: (technician?.hotelAllowance || 800) + (technician?.localTravelAllowance || 400),
+            days: Math.ceil(selectedTasks.length / 3),
+            total: Math.ceil(selectedTasks.length / 3) * ((technician?.hotelAllowance || 800) + (technician?.localTravelAllowance || 400))
+          },
+          hotelAllowance: { total: Math.ceil(selectedTasks.length / 3) * (technician?.hotelAllowance || 800) },
+          localTravelAllowance: { total: Math.ceil(selectedTasks.length / 3) * (technician?.localTravelAllowance || 400) }
+        },
+        additionalCosts: {
+          miscellaneous: { percentage: 5, amount: Math.round((selectedServiceRequests.length * 2500 + pmContainers.length * 1800) * 0.05) },
+          contingency: { percentage: 3, amount: Math.round((selectedServiceRequests.length * 2500 + pmContainers.length * 1800) * 0.03) }
+        },
+        summary: {
+          totalTasks: selectedTasks.length,
+          estimatedDays: Math.ceil(selectedTasks.length / 3),
+          subtotal: selectedServiceRequests.length * 2500 + pmContainers.length * 1800,
+          totalAllowance: Math.ceil(selectedTasks.length / 3) * ((technician?.hotelAllowance || 800) + (technician?.localTravelAllowance || 400)),
+          totalAdditional: Math.round((selectedServiceRequests.length * 2500 + pmContainers.length * 1800) * 0.08),
+          totalCost: (selectedServiceRequests.length * 2500 + pmContainers.length * 1800) +
+                    Math.ceil(selectedTasks.length / 3) * ((technician?.hotelAllowance || 800) + (technician?.localTravelAllowance || 400)) +
+                    Math.round((selectedServiceRequests.length * 2500 + pmContainers.length * 1800) * 0.08)
+        }
+      };
+
+      setPdfData({
+        tripData: pmPlanData,
+        technician,
+        serviceRequests: selectedServiceRequests,
+        pmContainers,
+        wageBreakdown,
+        generatedAt: new Date().toISOString(),
+        generatedBy: getCurrentUser()?.name || 'System'
+      });
+      setShowPDFPreview(true);
+
+      toast({
+        title: "PDF Generated Successfully",
+        description: `Finance approval PDF prepared. Preview shown below.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "PDF Generation Failed",
+        description: error?.message || "Failed to generate finance PDF",
         variant: "destructive",
       });
     },
@@ -1795,20 +1953,32 @@ export default function Scheduling() {
                                 Assigned Services by City
                               </h4>
                               <div className="grid grid-cols-2 gap-2">
-                                {Object.entries(selectedTechForSmartPlan.assignedServices?.byCity || {}).map(([city, services]: [string, any]) => (
-                                  <div 
-                                    key={city} 
-                                    className={`p-2 border rounded-lg cursor-pointer transition-all hover:bg-muted/50 ${
-                                      selectedCityForPlan === city ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''
-                                    }`}
-                                    onClick={() => setSelectedCityForPlan(selectedCityForPlan === city ? "" : city)}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-medium text-sm">{city}</span>
-                                      <Badge variant="outline">{services.length}</Badge>
+                                {Object.entries(selectedTechForSmartPlan.assignedServices?.byCity || {}).map(([cityKey, services]: [string, any]) => {
+                                  // Extract city name from "City (Client Name)" format
+                                  const cityMatch = cityKey.match(/^(.+?)\s*\(/);
+                                  const cityName = cityMatch ? cityMatch[1].trim() : cityKey;
+                                  const clientName = services[0]?.customerName || '';
+                                  
+                                  return (
+                                    <div 
+                                      key={cityKey} 
+                                      className={`p-2 border rounded-lg cursor-pointer transition-all hover:bg-muted/50 ${
+                                        selectedCityForPlan === cityKey ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''
+                                      }`}
+                                      onClick={() => setSelectedCityForPlan(selectedCityForPlan === cityKey ? "" : cityKey)}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex-1 min-w-0">
+                                          <span className="font-medium text-sm block">{cityName}</span>
+                                          {clientName && (
+                                            <span className="text-xs text-muted-foreground truncate">{clientName}</span>
+                                          )}
+                                        </div>
+                                        <Badge variant="outline" className="ml-2">{services.length}</Badge>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -1846,46 +2016,24 @@ export default function Scheduling() {
                             </div>
                           )}
 
-                          {/* Plan Trip Button */}
+                          {/* Consolidated Trip Planning Card */}
                           {selectedCityForPlan && (
                             <div className="pt-4 border-t">
-                              <div className="bg-blue-500/10 rounded-lg p-4 space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="font-medium">Plan Trip to {selectedCityForPlan}</p>
-                                    <p className="text-sm text-muted-foreground">
-                                      {selectedTechForSmartPlan.assignedServices?.byCity?.[selectedCityForPlan]?.length || 0} existing services + 
-                                      {selectedTechForSmartPlan.pmRecommendations?.[selectedCityForPlan]?.count || 0} PM tasks
-                                    </p>
-                                  </div>
-                                  <Button
-                                    className="gap-2"
-                                    onClick={() => {
-                                      setAutoPlanParams({
-                                        technicianId: selectedTechForSmartPlan.id,
-                                        destinationCity: selectedCityForPlan,
-                                        startDate: new Date().toISOString().split('T')[0],
-                                        endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                                      });
-                                      setActiveTab("travel");
-                                      toast({
-                                        title: "Planning trip...",
-                                        description: `Creating trip for ${selectedTechForSmartPlan.name} to ${selectedCityForPlan}`,
-                                      });
-                                      planTripMutation.mutate({
-                                        technicianId: selectedTechForSmartPlan.id,
-                                        destinationCity: selectedCityForPlan,
-                                        startDate: new Date().toISOString().split('T')[0],
-                                        endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                                      });
-                                    }}
-                                  >
-                                    <Plane className="h-4 w-4" />
-                                    Plan Trip
-                                    <ChevronRight className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </div>
+                              <ConsolidatedTripCard
+                                technician={selectedTechForSmartPlan}
+                                city={selectedCityForPlan}
+                                assignedServices={selectedTechForSmartPlan.assignedServices?.byCity?.[selectedCityForPlan] || []}
+                                pmTasks={selectedTechForSmartPlan.pmRecommendations?.[selectedCityForPlan]?.containers || []}
+                                onPlanTrip={(params) => {
+                                  setAutoPlanParams(params);
+                                  setActiveTab("travel");
+                                  toast({
+                                    title: "Planning consolidated trip...",
+                                    description: `Creating trip for ${selectedTechForSmartPlan.name} to ${selectedCityForPlan}`,
+                                  });
+                                  planTripMutation.mutate(params);
+                                }}
+                              />
                             </div>
                           )}
 
@@ -1927,8 +2075,17 @@ export default function Scheduling() {
 
             {/* Technician Travel Tab */}
             <TabsContent value="travel" className="space-y-6 mt-6">
+              {/* Planned Trips Section */}
+              <PlannedTripsList onTripSelected={(tripId) => {
+                // Could navigate to trip details or show in dialog
+                toast({
+                  title: "Trip Selected",
+                  description: `Selected trip ${tripId}`,
+                });
+              }} />
+
               <div>
-                <h2 className="text-2xl font-bold text-foreground mb-2">Technician Travel & Auto PM</h2>
+                <h2 className="text-2xl font-bold text-foreground mb-2">Plan New Trip</h2>
                 <p className="text-sm text-muted-foreground">
                   Generate trips automatically, review costs and PM tasks, then save in one click.
                 </p>
@@ -1963,6 +2120,22 @@ export default function Scheduling() {
                     </Button>
                   </AlertDescription>
                 </Alert>
+              )}
+
+              {/* PDF Preview */}
+              {showPDFPreview && pdfData && (
+                <div className="mb-6">
+                  <TripFinancePDF
+                    tripData={pmPlanData}
+                    technician={technicians?.find((t: any) => t.id === pmPlanData.techId)}
+                    serviceRequests={[]} // Would need to be populated from selected tasks
+                    pmContainers={[]} // Would need to be populated from selected tasks
+                    wageBreakdown={pdfData?.metadata || {}}
+                    generatedAt={pdfData?.metadata?.generatedAt || new Date().toISOString()}
+                    generatedBy={pdfData?.metadata?.generatedBy || 'System'}
+                    onClose={() => setShowPDFPreview(false)}
+                  />
+                </div>
               )}
 
               <AutoPlanForm
