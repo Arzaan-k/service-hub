@@ -118,13 +118,14 @@ async function createPMServiceRequest(container: any, daysSinceLastPM: number): 
       return null;
     }
     
-    // Generate request number
-    const timestamp = Date.now();
-    const requestNumber = `SR-PM-${timestamp}`;
+    // Generate job order number (e.g., NOV081)
+    const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
+    const jobOrderNumber = await generateJobOrderNumber();
     
     // Create the service request
     const serviceRequest = await storage.createServiceRequest({
-      requestNumber: requestNumber,
+      requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
+      jobOrder: jobOrderNumber,
       containerId: container.id,
       customerId: customerId,
       priority: 'normal',
@@ -151,7 +152,7 @@ async function createPMServiceRequest(container: any, daysSinceLastPM: number): 
       containerCode: container.containerCode || container.containerId || 'Unknown',
       daysSinceLastPM: daysSinceLastPM,
       serviceRequestId: serviceRequest.id,
-      requestNumber: requestNumber,
+      requestNumber: jobOrderNumber,
     };
   } catch (error) {
     console.error(`[PM Check] Error creating PM service request for container ${container.id}:`, error);

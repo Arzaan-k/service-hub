@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Edit, Key, Mail, User, Users, Plus, Send } from 'lucide-react';
+import { Edit, Key, Mail, User, Users, Plus, Send, Search, SlidersHorizontal, X, ArrowUpDown } from 'lucide-react';
 import { GlassCard } from '@/components/ui/animated-card';
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
@@ -25,12 +25,30 @@ interface User {
   whatsappVerified: boolean;
 }
 
+// Filter state interface
+interface UserFilters {
+  search: string;
+  role: string;
+  status: string;
+  emailVerified: string;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
+
 export default function AdminUserManagement() {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isCredentialsDialogOpen, setIsCredentialsDialogOpen] = useState(false);
-  const [filterRole, setFilterRole] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<UserFilters>({
+    search: '',
+    role: 'all',
+    status: 'all',
+    emailVerified: 'all',
+    sortBy: 'name',
+    sortOrder: 'asc'
+  });
   const [credentialsForm, setCredentialsForm] = useState({
     email: '',
     password: '',
@@ -197,10 +215,75 @@ export default function AdminUserManagement() {
     setSelectedUserForCredentials(null);
   };
 
-  const filteredUsers = users?.filter((user: User) => {
-    if (filterRole === 'all') return true;
-    return user.role === filterRole;
-  }) || [];
+  // Filter and sort users
+  const filteredUsers = useMemo(() => {
+    if (!users) return [];
+    let result = [...users];
+
+    // Search filter
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      result = result.filter((user: User) => 
+        user.name?.toLowerCase().includes(searchLower) ||
+        user.email?.toLowerCase().includes(searchLower) ||
+        user.phoneNumber?.includes(searchLower)
+      );
+    }
+
+    // Role filter
+    if (filters.role !== 'all') {
+      result = result.filter((user: User) => user.role === filters.role);
+    }
+
+    // Status filter
+    if (filters.status !== 'all') {
+      result = result.filter((user: User) => 
+        filters.status === 'active' ? user.isActive : !user.isActive
+      );
+    }
+
+    // Email verified filter
+    if (filters.emailVerified !== 'all') {
+      result = result.filter((user: User) => 
+        filters.emailVerified === 'verified' ? user.emailVerified : !user.emailVerified
+      );
+    }
+
+    // Sort
+    result.sort((a: User, b: User) => {
+      let comparison = 0;
+      switch (filters.sortBy) {
+        case 'name':
+          comparison = (a.name || '').localeCompare(b.name || '');
+          break;
+        case 'email':
+          comparison = (a.email || '').localeCompare(b.email || '');
+          break;
+        case 'role':
+          comparison = (a.role || '').localeCompare(b.role || '');
+          break;
+        default:
+          comparison = 0;
+      }
+      return filters.sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return result;
+  }, [users, filters]);
+
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      role: 'all',
+      status: 'all',
+      emailVerified: 'all',
+      sortBy: 'name',
+      sortOrder: 'asc'
+    });
+  };
+
+  const hasActiveFilters = filters.search || filters.role !== 'all' || 
+    filters.status !== 'all' || filters.emailVerified !== 'all';
 
   const getRoleBadgeVariant = (role: string) => {
     switch (role) {
@@ -259,29 +342,131 @@ export default function AdminUserManagement() {
                 <p className="text-muted-foreground">Manage user accounts and credentials</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <Button
+              onClick={() => setIsCreateUserDialogOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Create User
+            </Button>
+          </div>
+
+          {/* Search and Filter Bar */}
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search users by name, email, phone..."
+                  value={filters.search}
+                  onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))}
+                  className="pl-9"
+                />
+              </div>
+
+              {/* Filter Toggle */}
               <Button
-                onClick={() => setIsCreateUserDialogOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                variant={showFilters ? "default" : "outline"}
+                onClick={() => setShowFilters(!showFilters)}
+                className="gap-2"
               >
-                <Plus className="h-4 w-4 mr-2" />
-                Create User
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters
+                {hasActiveFilters && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                    !
+                  </Badge>
+                )}
               </Button>
-              <Select value={filterRole} onValueChange={setFilterRole}>
-                <SelectTrigger className="w-40 bg-black/20 border-white/10">
-                  <SelectValue placeholder="Filter by role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Roles</SelectItem>
-                  <SelectItem value="super_admin">Super Admin</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="senior_technician">Senior Technician</SelectItem>
-                  <SelectItem value="amc">AMC</SelectItem>
-                  <SelectItem value="coordinator">Coordinator</SelectItem>
-                  <SelectItem value="technician">Technician</SelectItem>
-                  <SelectItem value="client">Client</SelectItem>
-                </SelectContent>
-              </Select>
+
+              {/* Clear Filters */}
+              {hasActiveFilters && (
+                <Button variant="ghost" onClick={clearFilters} className="gap-2">
+                  <X className="h-4 w-4" />
+                  Clear
+                </Button>
+              )}
+            </div>
+
+            {/* Expanded Filters */}
+            {showFilters && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-border">
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Role</Label>
+                  <Select value={filters.role} onValueChange={(v) => setFilters(f => ({ ...f, role: v }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All roles" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      <SelectItem value="super_admin">Super Admin</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="coordinator">Coordinator</SelectItem>
+                      <SelectItem value="senior_technician">Senior Technician</SelectItem>
+                      <SelectItem value="technician">Technician</SelectItem>
+                      <SelectItem value="amc">AMC</SelectItem>
+                      <SelectItem value="client">Client</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
+                  <Select value={filters.status} onValueChange={(v) => setFilters(f => ({ ...f, status: v }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Email Verified</Label>
+                  <Select value={filters.emailVerified} onValueChange={(v) => setFilters(f => ({ ...f, emailVerified: v }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="verified">Verified</SelectItem>
+                      <SelectItem value="unverified">Unverified</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Sort By</Label>
+                  <div className="flex gap-2">
+                    <Select value={filters.sortBy} onValueChange={(v) => setFilters(f => ({ ...f, sortBy: v }))}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Sort by" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="name">Name</SelectItem>
+                        <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="role">Role</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setFilters(f => ({ ...f, sortOrder: f.sortOrder === 'asc' ? 'desc' : 'asc' }))}
+                    >
+                      <ArrowUpDown className={`h-4 w-4 ${filters.sortOrder === 'asc' ? 'rotate-180' : ''}`} />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Results count */}
+            <div className="mt-4 text-sm text-muted-foreground">
+              Showing {filteredUsers.length} of {users?.length || 0} users
             </div>
           </div>
 

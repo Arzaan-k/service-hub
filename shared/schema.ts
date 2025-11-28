@@ -795,6 +795,38 @@ export const insertTechnicianTripSchema = createInsertSchema(technicianTrips).om
 export const insertTechnicianTripCostSchema = createInsertSchema(technicianTripCosts).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertTechnicianTripTaskSchema = createInsertSchema(technicianTripTasks).omit({ id: true, createdAt: true, updatedAt: true } as any);
 
+// Service Request Remarks (immutable)
+export const serviceRequestRemarks = pgTable("service_request_remarks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  userName: text("user_name").notNull(),
+  userRole: text("user_role").notNull(),
+  remarkText: text("remark_text").notNull(),
+  isSystemGenerated: boolean("is_system_generated").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Service Request Recordings
+export const serviceRequestRecordings = pgTable("service_request_recordings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceRequestId: varchar("service_request_id").references(() => serviceRequests.id).notNull(),
+  remarkId: varchar("remark_id").references(() => serviceRequestRemarks.id),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  uploadedByName: text("uploaded_by_name").notNull(),
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  fileSize: integer("file_size"),
+  originalFileSize: integer("original_file_size"),
+  durationSeconds: integer("duration_seconds"),
+  mimeType: text("mime_type"),
+  isCompressed: boolean("is_compressed").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertServiceRequestRemarkSchema = createInsertSchema(serviceRequestRemarks).omit({ id: true, createdAt: true } as any);
+export const insertServiceRequestRecordingSchema = createInsertSchema(serviceRequestRecordings).omit({ id: true, createdAt: true } as any);
+
 // Types (updated according to PRD)
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -841,3 +873,8 @@ export type TechnicianTripCost = typeof technicianTripCosts.$inferSelect;
 export type InsertTechnicianTripCost = z.infer<typeof insertTechnicianTripCostSchema>;
 export type TechnicianTripTask = typeof technicianTripTasks.$inferSelect;
 export type InsertTechnicianTripTask = z.infer<typeof insertTechnicianTripTaskSchema>;
+// Service Request Remarks & Recordings types
+export type ServiceRequestRemark = typeof serviceRequestRemarks.$inferSelect;
+export type InsertServiceRequestRemark = z.infer<typeof insertServiceRequestRemarkSchema>;
+export type ServiceRequestRecording = typeof serviceRequestRecordings.$inferSelect;
+export type InsertServiceRequestRecording = z.infer<typeof insertServiceRequestRecordingSchema>;

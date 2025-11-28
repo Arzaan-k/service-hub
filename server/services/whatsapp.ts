@@ -1139,8 +1139,13 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
       descriptionLength: fullDescription.length
     });
 
+    // Generate job order number (e.g., NOV081)
+    const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
+    const jobOrderNumber = await generateJobOrderNumber();
+
     const serviceRequest = await storage.createServiceRequest({
-      requestNumber: `SR-${Date.now()}${Math.floor(Math.random() * 1000)}`,
+      requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
+      jobOrder: jobOrderNumber,
       containerId: primaryContainer.id,
       customerId: customerId,
       priority: 'normal',
@@ -3319,9 +3324,14 @@ export class ServiceRequestViaWhatsApp {
         return;
       }
 
+      // Generate job order number (e.g., NOV081)
+      const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
+      const jobOrderNumber = await generateJobOrderNumber();
+
       // Create service request
       const serviceRequest = await this.storage.createServiceRequest({
-        requestNumber: `SR-${Date.now()}`,
+        requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
+        jobOrder: jobOrderNumber,
         containerId: conversationState.selectedContainerId,
         customerId: user.id,
         issueDescription: conversationState.issueDescription,
@@ -3487,9 +3497,14 @@ What would you like to do next?`;
     }
 
     try {
+      // Generate job order number (e.g., NOV081)
+      const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
+      const jobOrderNumber = await generateJobOrderNumber();
+
       // Create service request
       const serviceRequest = await this.storage.createServiceRequest({
-        requestNumber: `SR-${Date.now()}`,
+        requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
+        jobOrder: jobOrderNumber,
         containerId: conversationState.selectedContainerId,
         customerId: user.id,
         issueDescription: conversationState.issueDescription,

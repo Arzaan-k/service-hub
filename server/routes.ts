@@ -48,12 +48,13 @@ import { db } from './db';
 import { sql, eq, desc } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
-import { serviceReportPdfs, serviceRequests } from '@shared/schema';
+import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings } from '@shared/schema';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
 const documentProcessor = new DocumentProcessor();
 import { simpleSeed } from "./simple-seed";
+import { parseExcelFile, importServiceHistory, getImportPreview } from "./services/excel-import";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -61,18 +62,25 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Allow PDF, Word documents, and text files (for testing)
+    // Allow PDF, Word documents, text files, audio, and Excel files
     const allowedMimes = [
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'audio/webm',
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/wav',
+      'audio/ogg',
     ];
 
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF and Word documents are allowed.'));
+      cb(new Error('Invalid file type.'));
     }
   },
   storage: multer.memoryStorage() // Store in memory for processing
@@ -1887,7 +1895,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const jobOrderNumber = await generateJobOrderNumber();
 
       const request = await storage.createServiceRequest({
-        requestNumber: `SR-${Date.now()}`,
+        requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
         jobOrder: jobOrderNumber,
         containerId,
         customerId,
@@ -9673,6 +9681,255 @@ function generateFinancePDFContent(data: any) {
           console.error("Failed to list reports:", e);
           res.status(500).json({ error: "Failed to list reports" });
       }
+  });
+
+  // ==================== REMARKS & RECORDINGS ROUTES ====================
+
+  // Get all remarks for a service request
+  app.get("/api/service-requests/:id/remarks-list", authenticateUser, async (req, res) => {
+    try {
+      const remarks = await db.select().from(serviceRequestRemarks)
+        .where(eq(serviceRequestRemarks.serviceRequestId, req.params.id))
+        .orderBy(desc(serviceRequestRemarks.createdAt));
+      res.json(remarks);
+    } catch (error: any) {
+      console.error("Failed to fetch remarks:", error);
+      res.status(500).json({ error: "Failed to fetch remarks" });
+    }
+  });
+
+  // Add a new remark (immutable - cannot be edited or deleted)
+  app.post("/api/service-requests/:id/remarks-list", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { remarkText } = req.body;
+      if (!remarkText?.trim()) {
+        return res.status(400).json({ error: "Remark text is required" });
+      }
+
+      const user = await storage.getUser(req.user?.id || '');
+      const [remark] = await db.insert(serviceRequestRemarks).values({
+        serviceRequestId: req.params.id,
+        userId: req.user?.id,
+        userName: user?.name || 'Unknown User',
+        userRole: user?.role || 'unknown',
+        remarkText: remarkText.trim(),
+        isSystemGenerated: false,
+      }).returning();
+
+      // Broadcast to WebSocket
+      broadcast({ type: "remark_added", data: { serviceRequestId: req.params.id, remark } });
+
+      res.status(201).json(remark);
+    } catch (error: any) {
+      console.error("Failed to add remark:", error);
+      res.status(500).json({ error: "Failed to add remark" });
+    }
+  });
+
+  // Get all recordings for a service request
+  app.get("/api/service-requests/:id/recordings", authenticateUser, async (req, res) => {
+    try {
+      const recordings = await db.select().from(serviceRequestRecordings)
+        .where(eq(serviceRequestRecordings.serviceRequestId, req.params.id))
+        .orderBy(desc(serviceRequestRecordings.createdAt));
+      res.json(recordings);
+    } catch (error: any) {
+      console.error("Failed to fetch recordings:", error);
+      res.status(500).json({ error: "Failed to fetch recordings" });
+    }
+  });
+
+  // Upload a recording
+  app.post("/api/service-requests/:id/recordings", authenticateUser, upload.single('audio'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Audio file is required" });
+      }
+
+      const user = await storage.getUser(req.user?.id || '');
+      const fileName = `recording_${Date.now()}_${req.file.originalname}`;
+      const filePath = `/uploads/recordings/${fileName}`;
+
+      // Save file to disk (in production, use cloud storage)
+      const fs = await import('fs');
+      const path = await import('path');
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'recordings');
+      
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      fs.writeFileSync(path.join(uploadsDir, fileName), req.file.buffer);
+
+      const [recording] = await db.insert(serviceRequestRecordings).values({
+        serviceRequestId: req.params.id,
+        uploadedBy: req.user?.id,
+        uploadedByName: user?.name || 'Unknown User',
+        fileName: req.file.originalname,
+        filePath: filePath,
+        fileSize: req.file.size,
+        originalFileSize: parseInt(req.body.originalSize) || req.file.size,
+        mimeType: req.file.mimetype,
+        isCompressed: req.body.compressedSize !== req.body.originalSize,
+      }).returning();
+
+      // Broadcast to WebSocket
+      broadcast({ type: "recording_added", data: { serviceRequestId: req.params.id, recording } });
+
+      res.status(201).json(recording);
+    } catch (error: any) {
+      console.error("Failed to upload recording:", error);
+      res.status(500).json({ error: "Failed to upload recording" });
+    }
+  });
+
+  // Download a recording
+  app.get("/api/recordings/:id/download", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      console.log('[RECORDING DOWNLOAD] Request for recording:', req.params.id);
+      console.log('[RECORDING DOWNLOAD] User:', req.user?.id);
+      
+      const [recording] = await db.select().from(serviceRequestRecordings)
+        .where(eq(serviceRequestRecordings.id, req.params.id));
+      
+      if (!recording) {
+        console.log('[RECORDING DOWNLOAD] Recording not found:', req.params.id);
+        return res.status(404).json({ error: "Recording not found" });
+      }
+
+      console.log('[RECORDING DOWNLOAD] Found recording:', recording.fileName, recording.filePath);
+
+      const fs = await import('fs');
+      const path = await import('path');
+      const fullPath = path.join(process.cwd(), recording.filePath.replace(/^\//, ''));
+      
+      console.log('[RECORDING DOWNLOAD] Full file path:', fullPath);
+      
+      if (!fs.existsSync(fullPath)) {
+        console.log('[RECORDING DOWNLOAD] File does not exist:', fullPath);
+        return res.status(404).json({ error: "Recording file not found" });
+      }
+
+      console.log('[RECORDING DOWNLOAD] Sending file...');
+      res.setHeader('Content-Type', recording.mimeType || 'audio/mpeg');
+      res.setHeader('Content-Disposition', `attachment; filename="${recording.fileName}"`);
+      res.sendFile(fullPath);
+    } catch (error: any) {
+      console.error('[RECORDING DOWNLOAD] Error:', error);
+      res.status(500).json({ error: "Failed to download recording" });
+    }
+  });
+
+  // ==================== EXCEL IMPORT ROUTES ====================
+
+  // Preview Excel import
+  app.post("/api/import/service-history/preview", authenticateUser, requireRole("admin", "super_admin"), upload.single('file'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Excel file is required" });
+      }
+
+      const data = parseExcelFile(req.file.buffer);
+      const preview = getImportPreview(data, 20);
+      
+      res.json({
+        success: true,
+        ...preview,
+      });
+    } catch (error: any) {
+      console.error("Excel preview error:", error);
+      res.status(500).json({ error: "Failed to parse Excel file: " + error.message });
+    }
+  });
+
+  // Import service history from Excel
+  app.post("/api/import/service-history", authenticateUser, requireRole("admin", "super_admin"), upload.single('file'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Excel file is required" });
+      }
+
+      const options = {
+        createMissingContainers: req.body.createMissingContainers !== 'false',
+        updateExisting: req.body.updateExisting !== 'false',
+        defaultPriority: req.body.defaultPriority || 'normal',
+        defaultStatus: req.body.defaultStatus || 'completed',
+      };
+
+      console.log('📊 Starting Excel import with options:', options);
+      
+      const data = parseExcelFile(req.file.buffer);
+      console.log(`📊 Parsed ${data.length} rows from Excel`);
+      
+      const result = await importServiceHistory(data, options);
+      
+      console.log('📊 Import complete:', result);
+      
+      res.json({
+        success: result.success,
+        message: `Imported ${result.imported} service requests, updated ${result.updated}, skipped ${result.skipped}`,
+        ...result,
+      });
+    } catch (error: any) {
+      console.error("Excel import error:", error);
+      res.status(500).json({ error: "Failed to import Excel file: " + error.message });
+    }
+  });
+
+  // ==================== EMAIL TEST ROUTES ====================
+
+  // Test email configuration
+  app.get("/api/admin/test-email-config", authenticateUser, requireRole("admin", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { testEmailConfiguration } = await import('./services/emailService');
+      const result = await testEmailConfiguration();
+      res.json({
+        success: result.smtp || result.mailgun,
+        smtp: result.smtp,
+        mailgun: result.mailgun,
+        errors: result.errors,
+        message: result.smtp && result.mailgun 
+          ? 'Both SMTP and Mailgun are configured and working'
+          : result.smtp 
+            ? 'SMTP is working, Mailgun not configured or failed'
+            : result.mailgun 
+              ? 'Mailgun is working, SMTP not configured or failed'
+              : 'No email service is working'
+      });
+    } catch (error: any) {
+      console.error("Email config test error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Send test email
+  app.post("/api/admin/send-test-email", authenticateUser, requireRole("admin", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { to, subject, body } = req.body;
+      
+      if (!to) {
+        return res.status(400).json({ error: "Recipient email (to) is required" });
+      }
+
+      const { sendEmail } = await import('./services/emailService');
+      const result = await sendEmail({
+        to,
+        subject: subject || 'Test Email from Service Hub',
+        body: body || `This is a test email sent from Service Hub at ${new Date().toISOString()}.\n\nIf you received this email, your email configuration is working correctly.`,
+        from: 'help@crystalgroup.in'
+      });
+
+      res.json({
+        success: true,
+        messageId: result.messageId,
+        provider: (result as any).provider || 'unknown',
+        message: `Test email sent successfully to ${to}`
+      });
+    } catch (error: any) {
+      console.error("Send test email error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   return httpServer;

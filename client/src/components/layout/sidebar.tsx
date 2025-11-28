@@ -36,7 +36,7 @@ export default function Sidebar() {
     { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", color: "text-scheduling", roles: ["admin", "coordinator", "super_admin"] },
     { path: "/clients", label: "Clients", icon: "fas fa-users", color: "text-clients", roles: ["admin", "coordinator", "super_admin", "amc", "senior_technician"] },
     // Admin/Coordinator/Technician
-    { path: "/whatsapp", label: "WhatsApp Hub", icon: "fab fa-whatsapp", hasPulse: true, color: "text-whatsapp", roles: ["admin", "coordinator", "super_admin"] },
+    // WhatsApp Hub removed - Feature 9
     { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", color: "text-inventory", roles: ["admin", "coordinator", "technician", "super_admin", "senior_technician"] },
     // User management
     { path: "/admin/user-management", label: "User Management", icon: "fas fa-users-cog", color: "text-primary", roles: ["admin", "super_admin"] },

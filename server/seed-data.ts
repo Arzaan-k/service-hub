@@ -148,17 +148,22 @@ export async function seedDatabase() {
 
     await db.insert(alerts).values(alerts_data);
 
-    // Create sample service requests
+    // Create sample service requests with MMMXXX format (e.g., NOV001)
     const serviceRequests_data = [];
+    const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const currentMonth = monthNames[new Date().getMonth()];
+    
     for (let i = 1; i <= 15; i++) {
       const container = createdContainers[Math.floor(Math.random() * createdContainers.length)];
       const priorities = ["urgent", "high", "normal", "low"];
       const statuses = ["pending", "approved", "scheduled", "in_progress", "completed"];
       const priority = priorities[Math.floor(Math.random() * priorities.length)];
       const status = statuses[Math.floor(Math.random() * statuses.length)];
+      const jobOrderNumber = `${currentMonth}${i.toString().padStart(3, '0')}`; // e.g., NOV001
       
       serviceRequests_data.push({
-        requestNumber: `SR-${Date.now()}-${i}`,
+        requestNumber: jobOrderNumber,
+        jobOrder: jobOrderNumber,
         containerId: container.id,
         customerId: container.currentCustomerId,
         issueDescription: `Service request ${i}: ${priority} priority issue`,
