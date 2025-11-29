@@ -53,7 +53,11 @@ if (isMailgunConfigured()) {
 if (!isSmtpConfigured() && !isMailgunConfigured()) {
   console.warn('⚠️ No email service configured - both SMTP and Mailgun credentials missing. Emails will be skipped in development mode.');
 } else if (isSmtpConfigured() && isMailgunConfigured()) {
-  console.log('✅ Email service configured with SMTP (primary) and Mailgun (fallback)');
+  console.log('✅ Email service configured with Mailgun (primary) and Google SMTP (fallback)');
+} else if (isMailgunConfigured()) {
+  console.log('✅ Email service configured with Mailgun only');
+} else if (isSmtpConfigured()) {
+  console.log('✅ Email service configured with Google SMTP only');
 }
 
 export interface EmailAttachment {
@@ -172,7 +176,7 @@ async function sendViaGoogleSmtp(options: EmailOptions): Promise<any> {
 
 export async function sendEmail(options: EmailOptions) {
   const { to, subject, body, html, attachments, from } = options;
-  
+
   // Skip email in development if not configured
   if (!isSmtpConfigured() && !isMailgunConfigured()) {
     if (process.env.NODE_ENV === 'development') {
@@ -185,22 +189,10 @@ export async function sendEmail(options: EmailOptions) {
 
   const errors: string[] = [];
 
-  // Try Google SMTP first (primary)
-  if (isSmtpConfigured() && smtpTransporter) {
-    try {
-      console.log('📧 Attempting to send email via Google SMTP...');
-      const result = await sendViaGoogleSmtp(options);
-      return result;
-    } catch (error: any) {
-      console.warn('⚠️ Google SMTP failed:', error.message);
-      errors.push(`Google SMTP: ${error.message}`);
-    }
-  }
-
-  // Fallback to Mailgun API (most reliable)
+  // Try Mailgun API first (primary - most reliable)
   if (isMailgunConfigured()) {
     try {
-      console.log('📧 Attempting to send email via Mailgun API (fallback)...');
+      console.log('📧 Attempting to send email via Mailgun API...');
       const result = await sendViaMailgunApi(options);
       return result;
     } catch (error: any) {
@@ -208,10 +200,10 @@ export async function sendEmail(options: EmailOptions) {
       errors.push(`Mailgun API: ${error.message}`);
     }
 
-    // Try Mailgun SMTP as last resort
+    // Try Mailgun SMTP as second option
     if (mailgunTransporter) {
       try {
-        console.log('📧 Attempting to send email via Mailgun SMTP (last resort)...');
+        console.log('📧 Attempting to send email via Mailgun SMTP (fallback)...');
         const result = await sendViaMailgunSmtp(options);
         return result;
       } catch (error: any) {
@@ -221,16 +213,28 @@ export async function sendEmail(options: EmailOptions) {
     }
   }
 
+  // Fallback to Google SMTP if configured
+  if (isSmtpConfigured() && smtpTransporter) {
+    try {
+      console.log('📧 Attempting to send email via Google SMTP (last resort)...');
+      const result = await sendViaGoogleSmtp(options);
+      return result;
+    } catch (error: any) {
+      console.warn('⚠️ Google SMTP failed:', error.message);
+      errors.push(`Google SMTP: ${error.message}`);
+    }
+  }
+
   // All methods failed
   const errorMessage = `All email methods failed:\n${errors.join('\n')}`;
   console.error('❌ ' + errorMessage);
-  
+
   // In development, don't throw - just log and return mock
   if (process.env.NODE_ENV === 'development') {
     console.warn('⚠️ Email sending failed in development - continuing without email');
     return { messageId: 'mock-id-error', error: true, errors };
   }
-  
+
   throw new Error(errorMessage);
 }
 

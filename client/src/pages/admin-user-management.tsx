@@ -130,9 +130,18 @@ export default function AdminUserManagement() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast.success('User created and credentials sent via email');
+
+      if (data.emailSent) {
+        toast.success(`User created successfully! Credentials sent to ${data.user.email} via email.`);
+      } else {
+        toast.success(
+          `User created successfully! ${data.message || 'Email not configured - credentials in server logs'}`,
+          { duration: 6000 }
+        );
+      }
+
       setIsCreateUserDialogOpen(false);
       setCreateUserForm({ name: '', email: '', phoneNumber: '', role: 'client' });
     },
@@ -157,8 +166,14 @@ export default function AdminUserManagement() {
       }
       return response.json();
     },
-    onSuccess: () => {
-      toast.success('New credentials sent via email');
+    onSuccess: (data) => {
+      if (data.emailSent) {
+        toast.success(`New credentials sent to ${data.user?.email || 'user'} via email!`);
+      } else {
+        toast.success(`Credentials generated. ${data.message || 'Check server logs for details.'}`, {
+          duration: 6000
+        });
+      }
     },
     onError: (error: Error) => {
       toast.error(error.message);

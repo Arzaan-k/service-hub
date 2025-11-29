@@ -99,14 +99,26 @@ export default function ServiceRequestDetail() {
 
   const generateReport = useMutation({
     mutationFn: async (stage: string) => {
-      return await apiRequest("POST", `/api/service-requests/${id}/generate-report`, { stage });
+      const response = await apiRequest("POST", `/api/service-requests/${id}/generate-report`, { stage });
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       refreshReports();
-      toast({
-        title: "Report Generated",
-        description: "Report generated and emailed successfully.",
-      });
+
+      if (data.emailSent) {
+        toast({
+          title: "Report Generated & Sent",
+          description: `Report generated and emailed to ${data.recipients?.join(', ') || 'recipient'} via ${data.emailProvider || 'email'}.`,
+        });
+      } else {
+        toast({
+          title: "Report Generated",
+          description: data.emailError
+            ? `Report saved but email failed: ${data.emailError}`
+            : "Report generated but email service is not configured.",
+          variant: "default",
+        });
+      }
     },
     onError: (e: Error) => {
       toast({

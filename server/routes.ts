@@ -822,6 +822,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : `${emailResult.error || 'Check server logs for credentials.'}`;
 
       res.json({
+        user: { ...user, password: undefined },
         message,
         emailSent: emailResult.success,
         plainPassword: plainPassword // Only for development/debugging
@@ -9579,39 +9580,70 @@ function generateFinancePDFContent(data: any) {
       
       // Send Email
       const recipient = 'aiteamcrystal@gmail.com';
-      
+
       // Try sending email, but don't fail request if email fails
+      let emailSent = false;
+      let emailError: string | null = null;
+      let emailProvider: string | null = null;
+
       try {
-        await sendEmail({
+        const emailResult = await sendEmail({
             to: recipient,
             subject: `Service Report: ${stage.toUpperCase().replace('_', ' ')} - SR-${id}`,
             body: `Please find attached the ${stage.replace('_', ' ')} report for Service Request ${id}.\n\nReference: SR-${id}\nGenerated: ${new Date().toLocaleString()}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2>Service Report Generated</h2>
+                <p>Please find attached the <strong>${stage.replace('_', ' ')}</strong> report for Service Request <strong>${id}</strong>.</p>
+                <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                  <p><strong>Reference:</strong> SR-${id}</p>
+                  <p><strong>Report Stage:</strong> ${stage.toUpperCase().replace('_', ' ')}</p>
+                  <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+                </div>
+                <p style="color: #666; font-size: 12px;">This is an automated email from Service Hub.</p>
+              </div>
+            `,
             attachments: [{
                 filename: fileName,
-                content: pdfBuffer
-            }]
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+            }],
+            from: process.env.MAILGUN_FROM || process.env.EMAIL_FROM
         });
-      } catch (emailError) {
-          console.error("Failed to send email:", emailError);
+
+        emailSent = !emailResult.error && !emailResult.skipped;
+        emailProvider = emailResult.provider || null;
+
+        if (emailSent) {
+          console.log(`✅ Service report email sent to ${recipient} via ${emailProvider}`);
+        } else {
+          emailError = 'Email service not configured';
+          console.warn(`⚠️ Service report email not sent: ${emailError}`);
+        }
+      } catch (error: any) {
+          emailError = error.message;
+          console.error("Failed to send email:", error.message);
           // Continue to save report record
       }
-      
+
       // Save PDF buffer directly to database (no disk storage)
       const reportId = await db.insert(serviceReportPdfs).values({
           serviceRequestId: id,
           reportStage: stage,
           pdfData: pdfBuffer, // Store PDF as binary in database
           fileSize: pdfBuffer.length,
-          emailRecipients: [recipient],
-          status: 'emailed',
-          emailedAt: new Date()
+          emailRecipients: emailSent ? [recipient] : [],
+          status: emailSent ? 'emailed' : 'generated',
+          emailedAt: emailSent ? new Date() : null
       }).returning({ id: serviceReportPdfs.id });
-      
+
       res.json({
         success: true,
         reportId: reportId[0].id,
-        emailSent: true,
-        recipients: [recipient]
+        emailSent,
+        emailProvider,
+        emailError,
+        recipients: emailSent ? [recipient] : []
       });
       
     } catch (error: any) {
