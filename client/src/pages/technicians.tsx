@@ -6,7 +6,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -92,7 +92,7 @@ export default function Technicians() {
     enabled: authReady && !!authToken,
   });
 
-  const cities = Array.isArray(citiesData) ? citiesData.map((c: any) => c.city_name || c.city || c).filter(Boolean).sort() : [];
+  const cities = Array.isArray(citiesData) ? citiesData.map((c: any) => c.name || c.city_name || c.city || c).filter(Boolean).sort() : [];
 
   // Fetch assigned services summary for all technicians (single request)
   const { data: assignedServicesData, refetch: refetchAssignedServices } = useQuery({
@@ -863,6 +863,9 @@ export default function Technicians() {
         <DialogContent className="max-w-md modal-content modal">
           <DialogHeader>
             <DialogTitle>Add New Technician</DialogTitle>
+            <DialogDescription>
+              Add a new technician to your team with their contact information and specialization.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -981,6 +984,9 @@ export default function Technicians() {
         <DialogContent className="max-w-md modal-content modal">
           <DialogHeader>
             <DialogTitle>Add Third-Party Technician</DialogTitle>
+            <DialogDescription>
+              Add a third-party technician with their contact details and service information.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <ThirdPartyTechnicianForm
@@ -1008,6 +1014,9 @@ export default function Technicians() {
         <DialogContent className="max-w-md modal-content modal">
           <DialogHeader>
             <DialogTitle>Edit Technician</DialogTitle>
+            <DialogDescription>
+              Update technician information and settings.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
