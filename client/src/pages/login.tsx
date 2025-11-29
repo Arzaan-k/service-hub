@@ -133,17 +133,36 @@ export default function Login() {
   const forgotMutation = useMutation({
     mutationFn: async (data: { email: string }) => {
       const res = await apiRequest("POST", "/api/auth/forgot-password", data);
-      return await res.json();
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error || 'Failed to send OTP');
+      }
+      return result;
     },
-    onSuccess: () => {
-      toast({ title: "OTP sent", description: "Check your email for the verification code" });
+    onSuccess: (data) => {
+      if (data.emailSent) {
+        toast({ title: "OTP sent", description: "Check your email for the verification code" });
+      } else {
+        toast({
+          title: "Reset Code Generated",
+          description: `Email not configured. Reset code: ${data.resetCode}. Check server logs for more details.`,
+          variant: "default"
+        });
+      }
       setForgotOpen(false);
       setResetOpen(true);
       setRpEmail(fpEmail);
       setRpCode(""); // Clear OTP field
       setRpPassword(""); // Clear password field
     },
-    onError: () => toast({ title: "Failed", description: "Could not send OTP", variant: "destructive" })
+    onError: (error: any) => {
+      const message = error.message || "Could not send OTP";
+      toast({
+        title: "Failed",
+        description: message,
+        variant: "destructive"
+      });
+    }
   });
 
   const resetMutation = useMutation({

@@ -393,7 +393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const emailResult = await createAndSendEmailOTP(user);
       const message = emailResult.success
         ? 'OTP sent to email'
-        : `Reset code generated. ${emailResult.error || 'Check server logs for reset code.'}`;
+        : `Email not configured. Reset code: ${emailResult.code}. Configure SMTP in .env file to enable email sending.`;
       res.json({
         message,
         emailSent: emailResult.success,
@@ -4963,7 +4963,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get PM Overview - containers with their last PM date from service_requests (machine_status = 'Preventive Maintenance')
+  // Get PM Overview - containers with their last PM date from service_requests (call_status contains 'Preventive')
   app.get("/api/pm/overview", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
       console.log('[API] PM Overview requested');
@@ -5662,7 +5662,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const existingPM = await db.execute(sql`
           SELECT sr.* FROM service_requests sr
           WHERE sr.container_id = ${containerId}
-            AND sr.machine_status = 'Preventive Maintenance'
+            AND sr.call_status LIKE '%Preventive%'
             AND sr.status IN ('pending', 'scheduled', 'approved', 'in_progress')
         `);
 
@@ -6003,13 +6003,13 @@ Please check your assigned services for details.`;
       const { db } = await import('./db');
       const { sql } = await import('drizzle-orm');
 
-      // Get PM records from service_requests where machine_status = 'Preventive Maintenance'
+      // Get PM records from service_requests where call_status contains 'preventive'
       const pmRecords = await db.execute(sql`
-        SELECT 
+        SELECT
           container_id,
-          MAX(complaint_registration_time) as last_pm_date
+          MAX(requested_at) as last_pm_date
         FROM service_requests
-        WHERE LOWER(machine_status) LIKE '%preventive%'
+        WHERE LOWER(call_status) LIKE '%preventive%'
           AND container_id IS NOT NULL
         GROUP BY container_id
       `);
