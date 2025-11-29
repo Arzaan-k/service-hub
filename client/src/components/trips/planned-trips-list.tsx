@@ -13,6 +13,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
+import {
   Plane,
   MapPin,
   Calendar,
@@ -150,7 +154,11 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <MapPin className="h-3 w-3 text-muted-foreground" />
-                      <span>{trip.destinationCity}</span>
+                      <span>
+                        {typeof trip.destinationCity === 'object'
+                          ? (trip.destinationCity as any).city
+                          : trip.destinationCity}
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -173,8 +181,8 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                       <span>
                         {trip.costs?.totalEstimatedCost
                           ? Number(trip.costs.totalEstimatedCost).toLocaleString(
-                              "en-IN"
-                            )
+                            "en-IN"
+                          )
                           : "0"}
                       </span>
                     </div>
@@ -185,8 +193,8 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                         trip.tripStatus === "planned"
                           ? "default"
                           : trip.tripStatus === "completed"
-                          ? "secondary"
-                          : "outline"
+                            ? "secondary"
+                            : "outline"
                       }
                     >
                       {trip.tripStatus}
@@ -220,22 +228,31 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
         </CardContent>
       </Card>
 
-      {/* PDF Preview */}
-      {showPDFPreview && selectedTrip && (
-        <TripFinancePDF
-          tripData={selectedTrip.tripData || selectedTrip}
-          technician={selectedTrip.technician}
-          serviceRequests={selectedTrip.serviceRequests || selectedTrip.tasks?.filter((t: any) => t.taskType !== 'pm') || []}
-          pmContainers={selectedTrip.pmContainers || selectedTrip.tasks?.filter((t: any) => t.taskType === 'pm') || []}
-          wageBreakdown={selectedTrip.wageBreakdown || selectedTrip.costs || {}}
-          generatedAt={selectedTrip.generatedAt || new Date().toISOString()}
-          generatedBy={selectedTrip.generatedBy || "System"}
-          onClose={() => {
-            setShowPDFPreview(false);
-            setSelectedTrip(null);
-          }}
-        />
-      )}
+      {/* PDF Preview Dialog */}
+      <Dialog open={showPDFPreview} onOpenChange={(open) => {
+        setShowPDFPreview(open);
+        if (!open) {
+          setSelectedTrip(null);
+        }
+      }}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          {selectedTrip && (
+            <TripFinancePDF
+              tripData={selectedTrip.tripData || selectedTrip}
+              technician={selectedTrip.technician}
+              serviceRequests={selectedTrip.serviceRequests || selectedTrip.tasks?.filter((t: any) => t.taskType !== 'pm') || []}
+              pmContainers={selectedTrip.pmContainers || selectedTrip.tasks?.filter((t: any) => t.taskType === 'pm') || []}
+              wageBreakdown={selectedTrip.wageBreakdown || selectedTrip.costs || {}}
+              generatedAt={selectedTrip.generatedAt || new Date().toISOString()}
+              generatedBy={selectedTrip.generatedBy || "System"}
+              onClose={() => {
+                setShowPDFPreview(false);
+                setSelectedTrip(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
