@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -108,8 +109,11 @@ export default function ServiceRequests() {
   const customers = (() => {
     if (newContainerId && allContainers) {
       const selected = (allContainers as any[]).find((c) => c.id === newContainerId);
+      console.log('[Service Request] Selected container:', selected);
       if (selected && selected.currentCustomerId) {
-        return (allCustomers as any[] | undefined)?.filter((cust) => cust.id === selected.currentCustomerId);
+        const filtered = (allCustomers as any[] | undefined)?.filter((cust) => cust.id === selected.currentCustomerId);
+        console.log('[Service Request] Filtered customers for container:', filtered);
+        return filtered;
       }
     }
     return allCustomers;
@@ -117,7 +121,11 @@ export default function ServiceRequests() {
 
   const containers = (() => {
     if (newCustomerId && allContainers) {
-      return (allContainers as any[]).filter((c) => c.currentCustomerId === newCustomerId);
+      const filtered = (allContainers as any[]).filter((c) => c.currentCustomerId === newCustomerId);
+      console.log('[Service Request] Customer selected:', newCustomerId);
+      console.log('[Service Request] Filtered containers for customer:', filtered);
+      console.log('[Service Request] Sample container data:', allContainers?.[0]);
+      return filtered;
     }
     return allContainers;
   })();
@@ -849,33 +857,60 @@ export default function ServiceRequests() {
           <div className="space-y-4">
             <div>
               <Label>Container</Label>
-              <Select value={newContainerId} onValueChange={(v) => { setNewContainerId(v); /* if container picked, clear customer unless matches */ const selected = (allContainers as any[] | undefined)?.find(c => c.id === v); if (selected && selected.currentCustomerId) { setNewCustomerId(selected.currentCustomerId); } }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a container" />
-                </SelectTrigger>
-                <SelectContent>
-                  {containers?.map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.containerCode}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={
+                  containers?.map((c: any) => ({
+                    value: c.id,
+                    label: c.containerCode,
+                    searchText: `${c.containerCode} ${c.currentLocation?.address || ''}`,
+                  })) || []
+                }
+                value={newContainerId}
+                onValueChange={(v) => {
+                  setNewContainerId(v);
+                  // If container picked, auto-select its customer
+                  if (v) {
+                    const selected = (allContainers as any[] | undefined)?.find(c => c.id === v);
+                    if (selected && selected.currentCustomerId) {
+                      setNewCustomerId(selected.currentCustomerId);
+                    }
+                  } else {
+                    // If container cleared, clear customer too
+                    setNewCustomerId("");
+                  }
+                }}
+                placeholder="Select a container"
+                searchPlaceholder="Search by container code..."
+                emptyText={newCustomerId ? "No containers found for this customer." : "No containers found."}
+              />
             </div>
             <div>
               <Label>Customer</Label>
-              <Select value={newCustomerId} onValueChange={(v) => { setNewCustomerId(v); /* when choosing customer, clear container if not owned */ if (newContainerId && containers && !(containers as any[]).some(c => c.id === newContainerId)) { setNewContainerId(""); } }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customers?.map((cust: any) => (
-                    <SelectItem key={cust.id} value={cust.id}>
-                      {cust.companyName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={
+                  customers?.map((cust: any) => ({
+                    value: cust.id,
+                    label: cust.companyName,
+                    searchText: `${cust.companyName} ${cust.contactPerson || ''}`,
+                  })) || []
+                }
+                value={newCustomerId}
+                onValueChange={(v) => {
+                  setNewCustomerId(v);
+                  // When choosing customer, clear container if it doesn't belong to this customer
+                  if (newContainerId && allContainers) {
+                    const containerBelongsToCustomer = (allContainers as any[]).some(
+                      c => c.id === newContainerId && c.currentCustomerId === v
+                    );
+                    if (!containerBelongsToCustomer) {
+                      setNewContainerId("");
+                    }
+                  }
+                }}
+                placeholder="Select a customer"
+                searchPlaceholder="Search by customer name..."
+                emptyText="No customers found."
+              />
             </div>
             <div>
               <Label>Priority</Label>

@@ -482,6 +482,7 @@ export class DatabaseStorage implements IStorage {
 
     // Add camelCase aliases for frontend compatibility
     parsedContainer.containerCode = parsedContainer.container_id || parsedContainer.containerCode;
+    parsedContainer.currentCustomerId = parsedContainer.assigned_client_id || parsedContainer.currentCustomerId;
     parsedContainer.productType = parsedContainer.product_type || parsedContainer.productType;
     parsedContainer.sizeType = parsedContainer.size_type || parsedContainer.sizeType;
     parsedContainer.groupName = parsedContainer.group_name || parsedContainer.groupName;
