@@ -4,111 +4,46 @@
 
 @layer base {
   :root {
-    /* iOS/MacOS Light Mode Palette */
-    /* Background: Very subtle light gray for depth */
-    --background: 210 20% 98%;
-    --foreground: 222 47% 11%;
+    /* Professional Light Theme (Slate-based) */
+    --background: 210 40% 98%;
+    /* Slate 50 */
+    --foreground: 222.2 84% 4.9%;
+    /* Slate 950 */
 
-    /* Card: Pure White */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 222.2 84% 4.9%;
 
-    /* Popover: Pure White */
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 222.2 84% 4.9%;
 
-    /* Primary: Apple Blue (#007AFF) */
-    --primary: 211 100% 50%;
+    --primary: 221.2 83.2% 53.3%;
+    /* Blue 600 */
     --primary-foreground: 210 40% 98%;
-    --primary-light: 211 100% 65%;
-    --primary-dark: 211 100% 40%;
 
-    /* Secondary: Apple Gray/Silver */
     --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222 47% 11%;
+    /* Slate 100 */
+    --secondary-foreground: 222.2 47.4% 11.2%;
 
-    /* Muted: Subtle Gray */
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    /* Accent: Light Blue/Gray mix */
     --accent: 210 40% 96.1%;
-    --accent-foreground: 222 47% 11%;
+    --accent-foreground: 222.2 47.4% 11.2%;
 
-    /* Destructive: System Red */
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    /* Success: System Green */
-    --success: 142 76% 36%;
-    --success-foreground: 355.7 100% 97.3%;
-
-    /* Warning: System Orange/Yellow */
-    --warning: 38 92% 50%;
-    --warning-foreground: 48 96% 89%;
-
-    /* Info: System Blue */
-    --info: 211 100% 50%;
-    --info-foreground: 222 47% 11%;
-
-    /* Borders & Inputs */
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 211 100% 50%;
+    --ring: 221.2 83.2% 53.3%;
 
-    /* Radius: Larger for that rounded iOS feel */
-    --radius: 1rem;
+    --radius: 0.5rem;
+    /* More professional, less rounded */
 
-    /* Functional Areas - Light Mode (Refined for pastel/iOS look) */
-    --dashboard: 32 95% 44%;
-    --dashboard-foreground: 60 9.1% 97.8%;
-    --dashboard-light: 32 95% 90%;
-    --dashboard-dark: 32 95% 30%;
-
-    --containers: 215 16% 47%;
-    --containers-foreground: 60 9.1% 97.8%;
-    --containers-light: 215 16% 90%;
-    --containers-dark: 215 16% 30%;
-
-    --alerts: 0 84% 60%;
-    --alerts-foreground: 60 9.1% 97.8%;
-    --alerts-light: 0 84% 90%;
-    --alerts-dark: 0 84% 30%;
-
-    --service: 14 90% 55%;
-    --service-foreground: 60 9.1% 97.8%;
-    --service-light: 14 90% 90%;
-    --service-dark: 14 90% 30%;
-
-    --technicians: 262 83% 58%;
-    --technicians-foreground: 60 9.1% 97.8%;
-    --technicians-light: 262 83% 90%;
-    --technicians-dark: 262 83% 30%;
-
-    --scheduling: 189 94% 43%;
-    --scheduling-foreground: 60 9.1% 97.8%;
-    --scheduling-light: 189 94% 90%;
-    --scheduling-dark: 189 94% 30%;
-
-    --clients: 330 81% 60%;
-    --clients-foreground: 60 9.1% 97.8%;
-    --clients-light: 330 81% 90%;
-    --clients-dark: 330 81% 30%;
-
-    --whatsapp: 150 90% 35%;
-    --whatsapp-foreground: 60 9.1% 97.8%;
-    --whatsapp-light: 150 90% 90%;
-    --whatsapp-dark: 150 90% 25%;
-
-    --inventory: 24 95% 53%;
-    --inventory-foreground: 60 9.1% 97.8%;
-    --inventory-light: 24 95% 90%;
-    --inventory-dark: 24 95% 30%;
-
-    --analytics: 199 89% 48%;
-    --analytics-foreground: 60 9.1% 97.8%;
-    --analytics-light: 199 89% 90%;
-    --analytics-dark: 199 89% 30%;
+    /* Functional Colors */
+    --success: 142 76% 36%;
+    --warning: 38 92% 50%;
+    --info: 221.2 83.2% 53.3%;
 
     /* Legacy Variables Mapping */
     --bg-color: hsl(var(--background));
@@ -122,101 +57,41 @@
     --border-color: hsl(var(--border));
     --highlight: hsl(var(--primary));
     --shadow: rgba(0, 0, 0, 0.05);
-    /* Softer shadow */
     --gradient-accent: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
   }
 
   .dark {
-    /* iOS/MacOS Dark Mode Palette */
-    /* Background: Deep rich black/gray */
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
+    /* Professional Dark Theme (Slate-based) */
+    --background: 222.2 84% 4.9%;
+    /* Slate 950 */
+    --foreground: 210 40% 98%;
 
-    /* Card: Dark Gray with slight transparency feel */
-    --card: 240 10% 10%;
-    --card-foreground: 0 0% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
 
-    /* Popover: Dark Gray */
-    --popover: 240 10% 10%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
 
-    /* Primary: Lighter Apple Blue for dark mode */
-    --primary: 211 100% 60%;
-    --primary-foreground: 222 47% 11%;
-    --primary-light: 211 100% 70%;
-    --primary-dark: 211 100% 50%;
+    --primary: 217.2 91.2% 59.8%;
+    /* Blue 500 */
+    --primary-foreground: 222.2 47.4% 11.2%;
 
-    /* Secondary: Dark Gray */
-    --secondary: 240 4% 16%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 217.2 32.6% 17.5%;
+    /* Slate 800 */
+    --secondary-foreground: 210 40% 98%;
 
-    /* Muted: Darker Gray */
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
 
-    /* Accent: Dark Gray */
-    --accent: 240 4% 16%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
 
-    /* Destructive: Red */
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive-foreground: 210 40% 98%;
 
-    /* Borders & Inputs */
-    --border: 240 4% 16%;
-    --input: 240 4% 16%;
-    --ring: 211 100% 60%;
-
-    /* Functional Areas - Dark Mode */
-    --dashboard: 32 95% 50%;
-    --dashboard-foreground: 210 40% 98%;
-    --dashboard-light: 32 95% 60%;
-    --dashboard-dark: 32 95% 30%;
-
-    --containers: 215 16% 60%;
-    --containers-foreground: 210 40% 98%;
-    --containers-light: 215 16% 70%;
-    --containers-dark: 215 16% 30%;
-
-    --alerts: 0 84% 60%;
-    --alerts-foreground: 210 40% 98%;
-    --alerts-light: 0 84% 70%;
-    --alerts-dark: 0 84% 30%;
-
-    --service: 14 90% 60%;
-    --service-foreground: 210 40% 98%;
-    --service-light: 14 90% 70%;
-    --service-dark: 14 90% 30%;
-
-    --technicians: 262 83% 65%;
-    --technicians-foreground: 210 40% 98%;
-    --technicians-light: 262 83% 75%;
-    --technicians-dark: 262 83% 30%;
-
-    --scheduling: 189 94% 50%;
-    --scheduling-foreground: 210 40% 98%;
-    --scheduling-light: 189 94% 60%;
-    --scheduling-dark: 189 94% 30%;
-
-    --clients: 330 81% 65%;
-    --clients-foreground: 210 40% 98%;
-    --clients-light: 330 81% 75%;
-    --clients-dark: 330 81% 30%;
-
-    --whatsapp: 150 90% 40%;
-    --whatsapp-foreground: 210 40% 98%;
-    --whatsapp-light: 150 90% 50%;
-    --whatsapp-dark: 150 90% 25%;
-
-    --inventory: 24 95% 60%;
-    --inventory-foreground: 210 40% 98%;
-    --inventory-light: 24 95% 70%;
-    --inventory-dark: 24 95% 30%;
-
-    --analytics: 199 89% 55%;
-    --analytics-foreground: 210 40% 98%;
-    --analytics-light: 199 89% 65%;
-    --analytics-dark: 199 89% 30%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
 
     /* Legacy Variables Mapping - Dark */
     --shadow: rgba(0, 0, 0, 0.3);
@@ -231,15 +106,14 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    /* Use system fonts for that native feel */
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
 }
 
-/* Custom scrollbar - MacOS style */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -261,26 +135,14 @@
 [data-radix-dropdown-menu-content],
 [data-radix-context-menu-content],
 [data-radix-menubar-content] {
-  @apply bg-popover/80 backdrop-blur-xl border border-white/20 shadow-xl text-popover-foreground rounded-xl;
+  @apply bg-popover border border-border shadow-lg text-popover-foreground rounded-md;
   opacity: 1 !important;
-  animation: scaleIn 0.1s ease-out;
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  animation: fade-in 0.1s ease-out;
 }
 
 [data-radix-select-item],
 [data-radix-dropdown-menu-item] {
-  @apply text-popover-foreground cursor-pointer rounded-lg mx-1 my-0.5 px-2 py-1.5 transition-colors;
+  @apply text-popover-foreground cursor-pointer rounded-sm mx-1 my-0.5 px-2 py-1.5 transition-colors;
 }
 
 [data-radix-select-item]:hover,
@@ -288,9 +150,13 @@
   @apply bg-primary text-primary-foreground;
 }
 
-/* Glass Card Utilities - Premium Apple Style */
+/* Professional Card Style (Replaces Glass) */
 .glass-card {
-  @apply bg-white/60 dark:bg-black/40 backdrop-blur-xl border border-white/40 dark:border-white/10 shadow-lg;
+  @apply bg-card border border-border shadow-sm rounded-lg transition-all duration-200;
+}
+
+.glass-card:hover {
+  @apply shadow-md border-primary/20;
 }
 
 /* Animations */
@@ -310,6 +176,22 @@
 
 .pulse-indicator {
   animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
 }
 
 /* Semantic Background Utilities */
@@ -481,6 +363,7 @@
   height: 100%;
   width: 100%;
   min-height: 300px;
+  z-index: 0;
 }
 
 /* Ensure Leaflet controls are visible */
@@ -489,12 +372,13 @@
 }
 
 .leaflet-popup-content-wrapper {
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  padding: 0;
+  overflow: hidden;
 }
 
 .leaflet-popup-content {
-  margin: 8px 12px;
-  font-size: 14px;
-  line-height: 1.4;
+  margin: 0;
+  line-height: 1.5;
 }
