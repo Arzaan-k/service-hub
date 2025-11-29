@@ -948,24 +948,12 @@ export default function Technicians() {
             </div>
             <div>
               <Label htmlFor="location">Current City / Location *</Label>
-              <Select
+              <Input
+                id="location"
                 value={formData.baseLocation}
-                onValueChange={(value) => setFormData({ ...formData, baseLocation: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select city..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {cities.map((city: string) => (
-                    <SelectItem key={city} value={city}>
-                      {city}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {cities.length === 0 && (
-                <p className="text-xs text-muted-foreground mt-1">No cities available. Using containers will populate this list.</p>
-              )}
+                onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
+                placeholder="Enter city or location..."
+              />
             </div>
           </div>
           <DialogFooter>
@@ -1079,24 +1067,12 @@ export default function Technicians() {
             </div>
             <div>
               <Label htmlFor="edit-location">Current City / Location *</Label>
-              <Select
+              <Input
+                id="edit-location"
                 value={formData.baseLocation}
-                onValueChange={(value) => setFormData({ ...formData, baseLocation: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select city..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {cities.map((city: string) => (
-                    <SelectItem key={city} value={city}>
-                      {city}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {cities.length === 0 && (
-                <p className="text-xs text-muted-foreground mt-1">No cities available. Using containers will populate this list.</p>
-              )}
+                onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
+                placeholder="Enter city or location..."
+              />
             </div>
           </div>
           <DialogFooter>

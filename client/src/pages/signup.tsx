@@ -1,53 +1,13 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { saveAuth } from "@/lib/auth";
-import { useToast } from "@/hooks/use-toast";
 
 export default function SignUp() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
-  const [formData, setFormData] = useState({
-    phoneNumber: "",
-    name: "",
-    email: "",
-    password: "",
-    role: "client" as "client" | "technician" | "admin",
-  });
-  const [step, setStep] = useState<"form" | "verify">("form");
-  const [otp, setOtp] = useState("");
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const signupMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      const res = await apiRequest("POST", "/api/auth/register", data);
-      return await res.json();
-    },
-    onSuccess: (data) => {
-      toast({ title: "Verify your email", description: "We sent a 6-digit code to your email." });
-      setStep("verify");
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const verifyMutation = useMutation({
-    mutationFn: async (payload: { email: string; code: string }) => {
-      const res = await apiRequest("POST", "/api/auth/verify-email", payload);
-      return await res.json();
-    },
-    onSuccess: (data) => {
-      saveAuth(data.token, data.user);
-      toast({ title: "Email verified", description: "Your account is now active." });
-      setLocation("/");
-    },
+  // Redirect to login immediately - signup is disabled
+  useEffect(() => {
+    setLocation("/login");
+  }, [setLocation]);
     onError: (error: Error) => {
       toast({ title: "Verification failed", description: error.message, variant: "destructive" });
     }

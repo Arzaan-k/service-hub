@@ -25,11 +25,11 @@ export async function checkPreventiveMaintenance(): Promise<PMAlert[]> {
     // Get containers needing PM from service_requests
     const overdueContainers = await db.execute(sql`
       WITH last_pm AS (
-        SELECT 
+        SELECT
           container_id,
-          MAX(complaint_registration_time) as last_pm_date
+          MAX(requested_at) as last_pm_date
         FROM service_requests
-        WHERE LOWER(machine_status) LIKE '%preventive%'
+        WHERE LOWER(call_status) LIKE '%preventive%'
           AND container_id IS NOT NULL
         GROUP BY container_id
       )
