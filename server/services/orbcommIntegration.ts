@@ -337,10 +337,14 @@ class OrbcommIntegrationService {
         return;
       }
 
+      // Generate job order number (e.g., NOV081)
+      const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
+      const jobOrderNumber = await generateJobOrderNumber();
+
       // Create service request with the database ID of the alert
       const serviceRequest = await storage.createServiceRequest({
-        requestNumber: `SR-${Date.now()}`,
-        jobOrder: `AUTO${Date.now().toString().slice(-6)}`, // Temporary job order
+        requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
+        jobOrder: jobOrderNumber,
         containerId: alert.containerId!,
         customerId: customerId,
         alertId: alertDatabaseId, // Use the database ID, not the alert code

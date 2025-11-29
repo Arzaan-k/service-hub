@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,12 +12,22 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Search, SlidersHorizontal, X, ArrowUpDown } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Phone, Mail, MapPin, CreditCard, Plus, Edit, Trash2, Package, Shield, ShieldOff } from "lucide-react";
 import { Link } from "wouter";
 import { getCurrentUser } from "@/lib/auth";
+
+// Filter state interface
+interface ClientFilters {
+  search: string;
+  status: string;
+  tier: string;
+  paymentTerms: string;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
 
 interface Customer {
   id: string;
@@ -56,6 +66,16 @@ export default function Clients() {
   const role = (user?.role || "client").toLowerCase();
   const canManage = ["admin", "coordinator", "super_admin"].includes(role);
 
+  // Filter state
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<ClientFilters>({
+    search: '',
+    status: 'all',
+    tier: 'all',
+    paymentTerms: 'all',
+    sortBy: 'name',
+    sortOrder: 'asc'
+  });
 
   const { data: clients, isLoading } = useQuery({
     queryKey: ["/api/clients"],
@@ -94,6 +114,77 @@ export default function Clients() {
   const selectedContainers = filteredContainers.filter((c: any) => 
     allocation.containerIds.includes(c.id)
   );
+
+  // Filter and sort clients
+  const filteredClients = useMemo(() => {
+    if (!clients) return [];
+    let result = [...clients];
+
+    // Search filter
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      result = result.filter((client: Customer) => 
+        client.companyName?.toLowerCase().includes(searchLower) ||
+        client.contactPerson?.toLowerCase().includes(searchLower) ||
+        client.email?.toLowerCase().includes(searchLower) ||
+        client.phone?.includes(searchLower)
+      );
+    }
+
+    // Status filter
+    if (filters.status !== 'all') {
+      result = result.filter((client: Customer) => client.status === filters.status);
+    }
+
+    // Tier filter
+    if (filters.tier !== 'all') {
+      result = result.filter((client: Customer) => client.customerTier === filters.tier);
+    }
+
+    // Payment terms filter
+    if (filters.paymentTerms !== 'all') {
+      result = result.filter((client: Customer) => client.paymentTerms === filters.paymentTerms);
+    }
+
+    // Sort
+    result.sort((a: Customer, b: Customer) => {
+      let comparison = 0;
+      switch (filters.sortBy) {
+        case 'name':
+          comparison = (a.companyName || '').localeCompare(b.companyName || '');
+          break;
+        case 'containers':
+          const countA = containers?.filter((c: any) => c.currentCustomerId === a.id).length || 0;
+          const countB = containers?.filter((c: any) => c.currentCustomerId === b.id).length || 0;
+          comparison = countB - countA;
+          break;
+        case 'tier':
+          const tierOrder = { premium: 3, standard: 2, basic: 1 };
+          comparison = (tierOrder[b.customerTier as keyof typeof tierOrder] || 0) - 
+                       (tierOrder[a.customerTier as keyof typeof tierOrder] || 0);
+          break;
+        default:
+          comparison = 0;
+      }
+      return filters.sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return result;
+  }, [clients, containers, filters]);
+
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      status: 'all',
+      tier: 'all',
+      paymentTerms: 'all',
+      sortBy: 'name',
+      sortOrder: 'asc'
+    });
+  };
+
+  const hasActiveFilters = filters.search || filters.status !== 'all' || 
+    filters.tier !== 'all' || filters.paymentTerms !== 'all';
 
   const createClient = useMutation({
     mutationFn: async (data: any) => {
@@ -326,10 +417,126 @@ export default function Clients() {
             </div>
           </div>
 
+          {/* Search and Filter Bar */}
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search clients by name, email, phone..."
+                  value={filters.search}
+                  onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))}
+                  className="pl-9"
+                />
+              </div>
+
+              {/* Filter Toggle */}
+              <Button
+                variant={showFilters ? "default" : "outline"}
+                onClick={() => setShowFilters(!showFilters)}
+                className="gap-2"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters
+                {hasActiveFilters && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                    !
+                  </Badge>
+                )}
+              </Button>
+
+              {/* Clear Filters */}
+              {hasActiveFilters && (
+                <Button variant="ghost" onClick={clearFilters} className="gap-2">
+                  <X className="h-4 w-4" />
+                  Clear
+                </Button>
+              )}
+            </div>
+
+            {/* Expanded Filters */}
+            {showFilters && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-border">
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
+                  <Select value={filters.status} onValueChange={(v) => setFilters(f => ({ ...f, status: v }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Tier</Label>
+                  <Select value={filters.tier} onValueChange={(v) => setFilters(f => ({ ...f, tier: v }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All tiers" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Tiers</SelectItem>
+                      <SelectItem value="premium">Premium</SelectItem>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="basic">Basic</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Payment Terms</Label>
+                  <Select value={filters.paymentTerms} onValueChange={(v) => setFilters(f => ({ ...f, paymentTerms: v }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All terms" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Terms</SelectItem>
+                      <SelectItem value="prepaid">Prepaid</SelectItem>
+                      <SelectItem value="net15">Net 15</SelectItem>
+                      <SelectItem value="net30">Net 30</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Sort By</Label>
+                  <div className="flex gap-2">
+                    <Select value={filters.sortBy} onValueChange={(v) => setFilters(f => ({ ...f, sortBy: v }))}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Sort by" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="name">Company Name</SelectItem>
+                        <SelectItem value="containers">Container Count</SelectItem>
+                        <SelectItem value="tier">Tier</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setFilters(f => ({ ...f, sortOrder: f.sortOrder === 'asc' ? 'desc' : 'asc' }))}
+                    >
+                      <ArrowUpDown className={`h-4 w-4 ${filters.sortOrder === 'asc' ? 'rotate-180' : ''}`} />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Results count */}
+            <div className="mt-4 text-sm text-muted-foreground">
+              Showing {filteredClients.length} of {clients?.length || 0} clients
+            </div>
+          </div>
 
           {/* Calculate container count for each client */}
           {(() => {
-            const clientsWithCounts = clients?.map((client: Customer) => ({
+            const clientsWithCounts = filteredClients?.map((client: Customer) => ({
               ...client,
               containerCount: (containers || []).filter((container: any) => container.currentCustomerId === client.id).length
             })) || [];

@@ -1,3 +1,18 @@
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { GlassCard } from "@/components/ui/animated-card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, AlertTriangle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
 interface ServiceRequest {
   id: string;
   requestNumber: string;
@@ -10,11 +25,95 @@ interface ServiceRequest {
 interface ServiceRequestsPanelProps {
   requests: ServiceRequest[];
   containers: any[];
+  alerts: any[];
 }
 
-import { GlassCard } from "@/components/ui/animated-card";
+export default function ServiceRequestsPanel({ requests, containers, alerts }: ServiceRequestsPanelProps) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedContainerId, setSelectedContainerId] = useState<string>("");
+  const [selectedAlertIds, setSelectedAlertIds] = useState<string[]>([]);
+  const [priority, setPriority] = useState<string>("medium");
+  const [issueDescription, setIssueDescription] = useState<string>("");
 
-export default function ServiceRequestsPanel({ requests, containers }: ServiceRequestsPanelProps) {
+  // Filter alerts for the selected container
+  const containerAlerts = alerts.filter(
+    (a) => a.containerId === selectedContainerId && !a.resolvedAt
+  );
+
+  const createRequestMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/service-requests", data);
+      return res.json();
+    },
+    onSuccess: async (newRequest) => {
+      // If alerts were selected, acknowledge them and link them (conceptually)
+      if (selectedAlertIds.length > 0) {
+        // We can acknowledge them in parallel
+        await Promise.all(selectedAlertIds.map(id =>
+          apiRequest("PUT", `/api/alerts/${id}/acknowledge`)
+        ));
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+
+      toast({
+        title: "Service Request Created",
+        description: `Request ${newRequest.requestNumber} has been created successfully.`,
+      });
+
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create service request",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const resetForm = () => {
+    setSelectedContainerId("");
+    setSelectedAlertIds([]);
+    setPriority("medium");
+    setIssueDescription("");
+  };
+
+  const handleCreateRequest = () => {
+    if (!selectedContainerId) {
+      toast({ title: "Validation Error", description: "Please select a container", variant: "destructive" });
+      return;
+    }
+    if (!issueDescription && selectedAlertIds.length === 0) {
+      toast({ title: "Validation Error", description: "Please provide a description or select alerts", variant: "destructive" });
+      return;
+    }
+
+    // Append selected alerts to description if any
+    let finalDescription = issueDescription;
+    if (selectedAlertIds.length > 0) {
+      const selectedAlertsInfo = containerAlerts
+        .filter(a => selectedAlertIds.includes(a.id))
+        .map(a => `${a.alertCode}: ${a.title}`)
+        .join(", ");
+
+      finalDescription = finalDescription
+        ? `${finalDescription}\n\nRelated Alerts: ${selectedAlertsInfo}`
+        : `Service requested for alerts: ${selectedAlertsInfo}`;
+    }
+
+    createRequestMutation.mutate({
+      containerId: selectedContainerId,
+      priority,
+      issueDescription: finalDescription,
+      customerId: containers.find(c => c.id === selectedContainerId)?.currentCustomerId // Assuming we have this or backend handles it
+    });
+  };
+
   const getStatusColor = (status: string) => {
     const colors = {
       pending: "bg-amber-500/20 text-amber-500",
@@ -46,9 +145,110 @@ export default function ServiceRequestsPanel({ requests, containers }: ServiceRe
           </div>
           <h3 className="text-xl font-bold text-foreground tracking-tight">Recent Service Requests</h3>
         </div>
-        <button className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40">
-          + New Request
-        </button>
+
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <button className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40">
+              + New Request
+            </button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[500px] bg-card border-border">
+            <DialogHeader>
+              <DialogTitle>Create Service Request</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Container</Label>
+                <Select value={selectedContainerId} onValueChange={setSelectedContainerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select container..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {containers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.containerCode} ({c.type || 'Unknown'})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedContainerId && containerAlerts.length > 0 && (
+                <div className="space-y-2 border rounded-md p-3 bg-muted/10">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase">Active Alerts (Select to include)</Label>
+                  <div className="space-y-2 max-h-[150px] overflow-y-auto">
+                    {containerAlerts.map((alert) => (
+                      <div key={alert.id} className="flex items-start space-x-2">
+                        <Checkbox
+                          id={alert.id}
+                          checked={selectedAlertIds.includes(alert.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedAlertIds([...selectedAlertIds, alert.id]);
+                            } else {
+                              setSelectedAlertIds(selectedAlertIds.filter(id => id !== alert.id));
+                            }
+                          }}
+                        />
+                        <div className="grid gap-1.5 leading-none">
+                          <label
+                            htmlFor={alert.id}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            <span className={`mr-2 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${alert.severity === 'critical' ? 'bg-red-500/20 text-red-500' :
+                                alert.severity === 'high' ? 'bg-orange-500/20 text-orange-500' :
+                                  'bg-blue-500/20 text-blue-500'
+                              }`}>
+                              {alert.severity}
+                            </span>
+                            {alert.title}
+                          </label>
+                          <p className="text-xs text-muted-foreground">
+                            {alert.description}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Priority</Label>
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Issue Description</Label>
+                <Textarea
+                  placeholder="Describe the issue..."
+                  value={issueDescription}
+                  onChange={(e) => setIssueDescription(e.target.value)}
+                  className="min-h-[100px]"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleCreateRequest} disabled={createRequestMutation.isPending}>
+                {createRequestMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create Request
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Mobile View: Cards */}

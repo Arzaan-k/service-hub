@@ -54,6 +54,7 @@ import {
 import { useState, useEffect } from "react";
 import { generateServiceRequestPDF } from "@/lib/pdfGenerator";
 import CourierTracking from "@/components/service-request/courier-tracking";
+import RemarksTimeline from "@/components/service-request/remarks-timeline";
 
 interface InventoryItem {
   id: string;
@@ -98,14 +99,26 @@ export default function ServiceRequestDetail() {
 
   const generateReport = useMutation({
     mutationFn: async (stage: string) => {
-      return await apiRequest("POST", `/api/service-requests/${id}/generate-report`, { stage });
+      const response = await apiRequest("POST", `/api/service-requests/${id}/generate-report`, { stage });
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       refreshReports();
-      toast({
-        title: "Report Generated",
-        description: "Report generated and emailed successfully.",
-      });
+
+      if (data.emailSent) {
+        toast({
+          title: "Report Generated & Sent",
+          description: `Report generated and emailed to ${data.recipients?.join(', ') || 'recipient'} via ${data.emailProvider || 'email'}.`,
+        });
+      } else {
+        toast({
+          title: "Report Generated",
+          description: data.emailError
+            ? `Report saved but email failed: ${data.emailError}`
+            : "Report generated but email service is not configured.",
+          variant: "default",
+        });
+      }
     },
     onError: (e: Error) => {
       toast({
@@ -796,56 +809,21 @@ export default function ServiceRequestDetail() {
                 </Card>
               </div>
 
-              {/* Coordinator Remarks */}
-              {technician.id && (
-                <Card className="mb-6">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <MessageSquare className="w-5 h-5" />
-                      Coordinator Remarks
-                    </CardTitle>
-                    <CardDescription>
-                      Add remarks or notes after discussing with client (will appear in Pre-Service Report)
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Textarea
-                      placeholder="Enter remarks, special instructions, or client discussions...
-                      
-Example:
-- Client confirmed availability on scheduled date
-- Special access required - client will arrange site pass
-- Priority parts to be carried: Temperature sensors"
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      rows={6}
-                      className="w-full"
-                    />
-                    
-                    <div className="flex justify-between items-center mt-4">
-                      <span className="text-sm text-muted-foreground">
-                        {remarks.length} characters
-                      </span>
-                      <Button 
-                        onClick={() => saveRemarksMutation.mutate()}
-                        disabled={!remarks.trim() || saveRemarksMutation.isPending}
-                        size="sm"
-                      >
-                        {saveRemarksMutation.isPending ? "Saving..." : "💾 Save Remarks"}
-                      </Button>
-                    </div>
-                    
-                    {(data as any)?.remarksAddedAt && (
-                      <div className="mt-4 p-3 bg-green-50 text-green-800 rounded-md flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span>
-                          Remarks saved on {new Date((data as any).remarksAddedAt).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
+              {/* Remarks & Recordings - Immutable Timeline */}
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5" />
+                    Remarks & Recordings
+                  </CardTitle>
+                  <CardDescription>
+                    Add remarks, notes, or voice recordings. All entries are immutable and will appear in reports.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <RemarksTimeline serviceRequestId={id} />
+                </CardContent>
+              </Card>
 
               {/* Resolution Notes */}
               {req.resolutionNotes && (

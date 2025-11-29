@@ -1311,11 +1311,13 @@ export async function savePlannedTrip(payload: SaveTripPayload, userId?: string)
           const createdBy = adminUser?.id || allUsers[0]?.id;
           
           if (createdBy) {
-            const timestamp = Date.now();
-            const requestNumber = `SR-PM-${timestamp}`;
+            // Generate job order number (e.g., NOV081)
+            const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
+            const jobOrderNumber = await generateJobOrderNumber();
             
             const newRequest = await storage.createServiceRequest({
-              requestNumber: requestNumber,
+              requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
+              jobOrder: jobOrderNumber,
               containerId: pmTask.containerId,
               customerId: container.currentCustomerId,
               priority: pmTask.priority === 'CRITICAL' ? 'urgent' : 'normal',

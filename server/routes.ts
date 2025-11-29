@@ -48,12 +48,13 @@ import { db } from './db';
 import { sql, eq, desc } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
-import { serviceReportPdfs, serviceRequests } from '@shared/schema';
+import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings } from '@shared/schema';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
 const documentProcessor = new DocumentProcessor();
 import { simpleSeed } from "./simple-seed";
+import { parseExcelFile, importServiceHistory, getImportPreview } from "./services/excel-import";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -61,18 +62,25 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Allow PDF, Word documents, and text files (for testing)
+    // Allow PDF, Word documents, text files, audio, and Excel files
     const allowedMimes = [
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'audio/webm',
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/wav',
+      'audio/ogg',
     ];
 
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF and Word documents are allowed.'));
+      cb(new Error('Invalid file type.'));
     }
   },
   storage: multer.memoryStorage() // Store in memory for processing
@@ -367,51 +375,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Registration endpoint disabled - account creation is no longer allowed
   app.post("/api/auth/register", async (req, res) => {
-    try {
-      const { name, email, phoneNumber, password, role } = req.body;
-
-      if (!email || !password || !name || !phoneNumber) {
-        return res.status(400).json({ error: "Name, email, phone and password are required" });
-      }
-
-      const existingEmail = await storage.getUserByEmail(email);
-      if (existingEmail) return res.status(400).json({ error: "Email already registered" });
-
-      const existingPhone = await storage.getUserByPhoneNumber(phoneNumber);
-      if (existingPhone) return res.status(400).json({ error: "Phone already registered" });
-
-      const { hashPassword, createAndSendEmailOTP } = await import('./services/auth');
-      const passwordHash = await hashPassword(password);
-
-      const user = await storage.createUser({
-        phoneNumber,
-        name,
-        email,
-        password: passwordHash,
-        role: role || "client",
-        isActive: true,
-        whatsappVerified: false,
-        emailVerified: false,
-      });
-
-      const emailResult = await createAndSendEmailOTP(user);
-
-      const message = emailResult.success
-        ? 'Verification code sent to email'
-        : `Account created. ${emailResult.error || 'Check server logs for verification code.'}`;
-
-      res.json({
-        user,
-        token: user.id,
-        message,
-        emailSent: emailResult.success,
-        verificationCode: emailResult.code // Only for development/debugging
-      });
-    } catch (error) {
-      console.error('Registration error:', error instanceof Error ? error.message : 'Unknown error');
-      res.status(500).json({ error: "Registration failed" });
-    }
+    res.status(403).json({ 
+      error: "Account registration is disabled. Please contact your administrator for access." 
+    });
   });
 
   // Forgot password (send OTP)
@@ -425,7 +393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const emailResult = await createAndSendEmailOTP(user);
       const message = emailResult.success
         ? 'OTP sent to email'
-        : `Reset code generated. ${emailResult.error || 'Check server logs for reset code.'}`;
+        : `Email not configured. Reset code: ${emailResult.code}. Configure SMTP in .env file to enable email sending.`;
       res.json({
         message,
         emailSent: emailResult.success,
@@ -482,14 +450,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Email OTP verification
+  // Email OTP verification - disabled for new registrations (only used for password reset now)
   app.post('/api/auth/verify-email', async (req, res) => {
+    // Check if this is for a new registration (user doesn't exist yet)
     try {
       const { email, code } = req.body;
       if (!email || !code) return res.status(400).json({ error: 'Email and code required' });
-
+      
+      // Check if user exists - if not, this is a registration attempt
       const user = await storage.getUserByEmail(email);
-      if (!user) return res.status(404).json({ error: 'User not found' });
+      if (!user) {
+        return res.status(403).json({ 
+          error: "Account registration is disabled. Please contact your administrator for access." 
+        });
+      }
 
       const { verifyEmailCode } = await import('./services/auth');
       const ok = await verifyEmailCode(user.id, code);
@@ -848,6 +822,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : `${emailResult.error || 'Check server logs for credentials.'}`;
 
       res.json({
+        user: { ...user, password: undefined },
         message,
         emailSent: emailResult.success,
         plainPassword: plainPassword // Only for development/debugging
@@ -1870,6 +1845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           observations,
           service_client_location,
           call_attended_type as call_status,
+          machine_status as status,
           created_at as requested_at
         FROM service_history
         ORDER BY complaint_attended_date DESC NULLS LAST, created_at DESC
@@ -1921,7 +1897,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const jobOrderNumber = await generateJobOrderNumber();
 
       const request = await storage.createServiceRequest({
-        requestNumber: `SR-${Date.now()}`,
+        requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
         jobOrder: jobOrderNumber,
         containerId,
         customerId,
@@ -2817,6 +2793,344 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error fetching assigned services summary:", error);
       res.status(500).json({ error: "Failed to fetch assigned services summary" });
+    }
+  });
+
+  // GET /api/technicians/location-overview - Get technician locations with assignments and PM recommendations
+  app.get("/api/technicians/location-overview", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (_req, res) => {
+    try {
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      // Get all active service requests with container locations
+      const allServiceRequests = await storage.getAllServiceRequests();
+      const activeRequests = allServiceRequests.filter((sr: any) =>
+        ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'].includes((sr.status || '').toLowerCase())
+      );
+
+      // Get all internal technicians (not third-party/external)
+      const allTechnicians = await storage.getAllTechnicians();
+      const technicians = allTechnicians.filter((tech: any) => {
+        // Filter for internal technicians only
+        const isInternal = !tech.category || tech.category?.toLowerCase() === 'internal';
+        const isActive = ['available', 'on_duty', 'busy', 'off_duty'].includes(tech.status?.toLowerCase());
+        return isInternal && isActive;
+      });
+
+      // Get PM data for containers by city - simplified working version
+      const pmResult = await db.execute(sql`
+        WITH pm_data AS (
+          SELECT
+            UPPER(TRIM(container_number)) as container_id,
+            MAX(complaint_attended_date) as last_pm_date
+          FROM service_history
+          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+            AND container_number IS NOT NULL
+            AND container_number != ''
+          GROUP BY UPPER(TRIM(container_number))
+        )
+        SELECT
+          c.id,
+          c.container_id as container_code,
+          COALESCE(TRIM(c.depot), 'Unknown') as city,
+          c.assigned_client_id as customer_id,
+          COALESCE(cust.company_name, 'Unknown Client') as customer_name,
+          CASE
+            WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+            WHEN EXTRACT(EPOCH FROM (NOW() - pm.last_pm_date)) / 86400 > 90 THEN 'OVERDUE'
+            WHEN EXTRACT(EPOCH FROM (NOW() - pm.last_pm_date)) / 86400 > 75 THEN 'DUE_SOON'
+            ELSE 'UP_TO_DATE'
+          END as pm_status,
+          CASE
+            WHEN pm.last_pm_date IS NULL THEN 999
+            ELSE FLOOR(EXTRACT(EPOCH FROM (NOW() - pm.last_pm_date)) / 86400)
+          END as days_since_pm
+        FROM containers c
+        LEFT JOIN customers cust ON c.assigned_client_id = cust.id
+        LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+        WHERE c.status = 'active'
+          AND c.depot IS NOT NULL
+          AND c.depot != ''
+          AND (pm.last_pm_date IS NULL OR EXTRACT(EPOCH FROM (NOW() - pm.last_pm_date)) / 86400 > 75)
+        ORDER BY days_since_pm DESC
+      `);
+
+      // Group PM needs by city
+      const pmByCity: Record<string, any[]> = {};
+
+      for (const row of pmResult.rows as any[]) {
+        let city = (row.city || 'Unknown').trim();
+        let clientName = (row.customer_name || 'Unknown Client').trim();
+
+        // Debug logging for unknowns
+        if (city === 'Unknown' || clientName === 'Unknown Client') {
+          console.log('PM Debug - Unknown data:', {
+            containerId: row.container_code,
+            originalCity: row.city,
+            customerId: row.customer_id,
+            originalCustomerName: row.customer_name
+          });
+        }
+
+        // Ensure we don't have empty strings
+        if (!city || city === '') city = 'Unknown';
+        if (!clientName || clientName === '') clientName = 'Unknown Client';
+
+        // Group by city
+        if (!pmByCity[city]) pmByCity[city] = [];
+        pmByCity[city].push({
+          id: row.id,
+          containerCode: row.container_code,
+          customerId: row.customer_id,
+          customerName: clientName,
+          pmStatus: row.pm_status,
+          daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
+          city: city,
+        });
+      }
+
+      // Build technician location data
+      const technicianLocations: any[] = [];
+
+      for (const tech of technicians) {
+        // Get technician's assigned services
+        const techServices = activeRequests.filter((sr: any) => sr.assignedTechnicianId === tech.id);
+
+        // Group services by city, and store client information separately
+        const servicesByCity: Record<string, any[]> = {};
+        const cityClientMapping: Record<string, string[]> = {}; // Maps city to list of clients
+
+        for (const sr of techServices) {
+          const container = sr.container || await storage.getContainer(sr.containerId).catch(() => null);
+          // Load customer data if not already populated
+          const customer = sr.customerId ? await storage.getCustomer(sr.customerId).catch(() => null) : null;
+          let clientName = customer?.companyName || 'Unknown Client';
+
+          // Get city from container depot - simplified
+          let city = 'Unknown';
+          if (container && container.depot) {
+            city = container.depot.trim();
+          }
+          if (city === 'Unknown' && sr.siteAddress) {
+            city = sr.siteAddress.trim();
+          }
+
+          // Debug logging
+          if (city === 'Unknown' || clientName === 'Unknown Client') {
+            console.log('Service Debug - Unknown data:', {
+              serviceRequestId: sr.id,
+              containerId: sr.containerId,
+              customerId: sr.customerId,
+              customerFound: !!customer,
+              customerName: customer?.companyName,
+              containerFound: !!container,
+              containerDepot: container?.depot,
+              siteAddress: sr.siteAddress,
+              extractedCity: city,
+              finalClientName: clientName
+            });
+          }
+
+          // Ensure we don't have empty strings
+          if (!city || city.trim() === '') city = 'Unknown';
+          if (!clientName || clientName.trim() === '') clientName = 'Unknown Client';
+
+          // Use city as the key, and track clients separately
+          if (!servicesByCity[city]) servicesByCity[city] = [];
+          if (!cityClientMapping[city]) cityClientMapping[city] = [];
+
+          servicesByCity[city].push({
+            id: sr.id,
+            requestNumber: sr.requestNumber,
+            status: sr.status,
+            priority: sr.priority,
+            issueDescription: sr.issueDescription,
+            scheduledDate: sr.scheduledDate,
+            containerCode: container?.containerCode || sr.containerId,
+            customerName: clientName,
+            city: city,
+          });
+
+          // Add client to mapping if not already present
+          if (!cityClientMapping[city].includes(clientName)) {
+            cityClientMapping[city].push(clientName);
+          }
+        }
+
+        // Sort cities alphabetically
+        const sortedServicesByCity: Record<string, any[]> = {};
+        Object.keys(servicesByCity).sort().forEach(cityKey => {
+          sortedServicesByCity[cityKey] = servicesByCity[cityKey];
+        });
+
+        // Determine current/last known location from GPS coordinates
+        let currentLocationCity = 'Unknown';
+        if (tech.latitude && tech.longitude && tech.locationAddress) {
+          // Extract city from locationAddress (reverse geocoded address)
+          const addressParts = tech.locationAddress.split(',');
+          currentLocationCity = addressParts[0]?.trim() || 'Unknown';
+        } else if (tech.locationAddress) {
+          // Fallback to locationAddress if coordinates are missing
+          const addressParts = tech.locationAddress.split(',');
+          currentLocationCity = addressParts[0]?.trim() || 'Unknown';
+        } else {
+          // Fallback to base location
+          currentLocationCity = typeof tech.baseLocation === 'string'
+            ? tech.baseLocation
+            : tech.baseLocation?.city || tech.baseLocation?.address || 'Unknown';
+        }
+
+        // Find next scheduled service
+        const scheduledServices = techServices
+          .filter((sr: any) => sr.scheduledDate && new Date(sr.scheduledDate) >= new Date())
+          .sort((a: any, b: any) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
+
+        const nextService = scheduledServices[0];
+        let nextLocation = null;
+        if (nextService) {
+          const container = nextService.container || await storage.getContainer(nextService.containerId).catch(() => null);
+          nextLocation = {
+            city: container?.depot || container?.currentLocation?.city || 'Unknown',
+            scheduledDate: nextService.scheduledDate,
+            serviceId: nextService.id,
+            requestNumber: nextService.requestNumber,
+          };
+        }
+
+        // Only show cities from technician's current location OR assigned service locations
+        const relevantCities = new Set<string>();
+
+        // Add technician's current location city
+        if (currentLocationCity !== 'Unknown') {
+          relevantCities.add(currentLocationCity);
+        }
+
+        // Add cities from assigned services
+        Object.keys(servicesByCity).forEach(cityKey => {
+          relevantCities.add(cityKey);
+        });
+
+        // Prioritize PM recommendations: current location first, then cities with assigned services
+        const pmRecommendations: Record<string, any> = {};
+        const sortedCities = Array.from(relevantCities).sort((a, b) => {
+          // Prioritize technician's current location
+          if (a === currentLocationCity) return -1;
+          if (b === currentLocationCity) return 1;
+          // Then cities with assigned services
+          const aHasServices = Object.keys(servicesByCity).includes(a);
+          const bHasServices = Object.keys(servicesByCity).includes(b);
+          if (aHasServices && !bHasServices) return -1;
+          if (bHasServices && !aHasServices) return 1;
+          return a.localeCompare(b);
+        });
+
+        for (const city of sortedCities) {
+          // Get PM tasks for this city
+          const cityPms = pmByCity[city] || [];
+
+          if (cityPms.length > 0) {
+            // Sort PMs by priority: OVERDUE > NEVER > DUE_SOON > UP_TO_DATE
+            const sortedPms = cityPms.sort((a: any, b: any) => {
+              const priorityOrder = { 'OVERDUE': 4, 'NEVER': 3, 'DUE_SOON': 2, 'UP_TO_DATE': 1 };
+              const aPriority = priorityOrder[a.pmStatus] || 0;
+              const bPriority = priorityOrder[b.pmStatus] || 0;
+              return bPriority - aPriority; // Higher priority first
+            });
+
+            pmRecommendations[city] = {
+              count: cityPms.length,
+              overdue: cityPms.filter(pm => pm.pmStatus === 'OVERDUE').length,
+              never: cityPms.filter(pm => pm.pmStatus === 'NEVER').length,
+              dueSoon: cityPms.filter(pm => pm.pmStatus === 'DUE_SOON').length,
+              containers: sortedPms.slice(0, 15), // Top 15 for better selection
+              isNearby: city !== currentLocationCity && Object.keys(servicesByCity).includes(city),
+              priority: city === currentLocationCity ? 'high' :
+                       Object.keys(servicesByCity).includes(city) ? 'medium' : 'low'
+            };
+          }
+        }
+
+        // Calculate cost estimates from technician profile (no hardcoded defaults)
+        const serviceCost = tech.serviceRequestCost || 0;
+        const pmCost = tech.pmCost || 0;
+        const hotelAllowance = tech.hotelAllowance || 0;
+        const localTravelAllowance = tech.localTravelAllowance || 0;
+        const dailyAllowance = hotelAllowance + localTravelAllowance;
+
+        const costEstimates = {
+          serviceRequests: techServices.length * serviceCost,
+          pmTasks: Object.values(pmRecommendations).reduce((acc: number, pm: any) => acc + (pm.count * pmCost), 0),
+          travelAllowance: Math.ceil((techServices.length + Object.values(pmRecommendations).reduce((acc: number, pm: any) => acc + pm.count, 0)) / 3) * dailyAllowance,
+          serviceCost: serviceCost || 0,
+          pmCost: pmCost || 0,
+          dailyAllowance: dailyAllowance || 0,
+          hotelAllowance: hotelAllowance || 0,
+          localTravelAllowance: localTravelAllowance || 0,
+        };
+
+        technicianLocations.push({
+          id: tech.id,
+          name: tech.name || tech.employeeCode,
+          employeeCode: tech.employeeCode,
+          baseLocation: typeof tech.baseLocation === 'string'
+            ? tech.baseLocation
+            : tech.baseLocation?.city || tech.baseLocation?.address || 'Unknown',
+          currentCity: currentLocationCity, // Use actual current location from GPS
+          status: tech.status,
+          phone: tech.phone,
+          grade: tech.grade,
+          designation: tech.designation,
+          // Include all cost fields from database
+          serviceRequestCost: tech.serviceRequestCost || 0,
+          pmCost: tech.pmCost || 0,
+          hotelAllowance: tech.hotelAllowance || 0,
+          localTravelAllowance: tech.localTravelAllowance || 0,
+          tasksPerDay: tech.tasksPerDay || 3,
+          foodAllowance: tech.foodAllowance || 0,
+          personalAllowance: tech.personalAllowance || 0,
+          assignedServices: {
+            total: techServices.length,
+            byCity: servicesByCity,
+            cityClients: cityClientMapping, // Maps city to list of clients
+          },
+          nextService: nextLocation,
+          pmRecommendations,
+          costEstimates,
+          score: techServices.length + Object.values(pmRecommendations).reduce((acc: number, pm: any) => acc + pm.count, 0),
+        });
+      }
+
+      // Sort by score (technicians with most work in PM-needed areas first)
+      technicianLocations.sort((a, b) => b.score - a.score);
+
+      // Get all unique cities with PM needs
+      const citiesWithPmNeeds = Object.entries(pmByCity).map(([city, containers]) => ({
+        city,
+        totalPmNeeded: containers.length,
+        overdue: containers.filter(c => c.pmStatus === 'OVERDUE').length,
+        never: containers.filter(c => c.pmStatus === 'NEVER').length,
+        dueSoon: containers.filter(c => c.pmStatus === 'DUE_SOON').length,
+        topContainers: containers.slice(0, 5),
+      })).sort((a, b) => b.totalPmNeeded - a.totalPmNeeded);
+
+      res.json({
+        success: true,
+        technicians: technicianLocations,
+        citiesWithPmNeeds,
+        summary: {
+          totalTechnicians: technicianLocations.length,
+          totalActiveServices: activeRequests.length,
+          totalCitiesWithPm: citiesWithPmNeeds.length,
+          totalPmNeeded: Object.values(pmByCity).reduce((acc, arr) => acc + arr.length, 0),
+        },
+      });
+    } catch (error: any) {
+      console.error("[API] Error fetching technician location overview:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch technician location overview",
+        details: error?.message,
+      });
     }
   });
 
@@ -3885,6 +4199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/technicians/:id", authenticateUser, requireRole("admin"), async (req, res) => {
     try {
+      console.log("[PUT /api/technicians/:id] Updating technician:", req.params.id, "with body:", req.body);
       // Fetch existing to get userId
       const existing = await storage.getTechnician(req.params.id);
       if (!existing) {
@@ -3910,20 +4225,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.updateUser(existing.userId, userUpdate);
       }
 
+      // Format baseLocation: if it's a string, convert to { city: string }, otherwise keep as is
+      let formattedBaseLocation = undefined;
+      if (body.baseLocation !== undefined) {
+        if (typeof body.baseLocation === 'string' && body.baseLocation.trim()) {
+          formattedBaseLocation = { city: body.baseLocation.trim() };
+        } else if (typeof body.baseLocation === 'object' && body.baseLocation !== null) {
+          formattedBaseLocation = body.baseLocation;
+        }
+      } else if (body.baseLocationCity) {
+        formattedBaseLocation = { city: body.baseLocationCity };
+      } else if (body.home_location) {
+        formattedBaseLocation = typeof body.home_location === 'string' ? { city: body.home_location } : body.home_location;
+      }
+
       const payload: any = {
         experienceLevel: body.experienceLevel ?? body.experience_level,
         skills: Array.isArray(body.skills)
           ? body.skills
           : (body.specialization ? [body.specialization] : undefined),
-        baseLocation: body.baseLocation ?? body.home_location ?? (body.baseLocationCity ? { city: body.baseLocationCity } : undefined),
+        ...(formattedBaseLocation !== undefined && { baseLocation: formattedBaseLocation }),
         serviceAreas: body.serviceAreas ?? body.service_areas,
         status: body.status,
         averageRating: body.averageRating ?? body.rating,
         totalJobsCompleted: body.totalJobsCompleted ?? body.servicesCompleted,
       };
-      // Remove undefined keys so we don't overwrite with null/undefined
-      Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
+      console.log("[PUT /api/technicians/:id] Payload:", payload);
       const technician = await storage.updateTechnician(req.params.id, payload);
       if (!technician) {
         return res.status(404).json({ error: "Technician not found" });
@@ -4643,7 +4971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get PM Overview - containers with their last PM date from service_requests (machine_status = 'Preventive Maintenance')
+  // Get PM Overview - containers with their last PM date from service_requests (call_status contains 'Preventive')
   app.get("/api/pm/overview", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
       console.log('[API] PM Overview requested');
@@ -4769,20 +5097,938 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get PM Overview grouped by Client - shows pending PM counts per client
+  app.get("/api/pm/clients-summary", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+    try {
+      console.log('[API] PM Clients Summary requested');
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      // Get containers with their customers and PM status from service_history
+      const clientPmResult = await db.execute(sql`
+        WITH pm_data AS (
+          SELECT 
+            UPPER(TRIM(container_number)) as container_id,
+            MAX(complaint_attended_date) as last_pm_date
+          FROM service_history
+          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+            AND container_number IS NOT NULL
+            AND container_number != ''
+          GROUP BY UPPER(TRIM(container_number))
+        ),
+        container_pm AS (
+          SELECT 
+            c.id as container_id,
+            c.container_id as container_code,
+            c.depot,
+            c.assigned_client_id,
+            cust.id as customer_id,
+            cust.company_name as customer_name,
+            pm.last_pm_date,
+            CASE 
+              WHEN pm.last_pm_date IS NULL THEN 999
+              ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+            END as days_since_pm,
+            (CASE 
+              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              ELSE 'UP_TO_DATE'
+            END)::text as pm_status
+          FROM containers c
+          LEFT JOIN customers cust ON c.assigned_client_id = cust.id
+          LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+          WHERE c.status = 'active'
+            AND c.assigned_client_id IS NOT NULL
+        )
+        SELECT 
+          customer_id,
+          customer_name,
+          COUNT(*) as total_containers,
+          COUNT(CASE WHEN pm_status = 'NEVER' THEN 1 END) as never_pm,
+          COUNT(CASE WHEN pm_status = 'OVERDUE' THEN 1 END) as overdue,
+          COUNT(CASE WHEN pm_status = 'DUE_SOON' THEN 1 END) as due_soon,
+          COUNT(CASE WHEN pm_status = 'UP_TO_DATE' THEN 1 END) as up_to_date,
+          COUNT(CASE WHEN pm_status IN ('NEVER', 'OVERDUE', 'DUE_SOON') THEN 1 END) as pending_pm
+        FROM container_pm
+        WHERE customer_id IS NOT NULL
+        GROUP BY customer_id, customer_name
+        ORDER BY pending_pm DESC, customer_name
+      `);
+
+      const clients = (clientPmResult.rows as any[]).map(row => ({
+        customerId: row.customer_id,
+        customerName: row.customer_name || 'Unknown Client',
+        totalContainers: Number(row.total_containers) || 0,
+        neverPm: Number(row.never_pm) || 0,
+        overdue: Number(row.overdue) || 0,
+        dueSoon: Number(row.due_soon) || 0,
+        upToDate: Number(row.up_to_date) || 0,
+        pendingPm: Number(row.pending_pm) || 0,
+      }));
+
+      console.log('[API] PM Clients Summary found', clients.length, 'clients');
+
+      return res.json({
+        success: true,
+        clients,
+        summary: {
+          totalClients: clients.length,
+          clientsWithPendingPm: clients.filter(c => c.pendingPm > 0).length,
+          totalPendingPm: clients.reduce((sum, c) => sum + c.pendingPm, 0),
+        }
+      });
+    } catch (error: any) {
+      console.error('[API] PM Clients Summary error:', error);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to get PM clients summary",
+        details: error?.message || String(error),
+      });
+    }
+  });
+
+  // Get containers needing PM for a specific client
+  app.get("/api/pm/client/:customerId", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+    try {
+      const { customerId } = req.params;
+      console.log('[API] PM Client containers requested for:', customerId);
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      const result = await db.execute(sql`
+        WITH pm_data AS (
+          SELECT 
+            UPPER(TRIM(container_number)) as container_id,
+            MAX(complaint_attended_date) as last_pm_date,
+            COUNT(*)::int as pm_count
+          FROM service_history
+          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+            AND container_number IS NOT NULL
+            AND container_number != ''
+          GROUP BY UPPER(TRIM(container_number))
+        )
+        SELECT 
+          c.id,
+          c.container_id,
+          c.depot,
+          c.grade,
+          cust.company_name as customer_name,
+          pm.last_pm_date,
+          COALESCE(pm.pm_count, 0) as pm_count,
+          CASE 
+            WHEN pm.last_pm_date IS NULL THEN NULL
+            ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+          END as days_since_pm,
+          (CASE 
+            WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+            ELSE 'UP_TO_DATE'
+          END)::text as pm_status_text
+        FROM containers c
+        LEFT JOIN customers cust ON c.assigned_client_id = cust.id
+        LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+        WHERE c.status = 'active'
+          AND c.assigned_client_id = ${customerId}
+        ORDER BY 
+          CASE 
+            WHEN pm.last_pm_date IS NULL THEN 1
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 2
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 3
+            ELSE 4
+          END,
+          CASE WHEN pm.last_pm_date IS NULL THEN NULL ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) END DESC NULLS FIRST
+      `);
+
+      const containers = (result.rows as any[]).map(row => ({
+        id: row.id,
+        containerId: row.container_id,
+        depot: row.depot,
+        grade: row.grade,
+        customerName: row.customer_name,
+        lastPmDate: row.last_pm_date,
+        pmCount: row.pm_count,
+        daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
+        pmStatus: row.pm_status_text,
+      }));
+
+      // Get customer info
+      const customerResult = await db.execute(sql`
+        SELECT id, company_name, contact_person, phone, email 
+        FROM customers WHERE id = ${customerId}
+      `);
+      const customer = (customerResult.rows as any[])[0] || null;
+
+      const pendingContainers = containers.filter(c => 
+        c.pmStatus === 'NEVER' || c.pmStatus === 'OVERDUE' || c.pmStatus === 'DUE_SOON'
+      );
+
+      return res.json({
+        success: true,
+        customer: customer ? {
+          id: customer.id,
+          companyName: customer.company_name,
+          contactPerson: customer.contact_person,
+          phone: customer.phone,
+          email: customer.email,
+        } : null,
+        containers,
+        summary: {
+          total: containers.length,
+          pendingPm: pendingContainers.length,
+          never: containers.filter(c => c.pmStatus === 'NEVER').length,
+          overdue: containers.filter(c => c.pmStatus === 'OVERDUE').length,
+          dueSoon: containers.filter(c => c.pmStatus === 'DUE_SOON').length,
+          upToDate: containers.filter(c => c.pmStatus === 'UP_TO_DATE').length,
+        }
+      });
+    } catch (error: any) {
+      console.error('[API] PM Client containers error:', error);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to get PM client containers",
+        details: error?.message || String(error),
+      });
+    }
+  });
+
+  // Assign all pending PMs for a client to a technician
+  app.post("/api/pm/assign-client-bulk", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { customerId, technicianId, technicianType, scheduledDate, scheduledTimeWindow, containerIds } = req.body;
+      
+      if (!customerId || !technicianId) {
+        return res.status(400).json({ error: "customerId and technicianId are required" });
+      }
+
+      const isThirdParty = technicianType === 'thirdparty';
+      console.log('[API] Bulk PM assignment for client:', customerId, 'to', isThirdParty ? 'third-party' : 'internal', 'technician:', technicianId);
+      if (containerIds?.length) {
+        console.log('[API] Assigning specific containers:', containerIds.length);
+      }
+
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      // Get technician info based on type
+      let technician: any = null;
+      if (isThirdParty) {
+        // Get third-party technician from JSON file
+        const thirdPartyList = readThirdPartyList();
+        technician = thirdPartyList.find((t: any) => t.id === technicianId || t._id === technicianId);
+        if (!technician) {
+          return res.status(404).json({ error: "Third-party technician not found" });
+        }
+        technician.name = technician.name || technician.contactName;
+      } else {
+        technician = await storage.getTechnician(technicianId);
+        if (!technician) {
+          return res.status(404).json({ error: "Technician not found" });
+        }
+      }
+
+      // Get customer info
+      const customerResult = await db.execute(sql`
+        SELECT id, company_name FROM customers WHERE id = ${customerId}
+      `);
+      const customer = (customerResult.rows as any[])[0];
+      if (!customer) {
+        return res.status(404).json({ error: "Customer not found" });
+      }
+
+      let pendingContainers: any[];
+
+      // If specific containerIds are provided, use those
+      if (containerIds && Array.isArray(containerIds) && containerIds.length > 0) {
+        // Get the specified containers - use IN clause with joined IDs
+        const containerIdsList = containerIds.map((id: string) => `'${id.replace(/'/g, "''")}'`).join(',');
+        const containerResult = await db.execute(sql.raw(`
+          WITH pm_data AS (
+            SELECT 
+              UPPER(TRIM(container_number)) as container_id,
+              MAX(complaint_attended_date) as last_pm_date
+            FROM service_history
+            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+              AND container_number IS NOT NULL
+              AND container_number != ''
+            GROUP BY UPPER(TRIM(container_number))
+          )
+          SELECT 
+            c.id,
+            c.container_id as container_code,
+            c.depot,
+            CASE 
+              WHEN pm.last_pm_date IS NULL THEN 999
+              ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+            END as days_since_pm,
+            (CASE 
+              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              ELSE 'UP_TO_DATE'
+            END)::text as pm_status
+          FROM containers c
+          LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+          WHERE c.id IN (${containerIdsList})
+          ORDER BY days_since_pm DESC
+        `));
+        pendingContainers = containerResult.rows as any[];
+      } else {
+        // Get all containers needing PM for this client
+        const containerResult = await db.execute(sql`
+          WITH pm_data AS (
+            SELECT 
+              UPPER(TRIM(container_number)) as container_id,
+              MAX(complaint_attended_date) as last_pm_date
+            FROM service_history
+            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+              AND container_number IS NOT NULL
+              AND container_number != ''
+            GROUP BY UPPER(TRIM(container_number))
+          )
+          SELECT 
+            c.id,
+            c.container_id as container_code,
+            c.depot,
+            CASE 
+              WHEN pm.last_pm_date IS NULL THEN 999
+              ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+            END as days_since_pm,
+            (CASE 
+              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              ELSE 'UP_TO_DATE'
+            END)::text as pm_status
+          FROM containers c
+          LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
+          WHERE c.status = 'active'
+            AND c.assigned_client_id = ${customerId}
+            AND (
+              pm.last_pm_date IS NULL 
+              OR EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75
+            )
+          ORDER BY days_since_pm DESC
+        `);
+        pendingContainers = containerResult.rows as any[];
+      }
+      console.log('[API] Found', pendingContainers.length, 'containers needing PM');
+      if (pendingContainers.length === 0) {
+        return res.json({ 
+          success: true, 
+          message: "No containers needing PM for this client",
+          assignedCount: 0,
+          serviceRequests: [] 
+        });
+      }
+      console.log('[API] First container:', JSON.stringify(pendingContainers[0], null, 2));
+
+      // Get admin user for createdBy
+      const allUsers = await storage.getAllUsers();
+      const adminUser = allUsers.find((u: any) => ['admin', 'super_admin'].includes(u.role?.toLowerCase()));
+      const createdBy = req.user?.id || adminUser?.id || allUsers[0]?.id;
+      
+      if (!createdBy) {
+        console.error('[API] No valid createdBy user found');
+        return res.status(400).json({ error: "No valid user found for creating service requests" });
+      }
+      console.log('[API] Using createdBy:', createdBy);
+
+      const schedDate = scheduledDate ? new Date(scheduledDate) : new Date();
+      schedDate.setHours(9, 0, 0, 0); // Default to 9 AM
+      const timeWindow = scheduledTimeWindow || '09:00-17:00';
+
+      const createdServiceRequests: any[] = [];
+
+      for (const container of pendingContainers) {
+        // Check if there's already a pending PM service request for this container
+        const existingRequests = await storage.getAllServiceRequests();
+        const hasPendingPM = existingRequests.some((req: any) => {
+          return (
+            req.containerId === container.id &&
+            req.issueDescription?.toLowerCase().includes('preventive maintenance') &&
+            ['pending', 'approved', 'scheduled'].includes(req.status?.toLowerCase()) &&
+            !req.actualEndTime
+          );
+        });
+
+        if (hasPendingPM) {
+          // Update existing PM request to assign to technician
+          const existingPM = existingRequests.find((req: any) => 
+            req.containerId === container.id &&
+            req.issueDescription?.toLowerCase().includes('preventive maintenance') &&
+            ['pending', 'approved', 'scheduled'].includes(req.status?.toLowerCase())
+          );
+          if (existingPM) {
+            console.log('[API] Updating existing PM request:', existingPM.id, 'isThirdParty:', isThirdParty);
+            if (isThirdParty) {
+              // For third-party, update status and store in excelData
+              const existingExcelData = typeof existingPM.excelData === 'string' 
+                ? JSON.parse(existingPM.excelData || '{}') 
+                : (existingPM.excelData || {});
+              await storage.updateServiceRequest(existingPM.id, {
+                assignedTechnicianId: null, // Clear internal assignment
+                status: 'scheduled',
+                scheduledDate: schedDate,
+                scheduledTimeWindow: timeWindow,
+                excelData: {
+                  ...existingExcelData,
+                  thirdPartyTechnicianId: technicianId,
+                  thirdPartyTechnicianName: technician.name,
+                  technicianType: 'thirdparty',
+                },
+              } as any);
+              // Track in third-party assignments
+              const tpList = readThirdPartyList();
+              const tpIdx = tpList.findIndex((t: any) => t.id === technicianId || t._id === technicianId);
+              if (tpIdx >= 0) {
+                const entry = tpList[tpIdx];
+                const current = Array.isArray(entry.assignedServices) ? entry.assignedServices : [];
+                if (!current.includes(existingPM.id)) current.push(existingPM.id);
+                tpList[tpIdx] = { ...entry, assignedServices: current };
+                writeThirdPartyList(tpList);
+              }
+            } else {
+              await storage.updateServiceRequest(existingPM.id, {
+                assignedTechnicianId: technicianId,
+                status: 'scheduled',
+                scheduledDate: schedDate,
+                scheduledTimeWindow: timeWindow,
+              });
+            }
+            createdServiceRequests.push({
+              id: existingPM.id,
+              requestNumber: existingPM.requestNumber,
+              containerId: container.id,
+              containerCode: container.container_code,
+              status: 'scheduled',
+              isNew: false,
+              isThirdParty,
+            });
+          }
+          continue;
+        }
+
+        // Create new PM service request
+        const timestamp = Date.now() + createdServiceRequests.length;
+        const requestNumber = `SR-PM-${timestamp}`;
+        const daysSincePm = container.days_since_pm ? Math.round(Number(container.days_since_pm)) : 'Never';
+
+        const serviceRequestData: any = {
+          requestNumber: requestNumber,
+          containerId: container.id,
+          customerId: customerId,
+          priority: container.pm_status === 'OVERDUE' || container.pm_status === 'NEVER' ? 'high' : 'normal',
+          status: 'scheduled',
+          issueDescription: `Preventive Maintenance - Container ${container.container_code} (${daysSincePm} days since last PM)`,
+          requestedAt: new Date(),
+          createdBy: createdBy,
+          workType: 'SERVICE-AT SITE',
+          jobType: 'FOC',
+          scheduledDate: schedDate,
+          scheduledTimeWindow: timeWindow,
+        };
+
+        if (isThirdParty) {
+          // For third-party, don't set assignedTechnicianId, store in excelData instead
+          serviceRequestData.excelData = {
+            thirdPartyTechnicianId: technicianId,
+            thirdPartyTechnicianName: technician.name,
+            technicianType: 'thirdparty',
+          };
+        } else {
+          serviceRequestData.assignedTechnicianId = technicianId;
+        }
+
+        console.log('[API] Creating PM service request:', { 
+          requestNumber, 
+          containerId: container.id, 
+          customerId,
+          isThirdParty 
+        });
+        
+        let serviceRequest: any;
+        try {
+          serviceRequest = await storage.createServiceRequest(serviceRequestData);
+        } catch (createError: any) {
+          console.error('[API] Failed to create service request:', createError?.message);
+          throw createError;
+        }
+
+        // For third-party, also update the assignment list
+        if (isThirdParty) {
+          const tpList = readThirdPartyList();
+          const tpIdx = tpList.findIndex((t: any) => t.id === technicianId || t._id === technicianId);
+          if (tpIdx >= 0) {
+            const entry = tpList[tpIdx];
+            const current = Array.isArray(entry.assignedServices) ? entry.assignedServices : [];
+            if (!current.includes(serviceRequest.id)) current.push(serviceRequest.id);
+            tpList[tpIdx] = { ...entry, assignedServices: current };
+            writeThirdPartyList(tpList);
+          }
+        }
+
+        createdServiceRequests.push({
+          id: serviceRequest.id,
+          requestNumber: requestNumber,
+          containerId: container.id,
+          containerCode: container.container_code,
+          status: 'scheduled',
+          isNew: true,
+          isThirdParty,
+        });
+      }
+
+      console.log('[API] Bulk PM assignment created', createdServiceRequests.length, 'service requests');
+
+      // Broadcast update event
+      if (typeof (global as any).broadcast === 'function') {
+        (global as any).broadcast({
+          type: 'service_request_assigned',
+          timestamp: new Date().toISOString(),
+          data: {
+            technicianId,
+            customerId,
+            count: createdServiceRequests.length,
+          },
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: `Assigned ${createdServiceRequests.length} PM service requests to ${isThirdParty ? 'third-party ' : ''}technician`,
+        assignedCount: createdServiceRequests.length,
+        serviceRequests: createdServiceRequests,
+        customer: {
+          id: customer.id,
+          companyName: customer.company_name,
+        },
+        technician: {
+          id: technician.id,
+          name: technician.name || (technician as any).employeeCode,
+          type: isThirdParty ? 'thirdparty' : 'internal',
+        },
+      });
+    } catch (error: any) {
+      console.error('[API] Bulk PM assignment error:', error);
+      console.error('[API] Error stack:', error?.stack);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to assign PMs",
+        details: error?.message || String(error),
+        stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined,
+      });
+    }
+  });
+
   // Sync PM dates from service_requests to containers table
+  // Consolidated Trip Planning - Services + PM Tasks
+  app.post("/api/trips/plan-consolidated", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      console.log('[API] POST /api/trips/plan-consolidated - Request received');
+      const {
+        technicianId,
+        destinationCity,
+        startDate,
+        endDate,
+        selectedServices = [],
+        selectedPMTasks = []
+      } = req.body;
+      
+      console.log('[API] POST /api/trips/plan-consolidated - Payload:', {
+        technicianId,
+        destinationCity,
+        servicesCount: selectedServices?.length || 0,
+        pmTasksCount: selectedPMTasks?.length || 0
+      });
+
+      console.log('[API] Planning consolidated trip:', {
+        technicianId,
+        destinationCity,
+        selectedServices: selectedServices.length,
+        selectedPMTasks: selectedPMTasks.length
+      });
+
+      // Get technician details
+      const technician = await storage.getTechnician(technicianId);
+      if (!technician) {
+        return res.status(404).json({ error: "Technician not found" });
+      }
+
+      // Get selected service requests
+      const serviceRequests = [];
+      for (const serviceId of selectedServices) {
+        const sr = await storage.getServiceRequest(serviceId);
+        if (sr) serviceRequests.push(sr);
+      }
+
+      // Create PM service requests for selected containers
+      const pmServiceRequests = [];
+      for (const containerId of selectedPMTasks) {
+        // Check if PM already exists for this container
+        const existingPM = await db.execute(sql`
+          SELECT sr.* FROM service_requests sr
+          WHERE sr.container_id = ${containerId}
+            AND sr.call_status LIKE '%Preventive%'
+            AND sr.status IN ('pending', 'scheduled', 'approved', 'in_progress')
+        `);
+
+        if (existingPM.rows.length === 0) {
+          // Create new PM service request
+          const container = await storage.getContainer(containerId);
+          if (container) {
+            const pmRequest = await storage.createServiceRequest({
+              containerId,
+              issueDescription: `Preventive Maintenance - Container ${container.containerCode}`,
+              requestedAt: new Date(),
+              createdBy: req.user?.id || '',
+              priority: 'medium',
+              workType: 'SERVICE-AT SITE',
+              machineStatus: 'Preventive Maintenance'
+            });
+            pmServiceRequests.push(pmRequest);
+          }
+        }
+      }
+
+      // Use actual costs from technician profile (NO hardcoded defaults)
+      const serviceCost = technician.serviceRequestCost || 0;
+      const pmCost = technician.pmCost || 0;
+      const hotelAllowance = technician.hotelAllowance || 0;
+      const localTravelAllowance = technician.localTravelAllowance || 0;
+      const dailyAllowance = hotelAllowance + localTravelAllowance;
+
+      // Create consolidated trip plan
+      const allTasks = [
+        ...serviceRequests.map(sr => ({
+          type: 'service',
+          id: sr.id,
+          requestNumber: sr.requestNumber,
+          containerId: sr.containerId,
+          description: sr.issueDescription,
+          priority: sr.priority,
+          estimatedCost: serviceCost
+        })),
+        ...pmServiceRequests.map(sr => ({
+          type: 'pm',
+          id: sr.id,
+          requestNumber: sr.requestNumber,
+          containerId: sr.containerId,
+          description: sr.issueDescription,
+          priority: sr.priority,
+          estimatedCost: pmCost
+        }))
+      ];
+
+      // Calculate comprehensive cost breakdown using technician's tasksPerDay rate from DB
+      const taskCosts = allTasks.reduce((sum, task) => sum + (task.estimatedCost || 0), 0);
+      const tasksPerDay = technician.tasksPerDay || 3; // Use DB rate, default to 3 if not set
+      const estimatedDays = Math.max(1, Math.ceil(allTasks.length / tasksPerDay));
+      const travelAllowance = estimatedDays * dailyAllowance;
+      const miscellaneous = (req.body as any).miscellaneousCost || 0;
+      const contingency = Math.round(taskCosts * 0.03); // 3% contingency
+
+      const costBreakdown = {
+        taskCosts,
+        travelAllowance,
+        miscellaneous,
+        contingency,
+        totalEstimatedCost: taskCosts + travelAllowance + miscellaneous + contingency,
+        breakdown: {
+          serviceTasks: serviceRequests.length,
+          pmTasks: pmServiceRequests.length,
+          serviceRate: serviceCost || 0,
+          pmRate: pmCost || 0,
+          dailyAllowance: dailyAllowance || 0,
+          estimatedDays,
+          hotelAllowance: hotelAllowance || 0,
+          localTravelAllowance: localTravelAllowance || 0,
+          tasksPerDay: tasksPerDay
+        }
+      };
+
+      // Get technician base location for origin
+      const baseLocation = typeof technician.baseLocation === 'string' 
+        ? technician.baseLocation 
+        : technician.baseLocation?.city || technician.baseLocation?.address || 'Unknown';
+
+      // Create trip record using travel planning system
+      const { savePlannedTrip } = await import('./services/travel-planning');
+      
+      const tripPayload = {
+        technicianId,
+        origin: baseLocation,
+        destinationCity,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        purpose: 'mixed' as const,
+        costs: {
+          travelFare: { value: 0, isManual: false },
+          stayCost: { value: hotelAllowance * estimatedDays, isManual: false },
+          dailyAllowance: { value: dailyAllowance * estimatedDays, isManual: false },
+          localTravelCost: { value: localTravelAllowance * estimatedDays, isManual: false },
+          miscCost: { value: miscellaneous, isManual: true }
+        },
+        tasks: allTasks.map(task => ({
+          containerId: task.containerId,
+          taskType: task.type === 'pm' ? 'pm' : 'alert',
+          isManual: false,
+          scheduledDate: new Date(startDate),
+        })),
+        notes: `Consolidated trip: ${serviceRequests.length} service requests + ${pmServiceRequests.length} PM tasks`
+      };
+
+      const trip = await savePlannedTrip(tripPayload, req.user?.id);
+
+      // Assign service requests to technician
+      for (const sr of [...serviceRequests, ...pmServiceRequests]) {
+        await storage.assignServiceRequest(sr.id, technicianId, {
+          scheduledDate: startDate,
+          scheduledTimeWindow: '09:00-17:00'
+        });
+      }
+
+      // Generate and store PDF
+      try {
+        const { generateTripFinancePDF } = await import('./services/pdfGenerator');
+        const pdfBuffer = await generateTripFinancePDF(trip.id);
+
+        // Store PDF in service_report_pdfs table
+        await db.insert(serviceReportPdfs).values({
+          serviceRequestId: null, // Trip PDFs don't have a specific service request
+          reportStage: 'trip_finance',
+          pdfData: pdfBuffer,
+          fileSize: pdfBuffer.length,
+          generatedAt: new Date(),
+          status: 'generated'
+        });
+
+        console.log(`[API] Trip finance PDF generated and stored for trip ${trip.id}`);
+      } catch (error) {
+        console.error('[API] Failed to generate trip PDF:', error);
+        // Don't fail the entire request if PDF generation fails
+      }
+
+      // Send WhatsApp notification to technician
+      try {
+        const { sendMessage } = await import('./services/whatsapp');
+        const technicianPhone = technician.phone || technician.whatsappNumber;
+
+        if (technicianPhone) {
+          const message = `Trip created for ${destinationCity}. Includes ${serviceRequests.length} assigned services + ${pmServiceRequests.length} PM tasks.`;
+
+          await sendMessage(technicianPhone, message);
+          console.log(`[API] WhatsApp notification sent to technician ${technician.name}`);
+        }
+      } catch (error) {
+        console.error('[API] Failed to send WhatsApp notification:', error);
+        // Don't fail the entire request if WhatsApp fails
+      }
+
+      // Get full trip details with costs and tasks
+      const tripCosts = await storage.getTechnicianTripCosts(trip.id);
+      const tripTasks = await storage.getTechnicianTripTasks(trip.id);
+
+      res.json({
+        success: true,
+        trip: {
+          ...trip,
+          costs: tripCosts,
+          tasks: tripTasks,
+        },
+        summary: {
+          technician: technician.name,
+          destination: destinationCity,
+          totalTasks: allTasks.length,
+          serviceTasks: serviceRequests.length,
+          pmTasks: pmServiceRequests.length,
+          estimatedCost: costBreakdown.totalEstimatedCost,
+          estimatedDays,
+          startDate,
+          endDate,
+          whatsappSent: technician.phone || technician.whatsappNumber ? true : false,
+          tasksPerDay: tasksPerDay
+        }
+      });
+
+    } catch (error) {
+      console.error('[API] Consolidated trip planning error:', error);
+      res.status(500).json({ error: "Failed to plan consolidated trip", details: (error as Error).message });
+    }
+  });
+
+  // GET /api/trips/planned - Get all planned trips (must come before /api/trips/:id)
+  app.get("/api/trips/planned", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      console.log('[API] GET /api/trips/planned - Request received');
+      const { technicianId, startDate, endDate } = req.query;
+      
+      const filters: any = {
+        tripStatus: 'planned'
+      };
+      
+      if (technicianId) filters.technicianId = technicianId as string;
+      if (startDate) filters.startDate = new Date(startDate as string);
+      if (endDate) filters.endDate = new Date(endDate as string);
+
+      const trips = await storage.getTechnicianTrips(filters);
+      console.log('[API] GET /api/trips/planned - Found trips:', trips?.length || 0);
+      
+      // Enrich trips with technician details and costs
+      const enrichedTrips = await Promise.all(
+        trips.map(async (trip: any) => {
+          const tech = await storage.getTechnician(trip.technicianId).catch(() => null);
+          const costs = await storage.getTechnicianTripCosts(trip.id).catch(() => null);
+          const tasks = await storage.getTechnicianTripTasks(trip.id).catch(() => []);
+          
+          return {
+            ...trip,
+            technician: tech ? {
+              name: tech.name,
+              employeeCode: tech.employeeCode,
+              baseLocation: tech.baseLocation
+            } : null,
+            costs,
+            tasks: tasks || []
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        trips: enrichedTrips
+      });
+    } catch (error: any) {
+      console.error('[API] Failed to fetch planned trips:', error);
+      res.status(500).json({ error: "Failed to fetch planned trips", details: error?.message });
+    }
+  });
+
+  // GET /api/trips/:id - Get single trip details
+  app.get("/api/trips/:id", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const trip = await storage.getTechnicianTrip(req.params.id);
+      if (!trip) {
+        return res.status(404).json({ error: "Trip not found" });
+      }
+
+      const tech = await storage.getTechnician(trip.technicianId).catch(() => null);
+      const costs = await storage.getTechnicianTripCosts(trip.id).catch(() => null);
+      const tasks = await storage.getTechnicianTripTasks(trip.id).catch(() => []);
+
+      res.json({
+        success: true,
+        trip: {
+          ...trip,
+          technician: tech,
+          costs,
+          tasks: tasks || []
+        }
+      });
+    } catch (error) {
+      console.error('[API] Failed to fetch trip:', error);
+      res.status(500).json({ error: "Failed to fetch trip" });
+    }
+  });
+
+  // Generate Finance PDF for Trip Approval
+  app.post("/api/trips/generate-finance-pdf", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const {
+        tripId,
+        trip,
+        technician,
+      } = req.body;
+
+      // If tripId provided, fetch trip from database
+      let tripData = trip;
+      if (tripId && !tripData) {
+        tripData = await storage.getTechnicianTrip(tripId);
+        if (!tripData) {
+          return res.status(404).json({ error: "Trip not found" });
+        }
+      }
+
+      if (!tripData) {
+        return res.status(400).json({ error: "Trip data required" });
+      }
+
+      // Fetch full trip details
+      const fullTrip = await storage.getTechnicianTrip(tripData.id || tripId);
+      const tripCosts = await storage.getTechnicianTripCosts(fullTrip?.id || tripData.id || tripId);
+      const tripTasks = await storage.getTechnicianTripTasks(fullTrip?.id || tripData.id || tripId);
+      const tripTechnician = technician || (fullTrip ? await storage.getTechnician(fullTrip.technicianId) : null);
+
+      // Get service requests and PM containers from tasks
+      const serviceRequests = [];
+      const pmContainers = [];
+
+      for (const task of tripTasks || []) {
+        if (task.serviceRequestId) {
+          const sr = await storage.getServiceRequest(task.serviceRequestId).catch(() => null);
+          if (sr) serviceRequests.push(sr);
+        }
+        if (task.containerId) {
+          const container = await storage.getContainer(task.containerId).catch(() => null);
+          if (container) {
+            if (task.taskType === 'pm') {
+              pmContainers.push({
+                containerCode: container.containerCode || container.container_id,
+                customer: container.customer,
+                customerName: container.customer?.companyName,
+                pmDetails: {
+                  pmStatus: task.priority === 'high' ? 'OVERDUE' : 'DUE_SOON',
+                  daysSincePm: null
+                }
+              });
+            }
+          }
+        }
+      }
+
+      // Calculate comprehensive wage breakdown using DB values
+      const wageBreakdown = calculateTripWageBreakdown(
+        serviceRequests,
+        pmContainers,
+        tripTechnician,
+        fullTrip || tripData
+      );
+
+      // Return PDF data for frontend to generate
+      res.json({
+        success: true,
+        pdfData: {
+          tripData: fullTrip || tripData,
+          technician: tripTechnician,
+          serviceRequests,
+          pmContainers,
+          wageBreakdown,
+          generatedAt: new Date().toISOString(),
+          generatedBy: req.user?.name || 'System'
+        },
+        message: "PDF data prepared successfully"
+      });
+
+    } catch (error) {
+      console.error('[API] Finance PDF generation error:', error);
+      res.status(500).json({ error: "Failed to generate finance PDF" });
+    }
+  });
+
   app.post("/api/pm/sync", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
     try {
       console.log('[API] PM Sync requested');
       const { db } = await import('./db');
       const { sql } = await import('drizzle-orm');
 
-      // Get PM records from service_requests where machine_status = 'Preventive Maintenance'
+      // Get PM records from service_requests where call_status contains 'preventive'
       const pmRecords = await db.execute(sql`
-        SELECT 
+        SELECT
           container_id,
-          MAX(complaint_registration_time) as last_pm_date
+          MAX(requested_at) as last_pm_date
         FROM service_requests
-        WHERE LOWER(machine_status) LIKE '%preventive%'
+        WHERE LOWER(call_status) LIKE '%preventive%'
           AND container_id IS NOT NULL
         GROUP BY container_id
       `);
@@ -4806,13 +6052,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         else if (daysSincePm > 75) pmStatus = 'DUE_SOON';
         
         // Update container by ID
-        await db.execute(sql`
-          UPDATE containers 
-          SET last_pm_date = ${lastPmDate}, 
-              pm_status = ${pmStatus}::pm_status,
-              updated_at = NOW()
-          WHERE id = ${containerId}
-        `);
+        // Note: PM data is calculated from service_history, not stored in containers table
+        // This update is skipped to avoid schema errors
         updated++;
       }
 
@@ -5140,15 +6381,174 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Start scheduler
   startScheduler();
 
-  // Start Preventive Maintenance checker (runs daily at midnight)
-  (async () => {
-    try {
-      const { startPMChecker } = await import('./services/preventive-maintenance');
-      startPMChecker();
-    } catch (error) {
-      console.error('[Routes] Failed to start PM checker:', error);
+// Helper function to calculate comprehensive wage breakdown
+function calculateTripWageBreakdown(serviceRequests: any[], pmContainers: any[], technician: any, tripData: any) {
+  // Use rates from database (NO hardcoded defaults)
+  const serviceRate = technician?.serviceRequestCost || 0;
+  const pmRate = technician?.pmCost || 0;
+
+  // Technician allowances from DB
+  const hotelAllowance = technician?.hotelAllowance || 0;
+  const localTravelAllowance = technician?.localTravelAllowance || 0;
+  const dailyAllowance = hotelAllowance + localTravelAllowance;
+
+  // Calculate task counts
+  const serviceCount = serviceRequests.length;
+  const pmCount = pmContainers.length;
+  const totalTasks = serviceCount + pmCount;
+
+  // Estimate days using technician's tasksPerDay rate from DB
+  const tasksPerDay = technician?.tasksPerDay || 3; // Default to 3 if not set
+  const estimatedDays = Math.max(1, Math.ceil(totalTasks / tasksPerDay));
+
+  // Cost calculations
+  const serviceCosts = serviceCount * serviceRate;
+  const pmCosts = pmCount * pmRate;
+  const travelAllowance = estimatedDays * dailyAllowance;
+
+  // Additional costs (estimates)
+  const miscellaneous = Math.round((serviceCosts + pmCosts) * 0.05); // 5% miscellaneous
+  const contingency = Math.round((serviceCosts + pmCosts) * 0.03); // 3% contingency
+
+  const totalCost = serviceCosts + pmCosts + travelAllowance + miscellaneous + contingency;
+
+  return {
+    taskBreakdown: {
+      serviceRequests: { count: serviceCount, rate: serviceRate, total: serviceCosts },
+      pmTasks: { count: pmCount, rate: pmRate, total: pmCosts }
+    },
+    allowances: {
+      dailyAllowance: { rate: dailyAllowance, days: estimatedDays, total: travelAllowance },
+      hotelAllowance: { rate: hotelAllowance, days: estimatedDays, total: hotelAllowance * estimatedDays },
+      localTravelAllowance: { rate: localTravelAllowance, days: estimatedDays, total: localTravelAllowance * estimatedDays }
+    },
+    additionalCosts: {
+      miscellaneous: { percentage: 5, amount: miscellaneous },
+      contingency: { percentage: 3, amount: contingency }
+    },
+    summary: {
+      totalTasks,
+      estimatedDays,
+      subtotal: serviceCosts + pmCosts,
+      totalAllowance: travelAllowance,
+      totalAdditional: miscellaneous + contingency,
+      totalCost
     }
-  })();
+  };
+}
+
+// Helper function to generate finance PDF content
+function generateFinancePDFContent(data: any) {
+  const { tripData, technician, selectedServiceRequests, pmContainers, wageBreakdown, generatedAt, generatedBy, filters } = data;
+
+  return {
+    header: {
+      title: "TRIP FINANCE APPROVAL REPORT",
+      subtitle: `${technician?.name || 'Technician'} - ${tripData.city}`,
+      generatedAt: new Date(generatedAt).toLocaleString(),
+      generatedBy,
+      reportId: `TRIP-${Date.now()}`
+    },
+
+    tripDetails: {
+      technician: {
+        name: technician?.name,
+        employeeCode: technician?.employeeCode,
+        grade: technician?.grade,
+        designation: technician?.designation,
+        baseLocation: technician?.baseLocation
+      },
+      trip: {
+        destination: tripData.city,
+        startDate: new Date(tripData.range.start).toLocaleDateString(),
+        endDate: new Date(tripData.range.end).toLocaleDateString(),
+        duration: `${Math.ceil((new Date(tripData.range.end) - new Date(tripData.range.start)) / (1000 * 60 * 60 * 24)) + 1} days`,
+        totalTasks: wageBreakdown.summary.totalTasks,
+        serviceRequests: wageBreakdown.taskBreakdown.serviceRequests.count,
+        pmTasks: wageBreakdown.taskBreakdown.pmTasks.count
+      }
+    },
+
+    taskDetails: {
+      serviceRequests: selectedServiceRequests.map((sr: any) => ({
+        requestNumber: sr.requestNumber,
+        containerCode: sr.containerId,
+        issueDescription: sr.issueDescription,
+        priority: sr.priority,
+        customerName: sr.customer?.companyName,
+        estimatedCost: wageBreakdown.taskBreakdown.serviceRequests.rate,
+        status: sr.status
+      })),
+
+      pmTasks: pmContainers.map((container: any) => ({
+        containerCode: container.containerCode,
+        customerName: container.customer?.companyName,
+        lastPmDate: container.pmDetails?.lastPmDate,
+        daysSincePm: container.pmDetails?.daysSincePm,
+        pmStatus: container.pmDetails?.pmStatus,
+        estimatedCost: wageBreakdown.taskBreakdown.pmTasks.rate,
+        priority: container.pmDetails?.pmStatus === 'OVERDUE' ? 'HIGH' :
+                 container.pmDetails?.pmStatus === 'NEVER' ? 'CRITICAL' : 'MEDIUM'
+      }))
+    },
+
+    wageBreakdown: {
+      taskCosts: {
+        serviceRequests: {
+          count: wageBreakdown.taskBreakdown.serviceRequests.count,
+          ratePerTask: wageBreakdown.taskBreakdown.serviceRequests.rate,
+          subtotal: wageBreakdown.taskBreakdown.serviceRequests.total
+        },
+        pmTasks: {
+          count: wageBreakdown.taskBreakdown.pmTasks.count,
+          ratePerTask: wageBreakdown.taskBreakdown.pmTasks.rate,
+          subtotal: wageBreakdown.taskBreakdown.pmTasks.total
+        },
+        taskSubtotal: wageBreakdown.summary.subtotal
+      },
+
+      allowances: {
+        dailyAllowance: {
+          rate: wageBreakdown.allowances.dailyAllowance.rate,
+          days: wageBreakdown.allowances.dailyAllowance.days,
+          breakdown: {
+            hotel: wageBreakdown.allowances.hotelAllowance.total,
+            localTravel: wageBreakdown.allowances.localTravelAllowance.total
+          },
+          total: wageBreakdown.allowances.dailyAllowance.total
+        }
+      },
+
+      additionalCosts: {
+        miscellaneous: wageBreakdown.additionalCosts.miscellaneous,
+        contingency: wageBreakdown.additionalCosts.contingency,
+        total: wageBreakdown.additionalCosts.miscellaneous.amount + wageBreakdown.additionalCosts.contingency.amount
+      },
+
+      grandTotal: wageBreakdown.summary.totalCost
+    },
+
+    approvalSection: {
+      preparedBy: generatedBy,
+      approvedBy: "",
+      approvalDate: "",
+      comments: "",
+      status: "PENDING"
+    },
+
+    filters: filters
+  };
+}
+
+// Start Preventive Maintenance checker (runs daily at midnight)
+(async () => {
+  try {
+    const { startPMChecker } = await import('./services/preventive-maintenance');
+    startPMChecker();
+  } catch (error) {
+    console.error('[Routes] Failed to start PM checker:', error);
+  }
+})();
 
   // Customer routes
   app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
@@ -5697,10 +7097,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/scheduling/confirm-trip - Confirm trip and assign PM tasks
   app.post("/api/scheduling/confirm-trip", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
     try {
-      const { techId, plan } = req.body;
+      const { techId, plan, selectedTaskIds } = req.body;
+
+      console.log('[API] confirm-trip request:', { 
+        techId, 
+        planCity: plan?.city,
+        dailyPlanDays: plan?.dailyPlan?.length,
+        selectedTaskIds: selectedTaskIds?.length,
+        pmCount: plan?.pmCount,
+      });
 
       if (!techId || !plan) {
         return res.status(400).json({ error: "techId and plan are required" });
+      }
+      
+      // Check if plan has any tasks
+      const totalTasks = plan.dailyPlan?.reduce((acc: number, day: any) => acc + (day.tasks?.length || 0), 0) || 0;
+      if (totalTasks === 0) {
+        return res.status(400).json({ error: "No tasks selected. Please select at least one PM task." });
       }
 
       const technician = await storage.getTechnician(techId);
@@ -5718,8 +7132,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tasks: any[] = [];
       const pmServiceRequestIds: string[] = [];
       
+      console.log('[API] Processing daily plan with', plan.dailyPlan?.length, 'days');
+      
       for (const day of plan.dailyPlan || []) {
+        console.log('[API] Processing day:', day.date, 'with', day.tasks?.length, 'tasks');
         for (const task of day.tasks || []) {
+          if (!task.containerId) {
+            console.warn('[API] Task missing containerId:', task);
+            continue; // Skip tasks without containerId
+          }
           tasks.push({
             containerId: task.containerId,
             taskType: task.type === 'PM' ? 'pm' : 'inspection',
@@ -5738,6 +7159,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
+      
+      console.log('[API] Created', tasks.length, 'tasks,', pmServiceRequestIds.length, 'PM service request IDs');
 
       // Use costs from plan if provided, otherwise auto-calculate
       let costs = plan.costs;
@@ -8174,39 +9597,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Send Email
       const recipient = 'aiteamcrystal@gmail.com';
-      
+
       // Try sending email, but don't fail request if email fails
+      let emailSent = false;
+      let emailError: string | null = null;
+      let emailProvider: string | null = null;
+
       try {
-        await sendEmail({
+        const emailResult = await sendEmail({
             to: recipient,
             subject: `Service Report: ${stage.toUpperCase().replace('_', ' ')} - SR-${id}`,
             body: `Please find attached the ${stage.replace('_', ' ')} report for Service Request ${id}.\n\nReference: SR-${id}\nGenerated: ${new Date().toLocaleString()}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2>Service Report Generated</h2>
+                <p>Please find attached the <strong>${stage.replace('_', ' ')}</strong> report for Service Request <strong>${id}</strong>.</p>
+                <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                  <p><strong>Reference:</strong> SR-${id}</p>
+                  <p><strong>Report Stage:</strong> ${stage.toUpperCase().replace('_', ' ')}</p>
+                  <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+                </div>
+                <p style="color: #666; font-size: 12px;">This is an automated email from Service Hub.</p>
+              </div>
+            `,
             attachments: [{
                 filename: fileName,
-                content: pdfBuffer
-            }]
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+            }],
+            from: process.env.MAILGUN_FROM || process.env.EMAIL_FROM
         });
-      } catch (emailError) {
-          console.error("Failed to send email:", emailError);
+
+        emailSent = !emailResult.error && !emailResult.skipped;
+        emailProvider = emailResult.provider || null;
+
+        if (emailSent) {
+          console.log(`✅ Service report email sent to ${recipient} via ${emailProvider}`);
+        } else {
+          emailError = 'Email service not configured';
+          console.warn(`⚠️ Service report email not sent: ${emailError}`);
+        }
+      } catch (error: any) {
+          emailError = error.message;
+          console.error("Failed to send email:", error.message);
           // Continue to save report record
       }
-      
+
       // Save PDF buffer directly to database (no disk storage)
       const reportId = await db.insert(serviceReportPdfs).values({
           serviceRequestId: id,
           reportStage: stage,
           pdfData: pdfBuffer, // Store PDF as binary in database
           fileSize: pdfBuffer.length,
-          emailRecipients: [recipient],
-          status: 'emailed',
-          emailedAt: new Date()
+          emailRecipients: emailSent ? [recipient] : [],
+          status: emailSent ? 'emailed' : 'generated',
+          emailedAt: emailSent ? new Date() : null
       }).returning({ id: serviceReportPdfs.id });
-      
+
       res.json({
         success: true,
         reportId: reportId[0].id,
-        emailSent: true,
-        recipients: [recipient]
+        emailSent,
+        emailProvider,
+        emailError,
+        recipients: emailSent ? [recipient] : []
       });
       
     } catch (error: any) {
@@ -8277,6 +9731,255 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error("Failed to list reports:", e);
           res.status(500).json({ error: "Failed to list reports" });
       }
+  });
+
+  // ==================== REMARKS & RECORDINGS ROUTES ====================
+
+  // Get all remarks for a service request
+  app.get("/api/service-requests/:id/remarks-list", authenticateUser, async (req, res) => {
+    try {
+      const remarks = await db.select().from(serviceRequestRemarks)
+        .where(eq(serviceRequestRemarks.serviceRequestId, req.params.id))
+        .orderBy(desc(serviceRequestRemarks.createdAt));
+      res.json(remarks);
+    } catch (error: any) {
+      console.error("Failed to fetch remarks:", error);
+      res.status(500).json({ error: "Failed to fetch remarks" });
+    }
+  });
+
+  // Add a new remark (immutable - cannot be edited or deleted)
+  app.post("/api/service-requests/:id/remarks-list", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { remarkText } = req.body;
+      if (!remarkText?.trim()) {
+        return res.status(400).json({ error: "Remark text is required" });
+      }
+
+      const user = await storage.getUser(req.user?.id || '');
+      const [remark] = await db.insert(serviceRequestRemarks).values({
+        serviceRequestId: req.params.id,
+        userId: req.user?.id,
+        userName: user?.name || 'Unknown User',
+        userRole: user?.role || 'unknown',
+        remarkText: remarkText.trim(),
+        isSystemGenerated: false,
+      }).returning();
+
+      // Broadcast to WebSocket
+      broadcast({ type: "remark_added", data: { serviceRequestId: req.params.id, remark } });
+
+      res.status(201).json(remark);
+    } catch (error: any) {
+      console.error("Failed to add remark:", error);
+      res.status(500).json({ error: "Failed to add remark" });
+    }
+  });
+
+  // Get all recordings for a service request
+  app.get("/api/service-requests/:id/recordings", authenticateUser, async (req, res) => {
+    try {
+      const recordings = await db.select().from(serviceRequestRecordings)
+        .where(eq(serviceRequestRecordings.serviceRequestId, req.params.id))
+        .orderBy(desc(serviceRequestRecordings.createdAt));
+      res.json(recordings);
+    } catch (error: any) {
+      console.error("Failed to fetch recordings:", error);
+      res.status(500).json({ error: "Failed to fetch recordings" });
+    }
+  });
+
+  // Upload a recording
+  app.post("/api/service-requests/:id/recordings", authenticateUser, upload.single('audio'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Audio file is required" });
+      }
+
+      const user = await storage.getUser(req.user?.id || '');
+      const fileName = `recording_${Date.now()}_${req.file.originalname}`;
+      const filePath = `/uploads/recordings/${fileName}`;
+
+      // Save file to disk (in production, use cloud storage)
+      const fs = await import('fs');
+      const path = await import('path');
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'recordings');
+      
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      fs.writeFileSync(path.join(uploadsDir, fileName), req.file.buffer);
+
+      const [recording] = await db.insert(serviceRequestRecordings).values({
+        serviceRequestId: req.params.id,
+        uploadedBy: req.user?.id,
+        uploadedByName: user?.name || 'Unknown User',
+        fileName: req.file.originalname,
+        filePath: filePath,
+        fileSize: req.file.size,
+        originalFileSize: parseInt(req.body.originalSize) || req.file.size,
+        mimeType: req.file.mimetype,
+        isCompressed: req.body.compressedSize !== req.body.originalSize,
+      }).returning();
+
+      // Broadcast to WebSocket
+      broadcast({ type: "recording_added", data: { serviceRequestId: req.params.id, recording } });
+
+      res.status(201).json(recording);
+    } catch (error: any) {
+      console.error("Failed to upload recording:", error);
+      res.status(500).json({ error: "Failed to upload recording" });
+    }
+  });
+
+  // Download a recording
+  app.get("/api/recordings/:id/download", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      console.log('[RECORDING DOWNLOAD] Request for recording:', req.params.id);
+      console.log('[RECORDING DOWNLOAD] User:', req.user?.id);
+      
+      const [recording] = await db.select().from(serviceRequestRecordings)
+        .where(eq(serviceRequestRecordings.id, req.params.id));
+      
+      if (!recording) {
+        console.log('[RECORDING DOWNLOAD] Recording not found:', req.params.id);
+        return res.status(404).json({ error: "Recording not found" });
+      }
+
+      console.log('[RECORDING DOWNLOAD] Found recording:', recording.fileName, recording.filePath);
+
+      const fs = await import('fs');
+      const path = await import('path');
+      const fullPath = path.join(process.cwd(), recording.filePath.replace(/^\//, ''));
+      
+      console.log('[RECORDING DOWNLOAD] Full file path:', fullPath);
+      
+      if (!fs.existsSync(fullPath)) {
+        console.log('[RECORDING DOWNLOAD] File does not exist:', fullPath);
+        return res.status(404).json({ error: "Recording file not found" });
+      }
+
+      console.log('[RECORDING DOWNLOAD] Sending file...');
+      res.setHeader('Content-Type', recording.mimeType || 'audio/mpeg');
+      res.setHeader('Content-Disposition', `attachment; filename="${recording.fileName}"`);
+      res.sendFile(fullPath);
+    } catch (error: any) {
+      console.error('[RECORDING DOWNLOAD] Error:', error);
+      res.status(500).json({ error: "Failed to download recording" });
+    }
+  });
+
+  // ==================== EXCEL IMPORT ROUTES ====================
+
+  // Preview Excel import
+  app.post("/api/import/service-history/preview", authenticateUser, requireRole("admin", "super_admin"), upload.single('file'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Excel file is required" });
+      }
+
+      const data = parseExcelFile(req.file.buffer);
+      const preview = getImportPreview(data, 20);
+      
+      res.json({
+        success: true,
+        ...preview,
+      });
+    } catch (error: any) {
+      console.error("Excel preview error:", error);
+      res.status(500).json({ error: "Failed to parse Excel file: " + error.message });
+    }
+  });
+
+  // Import service history from Excel
+  app.post("/api/import/service-history", authenticateUser, requireRole("admin", "super_admin"), upload.single('file'), async (req: AuthRequest, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Excel file is required" });
+      }
+
+      const options = {
+        createMissingContainers: req.body.createMissingContainers !== 'false',
+        updateExisting: req.body.updateExisting !== 'false',
+        defaultPriority: req.body.defaultPriority || 'normal',
+        defaultStatus: req.body.defaultStatus || 'completed',
+      };
+
+      console.log('📊 Starting Excel import with options:', options);
+      
+      const data = parseExcelFile(req.file.buffer);
+      console.log(`📊 Parsed ${data.length} rows from Excel`);
+      
+      const result = await importServiceHistory(data, options);
+      
+      console.log('📊 Import complete:', result);
+      
+      res.json({
+        success: result.success,
+        message: `Imported ${result.imported} service requests, updated ${result.updated}, skipped ${result.skipped}`,
+        ...result,
+      });
+    } catch (error: any) {
+      console.error("Excel import error:", error);
+      res.status(500).json({ error: "Failed to import Excel file: " + error.message });
+    }
+  });
+
+  // ==================== EMAIL TEST ROUTES ====================
+
+  // Test email configuration
+  app.get("/api/admin/test-email-config", authenticateUser, requireRole("admin", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { testEmailConfiguration } = await import('./services/emailService');
+      const result = await testEmailConfiguration();
+      res.json({
+        success: result.smtp || result.mailgun,
+        smtp: result.smtp,
+        mailgun: result.mailgun,
+        errors: result.errors,
+        message: result.smtp && result.mailgun 
+          ? 'Both SMTP and Mailgun are configured and working'
+          : result.smtp 
+            ? 'SMTP is working, Mailgun not configured or failed'
+            : result.mailgun 
+              ? 'Mailgun is working, SMTP not configured or failed'
+              : 'No email service is working'
+      });
+    } catch (error: any) {
+      console.error("Email config test error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Send test email
+  app.post("/api/admin/send-test-email", authenticateUser, requireRole("admin", "super_admin"), async (req: AuthRequest, res) => {
+    try {
+      const { to, subject, body } = req.body;
+      
+      if (!to) {
+        return res.status(400).json({ error: "Recipient email (to) is required" });
+      }
+
+      const { sendEmail } = await import('./services/emailService');
+      const result = await sendEmail({
+        to,
+        subject: subject || 'Test Email from Service Hub',
+        body: body || `This is a test email sent from Service Hub at ${new Date().toISOString()}.\n\nIf you received this email, your email configuration is working correctly.`,
+        from: 'help@crystalgroup.in'
+      });
+
+      res.json({
+        success: true,
+        messageId: result.messageId,
+        provider: (result as any).provider || 'unknown',
+        message: `Test email sent successfully to ${to}`
+      });
+    } catch (error: any) {
+      console.error("Send test email error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   return httpServer;

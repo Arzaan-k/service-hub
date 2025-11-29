@@ -1,6 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { MapPin, RefreshCw, Globe } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { MapPin, RefreshCw, Globe, Filter, X } from "lucide-react";
 import { websocket } from "@/lib/websocket";
 
 declare global {
@@ -21,6 +25,7 @@ interface Container {
   temperature?: number;
   powerStatus?: string;
   lastUpdateTimestamp?: string;
+  grade?: string;
   currentLocation?: {
     lat: number;
     lng: number;
@@ -31,12 +36,28 @@ interface FleetMapProps {
   containers: Container[];
 }
 
+// Filter state interface
+interface MapFilters {
+  status: string;
+  type: string;
+  grade: string;
+  gpsOnly: boolean;
+}
+
 export default function FleetMap({ containers }: FleetMapProps) {
+  const [, setLocation] = useLocation();
   const mapRef = useRef<any>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
   const [scriptsLoaded, setScriptsLoaded] = useState(false);
   const [containersData, setContainersData] = useState<Container[]>(containers);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<MapFilters>({
+    status: 'all',
+    type: 'all',
+    grade: 'all',
+    gpsOnly: false
+  });
 
   // Load Map My India scripts
   useEffect(() => {
@@ -145,6 +166,31 @@ export default function FleetMap({ containers }: FleetMapProps) {
     }
   }, [scriptsLoaded]);
 
+  // Filter containers based on current filters
+  const filteredContainers = useMemo(() => {
+    return containersData.filter(container => {
+      // Status filter
+      if (filters.status !== 'all' && container.status?.toLowerCase() !== filters.status.toLowerCase()) {
+        return false;
+      }
+      // Type filter
+      if (filters.type !== 'all' && container.type?.toLowerCase() !== filters.type.toLowerCase()) {
+        return false;
+      }
+      // Grade filter
+      if (filters.grade !== 'all' && container.grade?.toUpperCase() !== filters.grade.toUpperCase()) {
+        return false;
+      }
+      // GPS only filter
+      if (filters.gpsOnly) {
+        const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
+        const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
+        if (lat === 0 && lng === 0) return false;
+      }
+      return true;
+    });
+  }, [containersData, filters]);
+
   // Update markers
   useEffect(() => {
     if (!mapInstanceRef.current || !scriptsLoaded || !window.L) return;
@@ -156,9 +202,10 @@ export default function FleetMap({ containers }: FleetMapProps) {
     markersRef.current.clear();
 
     console.log('📍 Total containers received:', containersData.length);
+    console.log('📍 Filtered containers:', filteredContainers.length);
 
-    // Add new markers
-    const validContainers = containersData.filter(container => {
+    // Add new markers - only containers with valid GPS
+    const validContainers = filteredContainers.filter(container => {
       const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
       const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
       const isValid = lat !== 0 && lng !== 0;
@@ -196,7 +243,7 @@ export default function FleetMap({ containers }: FleetMapProps) {
 
       const icon = window.L.divIcon({
         className: 'custom-marker',
-        html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4);"></div>`,
+        html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer;"></div>`,
         iconSize: [16, 16],
         iconAnchor: [8, 8]
       });
@@ -207,6 +254,7 @@ export default function FleetMap({ containers }: FleetMapProps) {
           <div class="text-sm space-y-2">
             <p><span class="text-gray-600">Type:</span> <span class="font-medium">${container.type || 'N/A'}</span></p>
             <p><span class="text-gray-600">Status:</span> <span class="capitalize font-medium">${container.status || 'unknown'}</span></p>
+            ${container.grade ? `<p><span class="text-gray-600">Grade:</span> <span class="font-medium">${container.grade}</span></p>` : ''}
             ${container.temperature !== undefined ? `
               <p><span class="text-gray-600">Temperature:</span> <span class="font-medium ${container.temperature > 30 ? 'text-red-600' : 'text-gray-900'}">${container.temperature.toFixed(1)}°C</span></p>
             ` : ''}
@@ -214,11 +262,23 @@ export default function FleetMap({ containers }: FleetMapProps) {
               <p><span class="text-gray-600">Power:</span> <span class="font-medium ${container.powerStatus === 'on' ? 'text-green-600' : 'text-red-600'} uppercase">${container.powerStatus}</span></p>
             ` : ''}
           </div>
+          <button 
+            onclick="window.navigateToContainer('${container.id}')" 
+            class="mt-3 w-full px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+          >
+            View Details
+          </button>
         </div>
       `;
 
       const marker = window.L.marker([lat, lng], { icon });
       marker.bindPopup(popupContent);
+      
+      // Click on marker to navigate to container detail
+      marker.on('click', () => {
+        marker.openPopup();
+      });
+      
       marker.addTo(map);
       markersRef.current.set(container.id, marker);
     });
@@ -234,11 +294,48 @@ export default function FleetMap({ containers }: FleetMapProps) {
       );
       map.fitBounds(bounds, { padding: [50, 50] });
     }
-  }, [containersData, scriptsLoaded]);
+  }, [filteredContainers, scriptsLoaded]);
 
-  const orbcommConnected = containersData.filter(c => c.orbcommDeviceId).length;
-  const iotConnected = containersData.filter(c => c.hasIot && !c.orbcommDeviceId).length;
-  const manual = containersData.filter(c => !c.hasIot && !c.orbcommDeviceId).length;
+  // Setup global navigation function for popup buttons
+  useEffect(() => {
+    (window as any).navigateToContainer = (containerId: string) => {
+      setLocation(`/containers/${containerId}`);
+    };
+    return () => {
+      delete (window as any).navigateToContainer;
+    };
+  }, [setLocation]);
+
+  const orbcommConnected = filteredContainers.filter(c => c.orbcommDeviceId).length;
+  const iotConnected = filteredContainers.filter(c => c.hasIot && !c.orbcommDeviceId).length;
+  const manual = filteredContainers.filter(c => !c.hasIot && !c.orbcommDeviceId).length;
+  const withGps = filteredContainers.filter(c => {
+    const lat = c.currentLocation?.lat || parseFloat(c.locationLat || '0');
+    const lng = c.currentLocation?.lng || parseFloat(c.locationLng || '0');
+    return lat !== 0 && lng !== 0;
+  }).length;
+
+  // Get unique values for filter dropdowns
+  const uniqueStatuses = useMemo(() => {
+    const statuses = new Set(containersData.map(c => c.status?.toLowerCase()).filter(Boolean));
+    return Array.from(statuses);
+  }, [containersData]);
+
+  const uniqueTypes = useMemo(() => {
+    const types = new Set(containersData.map(c => c.type?.toLowerCase()).filter(Boolean));
+    return Array.from(types);
+  }, [containersData]);
+
+  const uniqueGrades = useMemo(() => {
+    const grades = new Set(containersData.map(c => c.grade?.toUpperCase()).filter(Boolean));
+    return Array.from(grades);
+  }, [containersData]);
+
+  const clearFilters = () => {
+    setFilters({ status: 'all', type: 'all', grade: 'all', gpsOnly: false });
+  };
+
+  const hasActiveFilters = filters.status !== 'all' || filters.type !== 'all' || filters.grade !== 'all' || filters.gpsOnly;
 
   return (
     <div className="h-full w-full flex flex-col bg-card/40 backdrop-blur-2xl border border-border rounded-[2rem] relative overflow-hidden">
@@ -247,8 +344,17 @@ export default function FleetMap({ containers }: FleetMapProps) {
 
       {/* Content */}
       <div className="relative z-10 h-full flex flex-col">
-        {/* Reset button */}
-        <div className="absolute top-4 right-4 z-[400]">
+        {/* Control buttons */}
+        <div className="absolute top-4 right-4 z-[400] flex gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-8 w-8 backdrop-blur shadow-sm ${showFilters ? 'bg-primary text-white' : 'bg-white/90'}`}
+            onClick={() => setShowFilters(!showFilters)}
+            title="Toggle filters"
+          >
+            <Filter className="h-4 w-4" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -264,11 +370,84 @@ export default function FleetMap({ containers }: FleetMapProps) {
           </Button>
         </div>
 
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="absolute top-14 right-4 z-[400] bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-4 w-64 border border-border">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-sm">Filters</h4>
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="h-6 px-2 text-xs">
+                  <X className="h-3 w-3 mr-1" /> Clear
+                </Button>
+              )}
+            </div>
+            
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Status</Label>
+                <Select value={filters.status} onValueChange={(v) => setFilters(f => ({ ...f, status: v }))}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    {uniqueStatuses.map(s => (
+                      <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs text-muted-foreground">Type</Label>
+                <Select value={filters.type} onValueChange={(v) => setFilters(f => ({ ...f, type: v }))}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {uniqueTypes.map(t => (
+                      <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs text-muted-foreground">Grade</Label>
+                <Select value={filters.grade} onValueChange={(v) => setFilters(f => ({ ...f, grade: v }))}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="All grades" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Grades</SelectItem>
+                    {uniqueGrades.map(g => (
+                      <SelectItem key={g} value={g || 'unknown'}>{g}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  id="gpsOnly" 
+                  checked={filters.gpsOnly}
+                  onCheckedChange={(checked) => setFilters(f => ({ ...f, gpsOnly: !!checked }))}
+                />
+                <Label htmlFor="gpsOnly" className="text-xs cursor-pointer">Show only with GPS</Label>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="p-4 border-b border-border/50 flex items-center justify-between bg-white/50 backdrop-blur-sm shrink-0">
           <div className="flex items-center gap-2">
             <MapPin className="h-5 w-5 text-primary" />
             <h3 className="font-semibold text-foreground">Live Fleet Map</h3>
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+              {withGps} of {filteredContainers.length} on map
+            </span>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <div className="flex items-center gap-1">

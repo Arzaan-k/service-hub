@@ -300,8 +300,13 @@ export class AlertService {
       "Update system status"
     ];
 
+    // Generate job order number (e.g., NOV081)
+    const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
+    const jobOrderNumber = await generateJobOrderNumber();
+
     const serviceRequest = await storage.createServiceRequest({
-      requestNumber: `SR-${Date.now()}`,
+      requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
+      jobOrder: jobOrderNumber,
       containerId: alert.containerId,
       customerId: container.currentCustomerId,
       alertId: alert.id,
@@ -331,10 +336,13 @@ export class AlertService {
 
   // Legacy method for backward compatibility
   async createServiceRequestFromAlertLegacy(alert: any, container: any) {
-    const requestId = `SR-${Date.now().toString().slice(-6)}`;
+    // Generate job order number (e.g., NOV081)
+    const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
+    const jobOrderNumber = await generateJobOrderNumber();
 
     const serviceRequest = await storage.createServiceRequest({
-      requestNumber: requestId,
+      requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
+      jobOrder: jobOrderNumber,
       containerId: container.id,
       customerId: container.currentCustomerId,
       alertId: alert.id,
@@ -345,7 +353,7 @@ export class AlertService {
       estimatedDuration: alert.estimatedServiceTime
     });
 
-    console.log(`[Alert Service] Created service request ${requestId} from alert ${alert.id}`);
+    console.log(`[Alert Service] Created service request ${jobOrderNumber} from alert ${alert.id}`);
     return serviceRequest;
   }
 

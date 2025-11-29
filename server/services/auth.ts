@@ -5,6 +5,7 @@ import { storage } from '../storage';
 import { db } from '../db';
 import { emailVerifications, users, passwordResetTokens, auditLogs } from '@shared/schema';
 import { and, eq, lt, isNull } from 'drizzle-orm';
+import { sendEmail } from './emailService';
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(10);
@@ -48,9 +49,8 @@ export async function createAndSendEmailOTP(user: any): Promise<{ success: boole
     attempts: 0,
   });
 
-  const transporter = getTransport();
-  const from = process.env.EMAIL_FROM || 'no-reply@containergenie.local';
-  const appName = 'ContainerGenie';
+  const appName = 'Service Hub';
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;max-width:600px;margin:0 auto;">
@@ -73,7 +73,7 @@ export async function createAndSendEmailOTP(user: any): Promise<{ success: boole
       <p>This code expires in 10 minutes. If you didn't request this password reset, please ignore this email.</p>
 
       <div style="margin:30px 0;text-align:center;">
-        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login"
+        <a href="${frontendUrl}/login"
            style="background:#4299e1;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
           Reset Your Password
         </a>
@@ -86,22 +86,23 @@ export async function createAndSendEmailOTP(user: any): Promise<{ success: boole
   </div>`;
 
   try {
-    // Check if SMTP is configured
-    if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
-      console.warn('⚠️  SMTP not configured. Email verification code:', code);
-      console.warn('📧 To enable email sending, configure SMTP_HOST, SMTP_USER, and SMTP_PASS in .env');
+    // Use centralized email service with Mailgun fallback
+    const result = await sendEmail({
+      to: user.email,
+      subject: `${appName} - Password Reset Verification Code`,
+      body: `Your password reset verification code is: ${code}\n\nThis code expires in 10 minutes.`,
+      html,
+      from: process.env.MAILGUN_FROM || process.env.EMAIL_FROM
+    });
+
+    if (result.skipped || result.error) {
+      console.warn('⚠️  Email not sent. Verification code:', code);
       return { success: false, code, error: 'Email not configured. Check server logs for verification code.' };
     }
 
-    await transporter.sendMail({
-      to: user.email,
-      from,
-      subject: `${appName} - Verify your email`,
-      html,
-    });
-
+    console.log('✅ Password reset OTP sent via', result.provider || 'email');
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Email sending failed:', error.message);
     console.warn('📧 Email verification code (not sent):', code);
     return { success: false, code, error: 'Email sending failed. Check server logs for verification code.' };
@@ -109,9 +110,8 @@ export async function createAndSendEmailOTP(user: any): Promise<{ success: boole
 }
 
 export async function sendUserCredentials(user: any, plainPassword: string): Promise<{ success: boolean; error?: string }> {
-  const transporter = getTransport();
-  const from = process.env.EMAIL_FROM || 'no-reply@containergenie.local';
-  const appName = 'ContainerGenie';
+  const appName = 'Service Hub';
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;max-width:600px;margin:0 auto;">
@@ -132,7 +132,7 @@ export async function sendUserCredentials(user: any, plainPassword: string): Pro
       <p style="color:#e53e3e;font-weight:bold;">⚠️ Important: Please change your password after first login for security.</p>
 
       <div style="margin:30px 0;text-align:center;">
-        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login"
+        <a href="${frontendUrl}/login"
            style="background:#4299e1;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
           Login to Your Account
         </a>
@@ -145,23 +145,26 @@ export async function sendUserCredentials(user: any, plainPassword: string): Pro
   </div>`;
 
   try {
-    // Check if SMTP is configured
-    if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
-      console.warn('⚠️  SMTP not configured. User credentials not sent via email.');
+    // Use centralized email service with Mailgun fallback
+    const result = await sendEmail({
+      to: user.email,
+      subject: `${appName} - Your Account Credentials`,
+      body: `Welcome to ${appName}!\n\nYour login credentials:\nEmail: ${user.email}\nPassword: ${plainPassword}\n\n⚠️ Please change your password after first login.`,
+      html,
+      from: process.env.MAILGUN_FROM || process.env.EMAIL_FROM
+    });
+
+    if (result.skipped || result.error) {
+      console.warn('⚠️  User credentials email not sent.');
       console.warn('📧 User:', user.email, 'Password:', plainPassword);
       return { success: false, error: 'Email not configured. Check server logs for credentials.' };
     }
 
-    await transporter.sendMail({
-      to: user.email,
-      from,
-      subject: `${appName} - Your Account Credentials`,
-      html,
-    });
-
+    console.log('✅ User credentials sent via', result.provider || 'email');
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Credentials email sending failed:', error.message);
+    console.warn('📧 User:', user.email, 'Password:', plainPassword);
     return { success: false, error: 'Email sending failed.' };
   }
 }
@@ -323,9 +326,7 @@ export async function sendPasswordResetEmail(
   user: any,
   resetToken: string
 ): Promise<{ success: boolean; error?: string }> {
-  const transporter = getTransport();
-  const from = process.env.EMAIL_FROM || 'no-reply@containergenie.local';
-  const appName = 'ContainerGenie';
+  const appName = 'Service Hub';
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
@@ -376,22 +377,23 @@ export async function sendPasswordResetEmail(
   </div>`;
 
   try {
-    // Check if SMTP is configured
-    if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
-      console.warn('⚠️  SMTP not configured. Password reset link not sent via email.');
+    // Use centralized email service with Mailgun fallback
+    const result = await sendEmail({
+      to: user.email,
+      subject: `${appName} - Password Reset Required`,
+      body: `Your password has been reset.\n\nReset link: ${resetLink}\n\nThis link expires in 1 hour.`,
+      html,
+      from: process.env.MAILGUN_FROM || process.env.EMAIL_FROM
+    });
+
+    if (result.skipped || result.error) {
+      console.warn('⚠️  Password reset email not sent.');
       console.warn('📧 User:', user.email);
       console.warn('🔗 Reset link:', resetLink);
       return { success: false, error: 'Email not configured. Check server logs for reset link.' };
     }
 
-    await transporter.sendMail({
-      to: user.email,
-      from,
-      subject: `${appName} - Password Reset Required`,
-      html,
-    });
-
-    console.log('✅ Password reset email sent to', user.email);
+    console.log('✅ Password reset email sent to', user.email, 'via', result.provider || 'email');
     return { success: true };
   } catch (error: any) {
     console.error('❌ Password reset email sending failed:', error.message);
@@ -412,9 +414,7 @@ export async function sendWelcomeEmailWithResetLink(
   user: any,
   resetToken: string
 ): Promise<{ success: boolean; error?: string }> {
-  const transporter = getTransport();
-  const from = process.env.EMAIL_FROM || 'no-reply@containergenie.local';
-  const appName = 'ContainerGenie';
+  const appName = 'Service Hub';
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
@@ -470,22 +470,23 @@ export async function sendWelcomeEmailWithResetLink(
   </div>`;
 
   try {
-    // Check if SMTP is configured
-    if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
-      console.warn('⚠️  SMTP not configured. Welcome email not sent.');
+    // Use centralized email service with Mailgun fallback
+    const result = await sendEmail({
+      to: user.email,
+      subject: `${appName} - Welcome! Set Your Password`,
+      body: `Welcome to ${appName}!\n\nYour account has been created.\n\nSet your password: ${resetLink}\n\nThis link expires in 1 hour.`,
+      html,
+      from: process.env.MAILGUN_FROM || process.env.EMAIL_FROM
+    });
+
+    if (result.skipped || result.error) {
+      console.warn('⚠️  Welcome email not sent.');
       console.warn('📧 User:', user.email);
       console.warn('🔗 Password setup link:', resetLink);
       return { success: false, error: 'Email not configured. Check server logs for password setup link.' };
     }
 
-    await transporter.sendMail({
-      to: user.email,
-      from,
-      subject: `${appName} - Welcome! Set Your Password`,
-      html,
-    });
-
-    console.log('✅ Welcome email with password reset link sent to', user.email);
+    console.log('✅ Welcome email with password reset link sent to', user.email, 'via', result.provider || 'email');
     return { success: true };
   } catch (error: any) {
     console.error('❌ Welcome email sending failed:', error.message);

@@ -27,6 +27,7 @@ const MapMyIndiaAutocomplete: React.FC<MapMyIndiaAutocompleteProps> = ({
   placeholder = "Search for locations...",
   className
 }) => {
+  console.log("[MapMyIndiaAutocomplete] Rendered with value:", value);
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -40,6 +41,13 @@ const MapMyIndiaAutocomplete: React.FC<MapMyIndiaAutocompleteProps> = ({
     setQuery(value);
   }, [value]);
 
+  // Ensure query is set on mount
+  useEffect(() => {
+    if (value && !query) {
+      setQuery(value);
+    }
+  }, []);
+
   const searchLocations = async (searchQuery: string) => {
     if (!searchQuery.trim()) {
       setSuggestions([]);
@@ -47,7 +55,7 @@ const MapMyIndiaAutocomplete: React.FC<MapMyIndiaAutocompleteProps> = ({
     }
 
     setIsLoading(true);
-    const apiKey = process.env.REACT_APP_MAPMYINDIA_API_KEY || '';
+    const apiKey = import.meta.env.VITE_MAPMYINDIA_API_KEY || '';
 
     try {
       const response = await fetch(
@@ -89,7 +97,9 @@ const MapMyIndiaAutocomplete: React.FC<MapMyIndiaAutocompleteProps> = ({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newQuery = e.target.value;
+    console.log("[MapMyIndiaAutocomplete] Input changed to:", newQuery);
     setQuery(newQuery);
+    onChange(newQuery); // Update parent immediately
     setSelectedIndex(-1);
     setShowSuggestions(true);
 
@@ -110,12 +120,14 @@ const MapMyIndiaAutocomplete: React.FC<MapMyIndiaAutocompleteProps> = ({
     const placeName = suggestion.placeName || suggestion.place_name || suggestion.description || '';
     const placeAddress = suggestion.placeAddress || suggestion.place_address || suggestion.address || '';
     const locationText = placeAddress ? `${placeName}, ${placeAddress}` : placeName;
+    console.log("[MapMyIndiaAutocomplete] Suggestion clicked:", locationText);
     setQuery(locationText);
     onChange(locationText);
     setShowSuggestions(false);
     setSuggestions([]);
     setSelectedIndex(-1);
-    inputRef.current?.blur();
+    // Don't blur the input - allow continued editing
+    // inputRef.current?.blur();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -159,6 +171,12 @@ const MapMyIndiaAutocomplete: React.FC<MapMyIndiaAutocompleteProps> = ({
     }, 150);
   };
 
+  // Handle form submission or when input loses focus
+  const handleInputSubmit = () => {
+    // Ensure the current query value is passed to parent
+    onChange(query);
+  };
+
   return (
     <div className="relative">
       <Input
@@ -168,7 +186,15 @@ const MapMyIndiaAutocomplete: React.FC<MapMyIndiaAutocompleteProps> = ({
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
         onFocus={handleInputFocus}
-        onBlur={handleInputBlur}
+        onBlur={() => {
+          console.log("[MapMyIndiaAutocomplete] Input blurred, final value:", query);
+          handleInputBlur();
+          // Ensure value is saved when input loses focus
+          setTimeout(() => {
+            console.log("[MapMyIndiaAutocomplete] Calling onChange on blur:", query);
+            onChange(query);
+          }, 200);
+        }}
         placeholder={placeholder}
         className={cn("w-full", className)}
       />

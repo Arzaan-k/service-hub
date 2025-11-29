@@ -318,18 +318,24 @@ export default function ContainerDetail() {
   });
 
   const getStatusBadge = (status: string) => {
-    const statusMap = {
+    const normalizedStatus = status?.toUpperCase() || "UNKNOWN";
+
+    const statusMap: Record<string, { color: string; label: string; icon: any }> = {
       "DEPLOYED": { color: "bg-green-500/20 text-green-200 border-green-400/30", label: "Deployed", icon: CheckCircle },
+      "ACTIVE": { color: "bg-green-500/20 text-green-200 border-green-400/30", label: "Active", icon: Activity },
       "SALE": { color: "bg-blue-500/20 text-blue-200 border-blue-400/30", label: "For Sale", icon: Package },
       "MAINTENANCE": { color: "bg-yellow-500/20 text-yellow-200 border-yellow-400/30", label: "Maintenance", icon: Settings },
       "STOCK": { color: "bg-gray-500/20 text-gray-200 border-gray-400/30", label: "In Stock", icon: Package },
     };
-    const statusInfo = statusMap[status as keyof typeof statusMap] || {
+
+    const statusInfo = statusMap[normalizedStatus] || {
       color: "bg-gray-500/20 text-gray-200 border-gray-400/30",
-      label: status,
+      label: status || "Unknown",
       icon: Package
     };
+
     const IconComponent = statusInfo.icon;
+
     return (
       <Badge className={`${statusInfo.color} border flex items-center gap-1`}>
         <IconComponent className="h-3 w-3" />
@@ -1392,14 +1398,16 @@ export default function ContainerDetail() {
                           )}
 
                           <div className="flex justify-end">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setLocation(`/service-requests/${service.id}`)}
-                            >
-                              <ExternalLink className="h-3 w-3 mr-1" />
-                              View Details
-                            </Button>
+                            {service.source !== 'service_history' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setLocation(`/service-requests/${service.id}`)}
+                              >
+                                <ExternalLink className="h-3 w-3 mr-1" />
+                                View Details
+                              </Button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1449,6 +1457,8 @@ export default function ContainerDetail() {
                   location={metadata.location}
                   depot={metadata.depot}
                   containerCode={container.containerCode}
+                  lat={container.currentLocation?.lat || (typeof container.locationLat === 'number' ? container.locationLat : parseFloat(container.locationLat as any))}
+                  lng={container.currentLocation?.lng || (typeof container.locationLng === 'number' ? container.locationLng : parseFloat(container.locationLng as any))}
                 />
 
                 {/* Timeline */}
@@ -1580,6 +1590,7 @@ export default function ContainerDetail() {
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="ACTIVE">Active</SelectItem>
                     <SelectItem value="DEPLOYED">Deployed</SelectItem>
                     <SelectItem value="SALE">For Sale</SelectItem>
                     <SelectItem value="MAINTENANCE">Maintenance</SelectItem>

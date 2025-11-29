@@ -337,6 +337,18 @@ export default function TechnicianProfile() {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ baseLocation: "" });
+
+  // Initialize edit form when technician data is available
+  useEffect(() => {
+    if (technician) {
+      const locationValue = typeof technician.baseLocation === "string"
+        ? technician.baseLocation
+        : technician.baseLocation?.city || "";
+      setEditForm({
+        baseLocation: locationValue,
+      });
+    }
+  }, [technician]);
   const [isCredentialsConfirmOpen, setIsCredentialsConfirmOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
@@ -372,14 +384,23 @@ export default function TechnicianProfile() {
   const updateTechnician = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest("PUT", `/api/technicians/${technicianId}`, data);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to update technician");
+      }
       return await res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId] });
+    onSuccess: async () => {
+      // Invalidate all related queries to ensure UI updates everywhere
+      await queryClient.invalidateQueries({ queryKey: ["/api/technicians", technicianId] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/technicians/location-overview"] });
+      // Refetch immediately to ensure fresh data
+      await queryClient.refetchQueries({ queryKey: ["/api/technicians", technicianId] });
       setIsEditing(false);
       toast({
         title: "Success",
-        description: "Technician profile updated successfully",
+        description: "Technician location updated successfully",
       });
     },
     onError: () => {
@@ -462,6 +483,7 @@ export default function TechnicianProfile() {
     setIsDeleteConfirmOpen(false);
   };
 
+  // Update edit form when entering edit mode
   useEffect(() => {
     if (technician && isEditing) {
       const locationValue = typeof technician.baseLocation === "string"
@@ -551,12 +573,15 @@ export default function TechnicianProfile() {
                       <div className="ml-6 relative">
                         <Label htmlFor="location">Base Location</Label>
                         <div className="mt-2">
-                          <MapMyIndiaAutocomplete
-                            value={editForm.baseLocation}
-                            onChange={(value) => setEditForm({ ...editForm, baseLocation: value })}
-                            placeholder="Search for Indian locations (e.g., Mumbai, Delhi, Bangalore)..."
-                            className="w-full"
-                          />
+                        <MapMyIndiaAutocomplete
+                          value={editForm.baseLocation}
+                          onChange={(value) => {
+                            console.log("[Technician Profile] Location changed to:", value);
+                            setEditForm({ ...editForm, baseLocation: value });
+                          }}
+                          placeholder="Search for Indian locations (e.g., Mumbai, Delhi, Bangalore)..."
+                          className="w-full"
+                        />
                         </div>
                       </div>
                     ) : (
@@ -597,26 +622,38 @@ export default function TechnicianProfile() {
               )}
 
               {/* Edit/Save Buttons */}
-              <div className="flex gap-2 pt-4">
-                {isEditing ? (
-                  <>
-                    <Button onClick={() => updateTechnician.mutate({ baseLocation: editForm.baseLocation })} disabled={updateTechnician.isPending}>
-                      <Save className="h-4 w-4 mr-2" />
-                      {updateTechnician.isPending ? "Saving..." : "Save"}
-                    </Button>
+              {technician && (
+                <div className="flex gap-2 pt-4">
+                  {isEditing ? (
+                    <>
+                      <Button
+                        onClick={() => {
+                          console.log("[Technician Profile] Save clicked, location:", editForm.baseLocation);
+                          updateTechnician.mutate({ baseLocation: editForm.baseLocation });
+                        }}
+                        disabled={updateTechnician.isPending}
+                      >
+                        <Save className="h-4 w-4 mr-2" />
+                        {updateTechnician.isPending ? "Saving..." : "Save"}
+                      </Button>
+                      <Button variant="outline" onClick={() => {
+                        console.log("[Technician Profile] Cancel clicked");
+                        setIsEditing(false);
+                      }}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
                     <Button variant="outline" onClick={() => {
-                      setIsEditing(false);
+                      console.log("[Technician Profile] Edit clicked");
+                      setIsEditing(true);
                     }}>
-                      Cancel
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit Location
                     </Button>
-                  </>
-                ) : (
-                  <Button variant="outline" onClick={() => setIsEditing(true)}>
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit Location
-                  </Button>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

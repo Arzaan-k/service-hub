@@ -264,7 +264,7 @@ export default function Dashboard() {
 
               <TabsContent value="service" className="space-y-4">
                 <ErrorBoundary>
-                  <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} />
+                  <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} alerts={alerts || []} />
                 </ErrorBoundary>
                 <ErrorBoundary>
                   <TechnicianSchedule technicians={technicians || []} />
@@ -303,7 +303,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 gap-6 items-stretch">
               <ErrorBoundary>
                 <div className="h-full min-w-0">
-                  <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} />
+                  <ServiceRequestsPanel requests={serviceRequests || []} containers={containers || []} alerts={alerts || []} />
                 </div>
               </ErrorBoundary>
               <ErrorBoundary>
