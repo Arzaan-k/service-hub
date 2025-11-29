@@ -16,7 +16,6 @@ import {
   Download,
   Calendar as CalendarIcon,
   Wrench,
-  ExternalLink,
   RefreshCw,
   X,
   ChevronLeft,
@@ -25,7 +24,6 @@ import {
   ChevronsRight
 } from "lucide-react";
 import { format } from "date-fns";
-import { Link } from "wouter";
 
 export default function ServiceHistory() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -44,7 +42,31 @@ export default function ServiceHistory() {
     queryKey: ["/api/service-history"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/service-history");
-      return response.json();
+      const data = await response.json();
+
+      // Transform snake_case API response to camelCase for component
+      return data.map((service: any) => ({
+        id: service.id,
+        jobOrder: service.job_order_number,
+        requestNumber: service.request_number,
+        status: service.status || 'pending',
+        callStatus: service.call_status,
+        workType: service.work_type,
+        jobType: service.job_type,
+        billingType: service.billing_type,
+        clientType: service.client_type,
+        requestedAt: service.requested_at,
+        totalCost: service.total_cost,
+        issueDescription: service.work_description || service.issue_description,
+        container: service.container_number ? {
+          containerCode: service.container_number
+        } : null,
+        customer: service.client_name ? {
+          companyName: service.client_name
+        } : null,
+        technicianName: service.technician_name,
+        complaintAttendedDate: service.complaint_attended_date
+      }));
     },
   });
 
@@ -350,11 +372,6 @@ export default function ServiceHistory() {
                             {service.callStatus || service.status}
                           </Badge>
                         </div>
-                        <Link href={`/service-requests/${service.id}`}>
-                          <Button variant="ghost" size="sm">
-                            <ExternalLink className="h-4 w-4" />
-                          </Button>
-                        </Link>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">

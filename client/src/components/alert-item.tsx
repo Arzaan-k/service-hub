@@ -58,74 +58,21 @@ export default function AlertItem({ alert, containerName, containerModel, onActi
           )}
           {alert.resolutionSteps && alert.resolutionSteps.length > 0 && (
             <ol className="list-decimal list-inside space-y-1 text-xs text-foreground">
-              {alert.resolutionSteps.slice(0,6).map((s, i) => (
+              {alert.resolutionSteps.slice(0, 6).map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
             </ol>
           )}
           {alert.aiClassification?.sources && alert.aiClassification.sources.length > 0 && (
             <div className="mt-2 text-[11px] text-muted-foreground">
-              Sources: {alert.aiClassification.sources.slice(0,3).map((src: any, idx: number) => (
+              Sources: {alert.aiClassification.sources.slice(0, 3).map((src: any, idx: number) => (
                 <span key={idx} className="mr-2">{src.manual_name} p.{src.page}</span>
               ))}
             </div>
           )}
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => onAction?.(alert.id, "acknowledge")}
-          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded"
-          data-testid={`button-ack-${alert.id}`}
-        >
-          Acknowledge
-        </button>
-        <button
-          onClick={() => onAction?.(alert.id, "resolve")}
-          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded"
-          data-testid={`button-resolve-${alert.id}`}
-        >
-          Resolve
-        </button>
-        <button
-          onClick={() => onAction?.(alert.id, "dispatch")}
-          className={`btn-primary px-3 py-1.5 text-xs font-medium rounded`}
-          data-testid={`button-dispatch-${alert.id}`}
-        >
-          Dispatch Technician
-        </button>
-        <button
-          onClick={() => onAction?.(alert.id, "create_sr")}
-          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded"
-        >
-          Create Service Request
-        </button>
-        <button
-          onClick={() => onAction?.(alert.id, "details")}
-          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded"
-          data-testid={`button-details-${alert.id}`}
-        >
-          Details
-        </button>
-        <button
-          onClick={() => setShowChat(!showChat)}
-          className="btn-secondary px-3 py-1.5 text-xs font-medium rounded flex items-center gap-1"
-          data-testid={`button-troubleshoot-${alert.id}`}
-        >
-          <Wrench className="h-3 w-3" />
-          {showChat ? (
-            <>
-              Hide Help
-              <ChevronUp className="h-3 w-3" />
-            </>
-          ) : (
-            <>
-              Get Help
-              <ChevronDown className="h-3 w-3" />
-            </>
-          )}
-        </button>
-      </div>
+      {/* Action buttons removed as per user request - actions now handled via Service Request creation */}
 
       {showChat && (
         <div className="mt-4 pt-4 border-t border-border">

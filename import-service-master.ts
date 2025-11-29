@@ -108,7 +108,7 @@ async function importServiceMaster() {
         const assignmentTime = parseDate(getValue(row, 'Timestamp_1'));
         const complaintAttendedDate = parseDate(getValue(row, 'Complaint Attended Date'))
           || parseDate(getValue(row, 'Timestamp_5'))
-          || new Date().toISOString();
+          || null;
 
         // Stage 1: Complaint Registration
         const complaintRegisteredBy = getValue(row, 'Email Address');

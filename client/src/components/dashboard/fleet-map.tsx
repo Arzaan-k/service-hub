@@ -111,10 +111,13 @@ export default function FleetMap({ containers }: FleetMapProps) {
         lat = container.currentLocation.lat;
         lng = container.currentLocation.lng;
       }
-      // 2. locationLat/locationLng as strings
-      else if (container.locationLat && container.locationLng) {
-        lat = parseFloat(container.locationLat);
-        lng = parseFloat(container.locationLng);
+      // 2. locationLat/locationLng (handle both string and number)
+      else if (container.locationLat !== undefined && container.locationLng !== undefined) {
+        const latVal = container.locationLat;
+        const lngVal = container.locationLng;
+
+        lat = typeof latVal === 'string' ? parseFloat(latVal) : (typeof latVal === 'number' ? latVal : null);
+        lng = typeof lngVal === 'string' ? parseFloat(lngVal) : (typeof lngVal === 'number' ? lngVal : null);
       }
 
       // Only create marker if we have valid coordinates
@@ -156,15 +159,18 @@ export default function FleetMap({ containers }: FleetMapProps) {
           color = "#ef4444"; // Red
         }
 
+        // Performance Optimization: Use lightweight CircleMarker instead of heavy DOM markers
+        // This significantly improves rendering speed for large fleets (1000+ items)
         const marker = window.L.circleMarker(
           [lat, lng],
           {
-            radius: 8,
+            radius: status === 'critical' || status === 'active' ? 8 : 6,
             fillColor: color,
             color: "#fff",
             weight: 2,
             opacity: 1,
             fillOpacity: 0.8,
+            className: status === 'critical' ? 'animate-pulse-slow' : '' // Only animate critical items if needed via CSS
           }
         ).addTo(mapInstanceRef.current);
 
@@ -175,25 +181,74 @@ export default function FleetMap({ containers }: FleetMapProps) {
         const temperatureDisplay = temperature ? `${temperature}°C` : 'N/A';
         const powerDisplay = powerStatus ? powerStatus.toUpperCase() : 'N/A';
 
+        // Enhanced Popup Content
         marker.bindPopup(`
-          <div class="p-3 min-w-[200px]">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="font-mono font-bold text-sm">${container.containerCode || "Unknown"}</h3>
-              <span class="text-xs px-2 py-1 rounded-full text-white font-medium" style="background-color: ${color}">
+          <div class="min-w-[240px] font-sans">
+            <div class="p-3 bg-slate-900 text-white rounded-t-lg flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full ${status === 'active' ? 'bg-green-400' :
+            status === 'critical' ? 'bg-red-400' :
+              status === 'maintenance' ? 'bg-amber-400' : 'bg-gray-400'
+          }"></div>
+                <span class="font-bold text-sm tracking-wide">${container.containerCode || "Unknown"}</span>
+              </div>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-white/10 border border-white/20">
                 ${statusDisplay}
               </span>
             </div>
-            <div class="space-y-1 text-xs">
-              <p><span class="font-medium">Location:</span> ${locationDisplay}</p>
-              <p><span class="font-medium">Type:</span> ${container.type || "Unknown"}</p>
-              <p><span class="font-medium">Capacity:</span> ${container.capacity || "Unknown"}</p>
-              ${temperature ? `<p><span class="font-medium">Temperature:</span> ${temperatureDisplay}</p>` : ''}
-              ${powerStatus ? `<p><span class="font-medium">Power:</span> ${powerDisplay}</p>` : ''}
-              ${healthScore > 0 ? `<p><span class="font-medium">Health:</span> ${healthScore}%</p>` : ''}
-              <p class="mt-2"><span class="font-medium">Tracking:</span> ${hasIot ? "IoT Enabled" : "Manual"}</p>
+            <div class="p-3 bg-white border border-slate-200 border-t-0 rounded-b-lg shadow-sm">
+              <div class="grid grid-cols-2 gap-2 mb-3">
+                <div class="bg-slate-50 p-2 rounded border border-slate-100">
+                  <div class="text-[10px] text-slate-500 uppercase font-semibold">Temp</div>
+                  <div class="text-sm font-bold ${temperature && temperature > 30 ? 'text-red-600' : 'text-slate-700'}">
+                    ${temperatureDisplay}
+                  </div>
+                </div>
+                <div class="bg-slate-50 p-2 rounded border border-slate-100">
+                  <div class="text-[10px] text-slate-500 uppercase font-semibold">Power</div>
+                  <div class="text-sm font-bold text-slate-700">${powerDisplay}</div>
+                </div>
+              </div>
+              
+              <div class="space-y-1.5 text-xs text-slate-600">
+                <div class="flex items-start gap-2">
+                  <i class="fas fa-map-marker-alt mt-0.5 text-slate-400"></i>
+                  <span class="line-clamp-2">${locationDisplay}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <i class="fas fa-box mt-0.5 text-slate-400"></i>
+                  <span>${container.type || "Unknown Type"} • ${container.capacity || "Unknown Cap"}</span>
+                </div>
+                ${healthScore > 0 ? `
+                <div class="flex items-center gap-2">
+                  <i class="fas fa-heartbeat mt-0.5 text-slate-400"></i>
+                  <div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full ${healthScore >= 80 ? 'bg-green-500' :
+              healthScore >= 60 ? 'bg-amber-500' : 'bg-red-500'
+            }" style="width: ${healthScore}%"></div>
+                  </div>
+                  <span class="font-medium">${healthScore}%</span>
+                </div>
+                ` : ''}
+              </div>
+              
+              <div class="mt-3 pt-2 border-t border-slate-100 flex justify-between items-center">
+                <span class="text-[10px] text-slate-400">
+                  ${hasIot ? '<i class="fas fa-wifi text-blue-500 mr-1"></i> Live Tracking' : '<i class="fas fa-clock text-slate-400 mr-1"></i> Manual Update'}
+                </span>
+                <button onclick="window.location.href='/containers/${container.id}'" 
+                        class="text-[10px] font-bold text-blue-600 hover:text-blue-700 hover:underline">
+                  View Details →
+                </button>
+              </div>
             </div>
           </div>
-        `);
+        `, {
+          className: 'custom-popup',
+          closeButton: false,
+          maxWidth: 280,
+          offset: [0, -10]
+        });
 
         console.log(`📍 Added marker for ${container.containerCode} at [${lat}, ${lng}] - Status: ${status}`);
       }
@@ -263,6 +318,37 @@ export default function FleetMap({ containers }: FleetMapProps) {
           <span className="text-muted-foreground">IoT ({stats.iotEnabled})</span>
         </div>
       </div>
+      <style>
+        {`
+          .custom-map-marker {
+            background: none !important;
+            border: none !important;
+          }
+          .custom-popup .leaflet-popup-content-wrapper {
+            padding: 0;
+            overflow: hidden;
+            border-radius: 0.5rem;
+            background: transparent;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+          }
+          .custom-popup .leaflet-popup-content {
+            margin: 0;
+            width: auto !important;
+          }
+          .custom-popup .leaflet-popup-tip {
+            background: white;
+          }
+          @keyframes pulse-slow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.2); }
+          }
+          .animate-pulse-slow {
+            animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            transform-origin: center;
+            transform-box: fill-box;
+          }
+        `}
+      </style>
     </div>
   );
 }

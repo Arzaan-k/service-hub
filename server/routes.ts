@@ -1844,6 +1844,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           observations,
           service_client_location,
           call_attended_type as call_status,
+          machine_status as status,
           created_at as requested_at
         FROM service_history
         ORDER BY complaint_attended_date DESC NULLS LAST, created_at DESC

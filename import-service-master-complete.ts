@@ -115,7 +115,7 @@ async function importServiceMaster() {
         const partsCost = parseNumber(getValue(row, 'Parts Cost', 'parts_cost', 'Cost', 'COST'));
         const laborCost = parseNumber(getValue(row, 'Labor Cost', 'labor_cost', 'Labor', 'LABOR'));
         const totalCost = parseNumber(getValue(row, 'Total Cost', 'total_cost', 'Total', 'TOTAL'));
-        const serviceStatus = getValue(row, 'Service Status', 'service_status', 'Status', 'STATUS');
+        const serviceStatus = getValue(row, 'Machine Status', 'Service Status', 'service_status', 'Status', 'STATUS', 'Call Status');
         const priority = getValue(row, 'Priority', 'priority', 'PRIORITY');
         const startTime = getValue(row, 'Start Time', 'start_time', 'START TIME');
         const endTime = getValue(row, 'End Time', 'end_time', 'END TIME');
