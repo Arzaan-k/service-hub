@@ -2799,30 +2799,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { db } = await import('./db');
       const { sql } = await import('drizzle-orm');
-      
+
       // Get all active service requests with container locations
       const allServiceRequests = await storage.getAllServiceRequests();
-      const activeRequests = allServiceRequests.filter((sr: any) => 
+      const activeRequests = allServiceRequests.filter((sr: any) =>
         ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'].includes((sr.status || '').toLowerCase())
       );
-      
-      // Get only technicians who have assigned services
-      const technicianIdsWithServices = new Set(
-        activeRequests
-          .map((sr: any) => sr.assignedTechnicianId)
-          .filter((id: any) => id != null && id !== '')
-      );
-      
-      // Get only technicians with assigned services
+
+      // Get all internal technicians (not third-party/external)
       const allTechnicians = await storage.getAllTechnicians();
-      const technicians = allTechnicians.filter((tech: any) => 
-        technicianIdsWithServices.has(tech.id)
-      );
-      
-      // Get PM data for containers by city
+      const technicians = allTechnicians.filter((tech: any) => {
+        // Filter for internal technicians only
+        const isInternal = !tech.category || tech.category?.toLowerCase() === 'internal';
+        const isActive = ['available', 'on_duty', 'busy', 'off_duty'].includes(tech.status?.toLowerCase());
+        return isInternal && isActive;
+      });
+
+      // Get PM data for containers by city - simplified working version
       const pmResult = await db.execute(sql`
         WITH pm_data AS (
-          SELECT 
+          SELECT
             UPPER(TRIM(container_number)) as container_id,
             MAX(complaint_attended_date) as last_pm_date
           FROM service_history
@@ -2831,21 +2827,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
             AND container_number != ''
           GROUP BY UPPER(TRIM(container_number))
         )
-        SELECT 
+        SELECT
           c.id,
           c.container_id as container_code,
-          c.depot as city,
+          COALESCE(TRIM(c.depot), 'Unknown') as city,
           c.assigned_client_id as customer_id,
-          cust.company_name as customer_name,
-          CASE 
+          COALESCE(cust.company_name, 'Unknown Client') as customer_name,
+          CASE
             WHEN pm.last_pm_date IS NULL THEN 'NEVER'
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+            WHEN EXTRACT(EPOCH FROM (NOW() - pm.last_pm_date)) / 86400 > 90 THEN 'OVERDUE'
+            WHEN EXTRACT(EPOCH FROM (NOW() - pm.last_pm_date)) / 86400 > 75 THEN 'DUE_SOON'
             ELSE 'UP_TO_DATE'
           END as pm_status,
-          CASE 
+          CASE
             WHEN pm.last_pm_date IS NULL THEN 999
-            ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+            ELSE FLOOR(EXTRACT(EPOCH FROM (NOW() - pm.last_pm_date)) / 86400)
           END as days_since_pm
         FROM containers c
         LEFT JOIN customers cust ON c.assigned_client_id = cust.id
@@ -2853,20 +2849,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE c.status = 'active'
           AND c.depot IS NOT NULL
           AND c.depot != ''
-          AND (pm.last_pm_date IS NULL OR EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75)
+          AND (pm.last_pm_date IS NULL OR EXTRACT(EPOCH FROM (NOW() - pm.last_pm_date)) / 86400 > 75)
         ORDER BY days_since_pm DESC
       `);
-      
-      // Group PM needs by city and also by "City (Client Name)" format
+
+      // Group PM needs by city
       const pmByCity: Record<string, any[]> = {};
-      const pmByCityClient: Record<string, any[]> = {}; // For "City (Client)" matching
-      
+
       for (const row of pmResult.rows as any[]) {
-        const city = (row.city || 'Unknown').trim();
-        const clientName = row.customer_name || 'Unknown Client';
-        const cityClientKey = `${city} (${clientName})`;
-        
-        // Group by city only
+        let city = (row.city || 'Unknown').trim();
+        let clientName = (row.customer_name || 'Unknown Client').trim();
+
+        // Debug logging for unknowns
+        if (city === 'Unknown' || clientName === 'Unknown Client') {
+          console.log('PM Debug - Unknown data:', {
+            containerId: row.container_code,
+            originalCity: row.city,
+            customerId: row.customer_id,
+            originalCustomerName: row.customer_name
+          });
+        }
+
+        // Ensure we don't have empty strings
+        if (!city || city === '') city = 'Unknown';
+        if (!clientName || clientName === '') clientName = 'Unknown Client';
+
+        // Group by city
         if (!pmByCity[city]) pmByCity[city] = [];
         pmByCity[city].push({
           id: row.id,
@@ -2877,44 +2885,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
           daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
           city: city,
         });
-        
-        // Also group by "City (Client Name)" format for better matching
-        if (!pmByCityClient[cityClientKey]) pmByCityClient[cityClientKey] = [];
-        pmByCityClient[cityClientKey].push({
-          id: row.id,
-          containerCode: row.container_code,
-          customerId: row.customer_id,
-          customerName: clientName,
-          pmStatus: row.pm_status,
-          daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
-          city: city,
-        });
       }
-      
+
       // Build technician location data
       const technicianLocations: any[] = [];
-      
+
       for (const tech of technicians) {
         // Get technician's assigned services
         const techServices = activeRequests.filter((sr: any) => sr.assignedTechnicianId === tech.id);
-        
-        // Group services by "City (Client Name)" format
+
+        // Group services by city, and store client information separately
         const servicesByCity: Record<string, any[]> = {};
+        const cityClientMapping: Record<string, string[]> = {}; // Maps city to list of clients
+
         for (const sr of techServices) {
           const container = sr.container || await storage.getContainer(sr.containerId).catch(() => null);
-          const clientName = sr.customer?.companyName || 'Unknown Client';
-          
-          // Get city from depot, container location, or site address
-          let city = container?.depot || container?.currentLocation?.city || sr.siteAddress || 'Unknown';
-          
-          // If city appears to be a location name (contains client name), format it properly
-          // Otherwise, use as-is and append client name
-          const cityKey = city !== 'Unknown' && city !== clientName 
-            ? `${city} (${clientName})`
-            : city === clientName ? city : `${city} (${clientName})`;
+          // Load customer data if not already populated
+          const customer = sr.customerId ? await storage.getCustomer(sr.customerId).catch(() => null) : null;
+          let clientName = customer?.companyName || 'Unknown Client';
 
-          if (!servicesByCity[cityKey]) servicesByCity[cityKey] = [];
-          servicesByCity[cityKey].push({
+          // Get city from container depot - simplified
+          let city = 'Unknown';
+          if (container && container.depot) {
+            city = container.depot.trim();
+          }
+          if (city === 'Unknown' && sr.siteAddress) {
+            city = sr.siteAddress.trim();
+          }
+
+          // Debug logging
+          if (city === 'Unknown' || clientName === 'Unknown Client') {
+            console.log('Service Debug - Unknown data:', {
+              serviceRequestId: sr.id,
+              containerId: sr.containerId,
+              customerId: sr.customerId,
+              customerFound: !!customer,
+              customerName: customer?.companyName,
+              containerFound: !!container,
+              containerDepot: container?.depot,
+              siteAddress: sr.siteAddress,
+              extractedCity: city,
+              finalClientName: clientName
+            });
+          }
+
+          // Ensure we don't have empty strings
+          if (!city || city.trim() === '') city = 'Unknown';
+          if (!clientName || clientName.trim() === '') clientName = 'Unknown Client';
+
+          // Use city as the key, and track clients separately
+          if (!servicesByCity[city]) servicesByCity[city] = [];
+          if (!cityClientMapping[city]) cityClientMapping[city] = [];
+
+          servicesByCity[city].push({
             id: sr.id,
             requestNumber: sr.requestNumber,
             status: sr.status,
@@ -2925,6 +2948,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             customerName: clientName,
             city: city,
           });
+
+          // Add client to mapping if not already present
+          if (!cityClientMapping[city].includes(clientName)) {
+            cityClientMapping[city].push(clientName);
+          }
         }
 
         // Sort cities alphabetically
@@ -2932,17 +2960,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         Object.keys(servicesByCity).sort().forEach(cityKey => {
           sortedServicesByCity[cityKey] = servicesByCity[cityKey];
         });
-        
-        // Determine current/last known location
-        const baseLocation = typeof tech.baseLocation === 'string' 
-          ? tech.baseLocation 
-          : tech.baseLocation?.city || tech.baseLocation?.address || 'Unknown';
-        
+
+        // Determine current/last known location from GPS coordinates
+        let currentLocationCity = 'Unknown';
+        if (tech.latitude && tech.longitude && tech.locationAddress) {
+          // Extract city from locationAddress (reverse geocoded address)
+          const addressParts = tech.locationAddress.split(',');
+          currentLocationCity = addressParts[0]?.trim() || 'Unknown';
+        } else if (tech.locationAddress) {
+          // Fallback to locationAddress if coordinates are missing
+          const addressParts = tech.locationAddress.split(',');
+          currentLocationCity = addressParts[0]?.trim() || 'Unknown';
+        } else {
+          // Fallback to base location
+          currentLocationCity = typeof tech.baseLocation === 'string'
+            ? tech.baseLocation
+            : tech.baseLocation?.city || tech.baseLocation?.address || 'Unknown';
+        }
+
         // Find next scheduled service
         const scheduledServices = techServices
           .filter((sr: any) => sr.scheduledDate && new Date(sr.scheduledDate) >= new Date())
           .sort((a: any, b: any) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
-        
+
         const nextService = scheduledServices[0];
         let nextLocation = null;
         if (nextService) {
@@ -2954,53 +2994,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             requestNumber: nextService.requestNumber,
           };
         }
-        
-        // Smart PM recommendations based on technician location and proximity
+
+        // Only show cities from technician's current location OR assigned service locations
         const relevantCities = new Set<string>();
-        const cityMappings: Record<string, string> = {}; // Maps "City (Client)" back to just "City"
 
-        // Add base location
-        relevantCities.add(baseLocation);
-        cityMappings[baseLocation] = baseLocation;
-
-        // Add cities from services with client names
-        Object.keys(sortedServicesByCity).forEach(cityKey => {
-          relevantCities.add(cityKey);
-          // Extract city name from "City (Client)" format
-          const cityMatch = cityKey.match(/^(.+?)\s*\(/);
-          const cityName = cityMatch ? cityMatch[1].trim() : cityKey;
-          cityMappings[cityKey] = cityName;
-        });
-
-        if (nextLocation?.city) {
-          relevantCities.add(nextLocation.city);
-          cityMappings[nextLocation.city] = nextLocation.city;
+        // Add technician's current location city
+        if (currentLocationCity !== 'Unknown') {
+          relevantCities.add(currentLocationCity);
         }
 
-        // Add nearby cities (basic proximity logic - can be enhanced with actual distance calculations)
-        const nearbyCities: Record<string, string[]> = {
-          'Mumbai': ['Thane', 'Navi Mumbai', 'Pune', 'Nashik'],
-          'Delhi': ['Gurgaon', 'Noida', 'Faridabad', 'Ghaziabad'],
-          'Bangalore': ['Mysore', 'Chennai', 'Hyderabad', 'Pune'],
-          'Chennai': ['Bangalore', 'Hyderabad', 'Pondicherry'],
-          'Pune': ['Mumbai', 'Bangalore', 'Nashik', 'Aurangabad'],
-          'Kolkata': ['Howrah', 'Siliguri', 'Durgapur'],
-          'Ahmedabad': ['Surat', 'Vadodara', 'Rajkot', 'Bhavnagar'],
-          'Hyderabad': ['Secunderabad', 'Chennai', 'Bangalore', 'Vijayawada'],
-        };
+        // Add cities from assigned services
+        Object.keys(servicesByCity).forEach(cityKey => {
+          relevantCities.add(cityKey);
+        });
 
-        const baseNearby = nearbyCities[baseLocation] || [];
-        baseNearby.forEach(city => relevantCities.add(city));
-
-        // Prioritize PM recommendations: base location first, then nearby, then others
+        // Prioritize PM recommendations: current location first, then cities with assigned services
         const pmRecommendations: Record<string, any> = {};
         const sortedCities = Array.from(relevantCities).sort((a, b) => {
-          // Prioritize base location
-          if (a === baseLocation) return -1;
-          if (b === baseLocation) return 1;
-          // Then nearby cities
-          if (baseNearby.includes(a) && !baseNearby.includes(b)) return -1;
-          if (baseNearby.includes(b) && !baseNearby.includes(a)) return 1;
+          // Prioritize technician's current location
+          if (a === currentLocationCity) return -1;
+          if (b === currentLocationCity) return 1;
           // Then cities with assigned services
           const aHasServices = Object.keys(servicesByCity).includes(a);
           const bHasServices = Object.keys(servicesByCity).includes(b);
@@ -3010,18 +3023,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         for (const city of sortedCities) {
-          // Try to match PM tasks by "City (Client Name)" format first, then by city only
-          let cityPms: any[] = [];
-          
-          // First check if we have PMs for this exact "City (Client Name)" format
-          if (pmByCityClient[city]) {
-            cityPms = pmByCityClient[city];
-          } else {
-            // Fall back to city name only
-            const actualCity = cityMappings[city] || city;
-            cityPms = pmByCity[actualCity] || [];
-          }
-          
+          // Get PM tasks for this city
+          const cityPms = pmByCity[city] || [];
+
           if (cityPms.length > 0) {
             // Sort PMs by priority: OVERDUE > NEVER > DUE_SOON > UP_TO_DATE
             const sortedPms = cityPms.sort((a: any, b: any) => {
@@ -3037,21 +3041,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
               never: cityPms.filter(pm => pm.pmStatus === 'NEVER').length,
               dueSoon: cityPms.filter(pm => pm.pmStatus === 'DUE_SOON').length,
               containers: sortedPms.slice(0, 15), // Top 15 for better selection
-              isNearby: city !== baseLocation && (baseNearby.includes(city) || Object.keys(servicesByCity).includes(city)),
-              priority: city === baseLocation ? 'high' :
-                       Object.keys(servicesByCity).includes(city) ? 'medium' :
-                       baseNearby.includes(city) ? 'low' : 'minimal'
+              isNearby: city !== currentLocationCity && Object.keys(servicesByCity).includes(city),
+              priority: city === currentLocationCity ? 'high' :
+                       Object.keys(servicesByCity).includes(city) ? 'medium' : 'low'
             };
           }
         }
-        
+
         // Calculate cost estimates from technician profile (no hardcoded defaults)
         const serviceCost = tech.serviceRequestCost || 0;
         const pmCost = tech.pmCost || 0;
         const hotelAllowance = tech.hotelAllowance || 0;
         const localTravelAllowance = tech.localTravelAllowance || 0;
         const dailyAllowance = hotelAllowance + localTravelAllowance;
-        
+
         const costEstimates = {
           serviceRequests: techServices.length * serviceCost,
           pmTasks: Object.values(pmRecommendations).reduce((acc: number, pm: any) => acc + (pm.count * pmCost), 0),
@@ -3067,8 +3070,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: tech.id,
           name: tech.name || tech.employeeCode,
           employeeCode: tech.employeeCode,
-          baseLocation,
-          currentCity: baseLocation, // Always use baseLocation as current location
+          baseLocation: typeof tech.baseLocation === 'string'
+            ? tech.baseLocation
+            : tech.baseLocation?.city || tech.baseLocation?.address || 'Unknown',
+          currentCity: currentLocationCity, // Use actual current location from GPS
           status: tech.status,
           phone: tech.phone,
           grade: tech.grade,
@@ -3083,7 +3088,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           personalAllowance: tech.personalAllowance || 0,
           assignedServices: {
             total: techServices.length,
-            byCity: sortedServicesByCity,
+            byCity: servicesByCity,
+            cityClients: cityClientMapping, // Maps city to list of clients
           },
           nextService: nextLocation,
           pmRecommendations,
@@ -3091,10 +3097,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           score: techServices.length + Object.values(pmRecommendations).reduce((acc: number, pm: any) => acc + pm.count, 0),
         });
       }
-      
+
       // Sort by score (technicians with most work in PM-needed areas first)
       technicianLocations.sort((a, b) => b.score - a.score);
-      
+
       // Get all unique cities with PM needs
       const citiesWithPmNeeds = Object.entries(pmByCity).map(([city, containers]) => ({
         city,
@@ -3104,7 +3110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dueSoon: containers.filter(c => c.pmStatus === 'DUE_SOON').length,
         topContainers: containers.slice(0, 5),
       })).sort((a, b) => b.totalPmNeeded - a.totalPmNeeded);
-      
+
       res.json({
         success: true,
         technicians: technicianLocations,
@@ -3118,8 +3124,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error: any) {
       console.error("[API] Error fetching technician location overview:", error);
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         error: "Failed to fetch technician location overview",
         details: error?.message,
       });
@@ -5781,23 +5787,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Generate and store PDF
+      try {
+        const { generateTripFinancePDF } = await import('./services/pdfGenerator');
+        const pdfBuffer = await generateTripFinancePDF(trip.id);
+
+        // Store PDF in service_report_pdfs table
+        await db.insert(serviceReportPdfs).values({
+          serviceRequestId: null, // Trip PDFs don't have a specific service request
+          reportStage: 'trip_finance',
+          pdfData: pdfBuffer,
+          fileSize: pdfBuffer.length,
+          generatedAt: new Date(),
+          status: 'generated'
+        });
+
+        console.log(`[API] Trip finance PDF generated and stored for trip ${trip.id}`);
+      } catch (error) {
+        console.error('[API] Failed to generate trip PDF:', error);
+        // Don't fail the entire request if PDF generation fails
+      }
+
       // Send WhatsApp notification to technician
       try {
         const { sendMessage } = await import('./services/whatsapp');
         const technicianPhone = technician.phone || technician.whatsappNumber;
 
         if (technicianPhone) {
-          const message = `🛠 New Trip Assigned
-
-Technician: ${technician.name}
-City: ${destinationCity}
-Dates: ${new Date(startDate).toLocaleDateString()} → ${new Date(endDate).toLocaleDateString()}
-Tasks: ${allTasks.length}
-- Service Requests: ${serviceRequests.length}
-- PM Tasks: ${pmServiceRequests.length}
-Total Estimated Cost: ₹${costBreakdown.totalEstimatedCost.toLocaleString('en-IN')}
-
-Please check your assigned services for details.`;
+          const message = `Trip created for ${destinationCity}. Includes ${serviceRequests.length} assigned services + ${pmServiceRequests.length} PM tasks.`;
 
           await sendMessage(technicianPhone, message);
           console.log(`[API] WhatsApp notification sent to technician ${technician.name}`);

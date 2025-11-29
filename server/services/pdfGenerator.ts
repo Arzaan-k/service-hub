@@ -753,3 +753,253 @@ function getReportTitle(stage: string) {
         default: return 'SERVICE REQUEST REPORT';
     }
 }
+
+export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
+  const trip = await storage.getTechnicianTrip(tripId);
+  if (!trip) throw new Error('Trip not found');
+
+  const technician = await storage.getTechnician(trip.technicianId);
+  if (!technician) throw new Error('Technician not found');
+
+  const tripCosts = await storage.getTechnicianTripCosts(tripId);
+  const tripTasks = await storage.getTechnicianTripTasks(tripId);
+
+  // Get service requests and PM containers
+  const serviceRequests = [];
+  const pmContainers = [];
+
+  for (const task of tripTasks) {
+    if (task.taskType === 'alert' || task.taskType === 'service') {
+      if (task.serviceRequestId) {
+        const sr = await storage.getServiceRequest(task.serviceRequestId);
+        if (sr) serviceRequests.push(sr);
+      }
+    } else if (task.taskType === 'pm') {
+      const container = await storage.getContainer(task.containerId);
+      if (container) pmContainers.push(container);
+    }
+  }
+
+  return new Promise(async (resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margin: 50,
+        info: {
+          Title: `Trip Finance Report - ${technician?.name || 'Technician'}`,
+          Author: 'Service Hub',
+          Subject: 'Trip Finance Approval Report'
+        }
+      });
+
+      const buffers: Buffer[] = [];
+
+      doc.on('data', (chunk: Buffer) => buffers.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+      doc.on('error', reject);
+
+      // Header
+      doc.fontSize(24).font('Helvetica-Bold').fillColor(COLORS.primary)
+         .text('TRIP FINANCE APPROVAL REPORT', 50, 50, { align: 'center' });
+
+      doc.fontSize(18).fillColor(COLORS.text)
+         .text(`${technician?.name || 'Technician'} - ${trip.destinationCity}`, 50, 90, { align: 'center' });
+
+      doc.fontSize(10).fillColor(COLORS.textLabel)
+         .text(`Report ID: TRIP-${Date.now()}`, 50, 120, { align: 'left' })
+         .text(`Generated: ${new Date().toLocaleString()}`, 400, 120, { align: 'right' });
+
+      let yPos = 150;
+
+      // Trip Details
+      doc.fontSize(16).font('Helvetica-Bold').fillColor(COLORS.primary)
+         .text('TRIP DETAILS', 50, yPos);
+      yPos += 30;
+
+      // Technician and Trip Info Grid
+      const leftX = 50;
+      const rightX = 300;
+
+      // Technician Info
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.textLabel)
+         .text('Technician Information', leftX, yPos);
+      yPos += 20;
+
+      doc.fontSize(10).fillColor(COLORS.text)
+         .text(`Name: ${technician?.name}`, leftX, yPos);
+      yPos += 15;
+      doc.text(`Employee Code: ${technician?.employeeCode}`, leftX, yPos);
+      yPos += 15;
+      doc.text(`Base Location: ${typeof technician?.baseLocation === 'string' ? technician.baseLocation : technician?.baseLocation?.city || 'N/A'}`, leftX, yPos);
+      yPos += 15;
+      doc.text(`Grade: ${technician?.grade || 'N/A'}`, leftX, yPos);
+      yPos += 15;
+      doc.text(`Designation: ${technician?.designation || 'N/A'}`, leftX, yPos);
+
+      // Trip Info (right side)
+      let tripY = 180;
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.textLabel)
+         .text('Trip Information', rightX, tripY);
+      tripY += 20;
+
+      doc.fontSize(10).fillColor(COLORS.text)
+         .text(`Destination: ${trip?.destinationCity || 'N/A'}`, rightX, tripY);
+      tripY += 15;
+      doc.text(`Start Date: ${trip?.startDate ? new Date(trip.startDate).toLocaleDateString() : 'N/A'}`, rightX, tripY);
+      tripY += 15;
+      doc.text(`End Date: ${trip?.endDate ? new Date(trip.endDate).toLocaleDateString() : 'N/A'}`, rightX, tripY);
+      tripY += 15;
+      doc.text(`Total Tasks: ${tripTasks?.length || 0}`, rightX, tripY);
+      tripY += 15;
+      doc.text(`Service Requests: ${serviceRequests?.length || 0}`, rightX, tripY);
+      tripY += 15;
+      doc.text(`PM Tasks: ${pmContainers?.length || 0}`, rightX, tripY);
+
+      yPos = Math.max(yPos, tripY) + 30;
+
+      // Service Requests Table
+      if (serviceRequests.length > 0) {
+        doc.fontSize(16).font('Helvetica-Bold').fillColor(COLORS.primary)
+           .text('SERVICE REQUESTS', 50, yPos);
+        yPos += 20;
+
+        // Table Header
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(COLORS.text)
+           .rect(50, yPos, 500, 20).fill(COLORS.secondary)
+           .fillColor(COLORS.primary)
+           .text('Request #', 55, yPos + 5)
+           .text('Container', 120, yPos + 5)
+           .text('Issue', 200, yPos + 5)
+           .text('Customer', 350, yPos + 5)
+           .text('Priority', 450, yPos + 5)
+           .text('Cost', 480, yPos + 5);
+        yPos += 20;
+
+        // Table Rows
+        for (const sr of serviceRequests || []) {
+          if (yPos > 700) {
+            doc.addPage();
+            yPos = 50;
+          }
+
+          doc.fontSize(8).fillColor(COLORS.text)
+             .text(sr?.requestNumber || '', 55, yPos + 5)
+             .text((sr?.containerId || '').substring(0, 8), 120, yPos + 5)
+             .text((sr?.issueDescription || '').substring(0, 30), 200, yPos + 5)
+             .text(sr?.customer?.companyName || 'N/A', 350, yPos + 5)
+             .text(sr?.priority || 'Medium', 450, yPos + 5)
+             .text(`₹${technician?.serviceRequestCost || 2500}`, 480, yPos + 5);
+          yPos += 15;
+        }
+        yPos += 20;
+      }
+
+      // PM Tasks Table
+      if (pmContainers.length > 0) {
+        if (yPos > 600) {
+          doc.addPage();
+          yPos = 50;
+        }
+
+        doc.fontSize(16).font('Helvetica-Bold').fillColor(COLORS.primary)
+           .text('PREVENTIVE MAINTENANCE TASKS', 50, yPos);
+        yPos += 20;
+
+        // Table Header
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(COLORS.text)
+           .rect(50, yPos, 500, 20).fill(COLORS.secondary)
+           .fillColor(COLORS.primary)
+           .text('Container', 55, yPos + 5)
+           .text('Customer', 150, yPos + 5)
+           .text('PM Status', 300, yPos + 5)
+           .text('Priority', 400, yPos + 5)
+           .text('Cost', 480, yPos + 5);
+        yPos += 20;
+
+        // Table Rows
+        for (const container of pmContainers || []) {
+          if (yPos > 700) {
+            doc.addPage();
+            yPos = 50;
+          }
+
+          doc.fontSize(8).fillColor(COLORS.text)
+             .text(container.containerCode || '', 55, yPos + 5)
+             .text(container.currentCustomer?.companyName || 'N/A', 150, yPos + 5)
+             .text('DUE', 300, yPos + 5)
+             .text('MEDIUM', 400, yPos + 5)
+             .text(`₹${technician?.pmCost || 1800}`, 480, yPos + 5);
+          yPos += 15;
+        }
+        yPos += 20;
+      }
+
+      // Wage Breakdown
+      if (yPos > 500) {
+        doc.addPage();
+        yPos = 50;
+      }
+
+      doc.fontSize(16).font('Helvetica-Bold').fillColor(COLORS.primary)
+         .text('WAGE BREAKDOWN & COST ANALYSIS', 50, yPos);
+      yPos += 30;
+
+      // Cost breakdown data
+      const totalTasks = tripTasks?.length || 0;
+      const serviceTasks = serviceRequests?.length || 0;
+      const pmTasks = pmContainers?.length || 0;
+      const serviceRate = technician?.serviceRequestCost || 2500;
+      const pmRate = technician?.pmCost || 1800;
+      const tasksPerDay = technician?.tasksPerDay || 3;
+      const estimatedDays = Math.max(1, Math.ceil(totalTasks / tasksPerDay));
+      const dailyAllowance = (technician?.hotelAllowance || 0) + (technician?.localTravelAllowance || 0);
+
+      const taskCosts = (serviceTasks * serviceRate) + (pmTasks * pmRate);
+      const travelAllowance = estimatedDays * dailyAllowance;
+      const miscellaneous = tripCosts?.miscCost || 0;
+      const contingency = Math.round(taskCosts * 0.03);
+      const totalCost = taskCosts + travelAllowance + miscellaneous + contingency;
+
+      // Task Costs Section
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.textLabel)
+         .text('Task Costs', 50, yPos);
+      yPos += 20;
+
+      doc.fontSize(10).fillColor(COLORS.text)
+         .text(`Service Requests (${serviceTasks} × ₹${serviceRate.toLocaleString()}): ₹${(serviceTasks * serviceRate).toLocaleString()}`, 70, yPos);
+      yPos += 15;
+      doc.text(`PM Tasks (${pmTasks} × ₹${pmRate.toLocaleString()}): ₹${(pmTasks * pmRate).toLocaleString()}`, 70, yPos);
+      yPos += 15;
+      doc.font('Helvetica-Bold').text(`Subtotal: ₹${taskCosts.toLocaleString()}`, 70, yPos);
+      yPos += 25;
+
+      // Travel Allowance Section
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.textLabel)
+         .text('Travel Allowance', 50, yPos);
+      yPos += 20;
+
+      doc.fontSize(10).fillColor(COLORS.text)
+         .text(`Daily Allowance × ${estimatedDays} days: ₹${travelAllowance.toLocaleString()}`, 70, yPos);
+      yPos += 25;
+
+      // Additional Costs
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(COLORS.textLabel)
+         .text('Additional Costs', 50, yPos);
+      yPos += 20;
+
+      doc.fontSize(10).fillColor(COLORS.text)
+         .text(`Miscellaneous: ₹${miscellaneous.toLocaleString()}`, 70, yPos);
+      yPos += 15;
+      doc.text(`Contingency (3%): ₹${contingency.toLocaleString()}`, 70, yPos);
+      yPos += 25;
+
+      // Total
+      doc.fontSize(14).font('Helvetica-Bold').fillColor(COLORS.success)
+         .text(`TOTAL ESTIMATED COST: ₹${totalCost.toLocaleString()}`, 50, yPos);
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}

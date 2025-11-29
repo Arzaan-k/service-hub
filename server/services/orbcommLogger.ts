@@ -60,10 +60,43 @@ class OrbcommLogger {
         await this.workbook.xlsx.readFile(this.filePath);
         this.worksheet = this.workbook.getWorksheet('Alerts') || this.workbook.addWorksheet('Alerts');
         console.log(`📂 Loaded existing Orbcomm log file: ${this.filePath}`);
+      } else {
+        // File doesn't exist, create fresh worksheet
+        this.worksheet = this.workbook.addWorksheet('Alerts');
+        console.log('📝 Created new worksheet (file does not exist)');
       }
-    } catch (error) {
-      console.error('❌ Failed to load existing file:', error);
-      // Keep using the newly created worksheet
+    } catch (error: any) {
+      console.error('❌ Failed to load existing file:', error?.message || error);
+
+      // If file is corrupted, rename it and create a completely fresh workbook
+      if (error?.message?.includes('End of data reached') || error?.message?.includes('Corrupted zip') ||
+          error?.message?.includes('Worksheet name already exists')) {
+        try {
+          if (fs.existsSync(this.filePath)) {
+            const backupPath = `${this.filePath}.backup.${Date.now()}`;
+            fs.renameSync(this.filePath, backupPath);
+            console.log(`📋 Backed up corrupted file to: ${backupPath}`);
+          }
+        } catch (backupError) {
+          console.error('❌ Failed to backup corrupted file:', backupError);
+        }
+
+        // Create a completely fresh workbook and worksheet
+        this.workbook = new ExcelJS.Workbook();
+        this.worksheet = this.workbook.addWorksheet('Alerts');
+        console.log('📝 Created fresh workbook and worksheet due to file corruption');
+      } else {
+        // For other errors, try to add worksheet to existing workbook
+        try {
+          this.worksheet = this.workbook.addWorksheet('Alerts');
+          console.log('📝 Created new worksheet in existing workbook');
+        } catch (worksheetError) {
+          // If that also fails, create fresh workbook
+          this.workbook = new ExcelJS.Workbook();
+          this.worksheet = this.workbook.addWorksheet('Alerts');
+          console.log('📝 Created fresh workbook due to worksheet creation error');
+        }
+      }
     }
   }
 

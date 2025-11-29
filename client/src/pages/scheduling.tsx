@@ -630,31 +630,6 @@ export default function Scheduling() {
     runOptimization.mutate();
   };
 
-  // Manual PM check mutation
-  const runPMCheck = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/pm/check");
-      return await res.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "PM Check Completed",
-        description: data.message || `Found ${data.count || 0} container(s) needing preventive maintenance`,
-        variant: data.count > 0 ? "default" : "default",
-      });
-      // Refresh service requests to show any new PM tickets
-      queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pm/overview"] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "PM Check Failed",
-        description: error?.message || "Failed to run preventive maintenance check",
-        variant: "destructive",
-      });
-    },
-  });
 
   // Sync PM dates from service_history
   const syncPMDates = useMutation({
@@ -818,34 +793,37 @@ export default function Scheduling() {
           }))
       );
 
-      // Calculate wage breakdown
+      // Calculate wage breakdown using technician wage data
+      const serviceRate = technician?.serviceRequestCost || 0;
+      const pmRate = technician?.pmCost || 0;
+
       const wageBreakdown = {
         taskBreakdown: {
-          serviceRequests: { count: selectedServiceRequests.length, rate: 2500, total: selectedServiceRequests.length * 2500 },
-          pmTasks: { count: pmContainers.length, rate: 1800, total: pmContainers.length * 1800 }
+          serviceRequests: { count: selectedServiceRequests.length, rate: serviceRate, total: selectedServiceRequests.length * serviceRate },
+          pmTasks: { count: pmContainers.length, rate: pmRate, total: pmContainers.length * pmRate }
         },
         allowances: {
           dailyAllowance: {
-            rate: (technician?.hotelAllowance || 800) + (technician?.localTravelAllowance || 400),
-            days: Math.ceil(selectedTasks.length / 3),
-            total: Math.ceil(selectedTasks.length / 3) * ((technician?.hotelAllowance || 800) + (technician?.localTravelAllowance || 400))
+            rate: (technician?.hotelAllowance || 0) + (technician?.localTravelAllowance || 0),
+            days: Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)),
+            total: Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)) * ((technician?.hotelAllowance || 0) + (technician?.localTravelAllowance || 0))
           },
-          hotelAllowance: { total: Math.ceil(selectedTasks.length / 3) * (technician?.hotelAllowance || 800) },
-          localTravelAllowance: { total: Math.ceil(selectedTasks.length / 3) * (technician?.localTravelAllowance || 400) }
+          hotelAllowance: { total: Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)) * (technician?.hotelAllowance || 0) },
+          localTravelAllowance: { total: Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)) * (technician?.localTravelAllowance || 0) }
         },
         additionalCosts: {
-          miscellaneous: { percentage: 5, amount: Math.round((selectedServiceRequests.length * 2500 + pmContainers.length * 1800) * 0.05) },
-          contingency: { percentage: 3, amount: Math.round((selectedServiceRequests.length * 2500 + pmContainers.length * 1800) * 0.03) }
+          miscellaneous: { percentage: 5, amount: Math.round((selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) * 0.05) },
+          contingency: { percentage: 3, amount: Math.round((selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) * 0.03) }
         },
         summary: {
           totalTasks: selectedTasks.length,
-          estimatedDays: Math.ceil(selectedTasks.length / 3),
-          subtotal: selectedServiceRequests.length * 2500 + pmContainers.length * 1800,
-          totalAllowance: Math.ceil(selectedTasks.length / 3) * ((technician?.hotelAllowance || 800) + (technician?.localTravelAllowance || 400)),
-          totalAdditional: Math.round((selectedServiceRequests.length * 2500 + pmContainers.length * 1800) * 0.08),
-          totalCost: (selectedServiceRequests.length * 2500 + pmContainers.length * 1800) +
-                    Math.ceil(selectedTasks.length / 3) * ((technician?.hotelAllowance || 800) + (technician?.localTravelAllowance || 400)) +
-                    Math.round((selectedServiceRequests.length * 2500 + pmContainers.length * 1800) * 0.08)
+          estimatedDays: Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)),
+          subtotal: selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate,
+          totalAllowance: Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)) * ((technician?.hotelAllowance || 0) + (technician?.localTravelAllowance || 0)),
+          totalAdditional: Math.round((selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) * 0.08),
+          totalCost: (selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) +
+                    Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)) * ((technician?.hotelAllowance || 0) + (technician?.localTravelAllowance || 0)) +
+                    Math.round((selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) * 0.08)
         }
       };
 
@@ -1045,16 +1023,6 @@ export default function Scheduling() {
                       >
                         <RefreshCw className="h-4 w-4" />
                         {sendSchedules.isPending ? "Sending..." : "Send Schedules"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => runPMCheck.mutate()}
-                        disabled={runPMCheck.isPending}
-                        className="gap-2"
-                        title="Check for containers needing preventive maintenance (90+ days since last PM)"
-                      >
-                        <AlertTriangle className="h-4 w-4" />
-                        {runPMCheck.isPending ? "Checking..." : "Check PM"}
                       </Button>
                     </>
                   )}
@@ -1945,33 +1913,36 @@ export default function Scheduling() {
                             )}
                           </div>
 
-                          {/* Assigned Services by City */}
-                          {Object.keys(selectedTechForSmartPlan.assignedServices?.byCity || {}).length > 0 && (
+                          {/* Clients by City */}
+                          {Object.keys(selectedTechForSmartPlan.assignedServices?.cityClients || {}).length > 0 && (
                             <div>
                               <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
                                 <Wrench className="h-4 w-4 text-orange-500" />
-                                Assigned Services by City
+                                Clients by City
                               </h4>
                               <div className="grid grid-cols-2 gap-2">
-                                {Object.entries(selectedTechForSmartPlan.assignedServices?.byCity || {}).map(([cityKey, services]: [string, any]) => {
-                                  // Display full "City (Client Name)" format
-                                  const displayText = cityKey.includes('(') ? cityKey : `${cityKey}${services[0]?.customerName ? ` (${services[0].customerName})` : ''}`;
-                                  
+                                {Object.entries(selectedTechForSmartPlan.assignedServices?.cityClients || {}).map(([city, clients]: [string, any]) => {
+                                  const services = selectedTechForSmartPlan.assignedServices?.byCity?.[city] || [];
+
                                   return (
-                                    <div 
-                                      key={cityKey} 
+                                    <div
+                                      key={city}
                                       className={`p-3 border rounded-lg cursor-pointer transition-all hover:bg-muted/50 ${
-                                        selectedCityForPlan === cityKey ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''
+                                        selectedCityForPlan === city ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''
                                       }`}
-                                      onClick={() => setSelectedCityForPlan(selectedCityForPlan === cityKey ? "" : cityKey)}
-                                      title={displayText}
+                                      onClick={() => setSelectedCityForPlan(selectedCityForPlan === city ? "" : city)}
+                                      title={`${clients.join(', ')} — ${city}`}
                                     >
                                       <div className="flex items-center justify-between gap-2">
                                         <div className="flex-1 min-w-0">
-                                          <span className="font-medium text-sm block truncate" title={displayText}>
-                                            {displayText}
-                                          </span>
-                                          <span className="text-xs text-muted-foreground mt-0.5">
+                                          <div className="space-y-1">
+                                            {clients.map((client: string, index: number) => (
+                                              <span key={index} className="font-medium text-sm block truncate" title={`${client} — ${city}`}>
+                                                {client} — {city}
+                                              </span>
+                                            ))}
+                                          </div>
+                                          <span className="text-xs text-muted-foreground mt-1 block">
                                             {services.length} service{services.length !== 1 ? 's' : ''}
                                           </span>
                                         </div>
@@ -1989,15 +1960,15 @@ export default function Scheduling() {
                             <div>
                               <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
                                 <Target className="h-4 w-4 text-red-500" />
-                                PM Recommendations (Click to plan)
+                                PM Recommendations by City (Click city to view PMs)
                               </h4>
                               <div className="grid grid-cols-2 gap-2">
                                 {Object.entries(selectedTechForSmartPlan.pmRecommendations || {}).map(([city, pm]: [string, any]) => (
-                                  <div 
+                                  <div
                                     key={city}
                                     className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                                      selectedCityForPlan === city 
-                                        ? 'ring-2 ring-orange-500 bg-orange-500/10 border-orange-500' 
+                                      selectedCityForPlan === city
+                                        ? 'ring-2 ring-orange-500 bg-orange-500/10 border-orange-500'
                                         : 'hover:bg-orange-500/5'
                                     }`}
                                     onClick={() => setSelectedCityForPlan(selectedCityForPlan === city ? "" : city)}
@@ -2014,6 +1985,152 @@ export default function Scheduling() {
                                   </div>
                                 ))}
                               </div>
+
+                              {/* PM Details for Selected City */}
+                              {selectedCityForPlan && selectedTechForSmartPlan.pmRecommendations?.[selectedCityForPlan] && (
+                                <div className="mt-4 p-4 border rounded-lg bg-orange-50/50 dark:bg-orange-950/20">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h5 className="font-medium text-sm flex items-center gap-2">
+                                      <Target className="h-4 w-4 text-orange-500" />
+                                      PM Tasks in {selectedCityForPlan}
+                                    </h5>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          const allContainers = selectedTechForSmartPlan.pmRecommendations[selectedCityForPlan].containers || [];
+                                          const allIds = allContainers.map((c: any) => c.id);
+                                          if (selectedPmTaskIds.size === allIds.length) {
+                                            setSelectedPmTaskIds(new Set());
+                                          } else {
+                                            setSelectedPmTaskIds(new Set(allIds));
+                                          }
+                                        }}
+                                        className="text-xs h-7"
+                                      >
+                                        {selectedPmTaskIds.size === (selectedTechForSmartPlan.pmRecommendations[selectedCityForPlan].containers || []).length
+                                          ? "Deselect All"
+                                          : "Select All"}
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  {/* Group PM tasks by client */}
+                                  <div className="space-y-3 max-h-60 overflow-y-auto">
+                                    {(() => {
+                                      const containers = selectedTechForSmartPlan.pmRecommendations[selectedCityForPlan].containers || [];
+                                      const clientsMap = new Map<string, any[]>();
+
+                                      // Group containers by client
+                                      containers.forEach((container: any) => {
+                                        const clientName = container.customerName || 'Unknown Client';
+                                        if (!clientsMap.has(clientName)) {
+                                          clientsMap.set(clientName, []);
+                                        }
+                                        clientsMap.get(clientName)!.push(container);
+                                      });
+
+                                      return Array.from(clientsMap.entries()).map(([clientName, clientContainers]) => {
+                                        const clientSelectedCount = clientContainers.filter(c => selectedPmTaskIds.has(c.id)).length;
+                                        const isClientFullySelected = clientSelectedCount === clientContainers.length;
+                                        const isClientPartiallySelected = clientSelectedCount > 0 && clientSelectedCount < clientContainers.length;
+
+                                        return (
+                                          <div key={clientName} className="border rounded-lg p-3">
+                                            <div className="flex items-center gap-3 mb-2">
+                                              <Checkbox
+                                                checked={isClientFullySelected}
+                                                indeterminate={isClientPartiallySelected}
+                                                onCheckedChange={(checked) => {
+                                                  const newSet = new Set(selectedPmTaskIds);
+                                                  if (checked) {
+                                                    // Select all containers for this client
+                                                    clientContainers.forEach(c => newSet.add(c.id));
+                                                  } else {
+                                                    // Deselect all containers for this client
+                                                    clientContainers.forEach(c => newSet.delete(c.id));
+                                                  }
+                                                  setSelectedPmTaskIds(newSet);
+                                                }}
+                                              />
+                                              <div className="flex-1">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="font-medium text-sm">{clientName}</span>
+                                                  <Badge variant="outline" className="text-xs">
+                                                    {clientContainers.length} container{clientContainers.length !== 1 ? 's' : ''}
+                                                  </Badge>
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">
+                                                  {clientSelectedCount} of {clientContainers.length} selected
+                                                </div>
+                                              </div>
+                                              <div className="text-right">
+                                                <div className="text-sm font-medium">₹{(clientContainers.length * (selectedTechForSmartPlan?.pmCost || 0)).toLocaleString('en-IN')}</div>
+                                                <div className="text-xs text-muted-foreground">est.</div>
+                                              </div>
+                                            </div>
+
+                                            {/* Show containers for this client */}
+                                            <div className="ml-8 space-y-1">
+                                              {clientContainers.map((container: any) => (
+                                                <div
+                                                  key={container.id}
+                                                  className={`flex items-center gap-2 p-2 rounded text-sm ${
+                                                    selectedPmTaskIds.has(container.id) ? 'bg-orange-50 dark:bg-orange-950/30' : 'opacity-75'
+                                                  }`}
+                                                >
+                                                  <Checkbox
+                                                    checked={selectedPmTaskIds.has(container.id)}
+                                                    onCheckedChange={(checked) => {
+                                                      const newSet = new Set(selectedPmTaskIds);
+                                                      if (checked) {
+                                                        newSet.add(container.id);
+                                                      } else {
+                                                        newSet.delete(container.id);
+                                                      }
+                                                      setSelectedPmTaskIds(newSet);
+                                                    }}
+                                                  />
+                                                  <span className="font-mono text-xs">{container.containerCode}</span>
+                                                  <Badge
+                                                    variant={
+                                                      container.pmStatus === 'OVERDUE' ? 'destructive' :
+                                                      container.pmStatus === 'NEVER' ? 'destructive' :
+                                                      container.pmStatus === 'DUE_SOON' ? 'secondary' : 'outline'
+                                                    }
+                                                    className="text-xs"
+                                                  >
+                                                    {container.pmStatus === 'OVERDUE' ? 'Overdue' :
+                                                     container.pmStatus === 'NEVER' ? 'Never Done' :
+                                                     container.pmStatus === 'DUE_SOON' ? 'Due Soon' : 'Up to Date'}
+                                                  </Badge>
+                                                  <span className="text-xs text-muted-foreground ml-auto">
+                                                    {container.daysSincePm ? `${container.daysSincePm}d ago` : 'Never'}
+                                                  </span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        );
+                                      });
+                                    })()}
+                                  </div>
+
+                                  {selectedPmTaskIds.size > 0 && (
+                                    <div className="mt-3 pt-3 border-t">
+                                      <div className="flex items-center justify-between text-sm">
+                                        <span className="text-muted-foreground">
+                                          {selectedPmTaskIds.size} PM task{selectedPmTaskIds.size !== 1 ? 's' : ''} selected
+                                        </span>
+                                        <span className="font-medium">
+                                          ₹{(selectedPmTaskIds.size * (selectedTechForSmartPlan?.pmCost || 0)).toLocaleString('en-IN')}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -2452,124 +2569,6 @@ export default function Scheduling() {
                   </div>
                 </div>
               )}
-
-              <div className="pt-4">
-                <h3 className="text-lg font-semibold mb-3">Planned Trips</h3>
-                {tripsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                  </div>
-                ) : trips.length === 0 ? (
-                  <Card>
-                    <CardContent className="p-12 text-center">
-                      <Plane className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-foreground mb-2">
-                        No Trips Planned
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        Run the auto planner above and click “Create Trip” to add the first travel plan.
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card>
-                    <CardContent className="p-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Technician</TableHead>
-                            <TableHead>Destination</TableHead>
-                            <TableHead>Dates</TableHead>
-                            <TableHead>Trip Status</TableHead>
-                            <TableHead>Booking Status</TableHead>
-                            <TableHead>Total Cost</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {trips.map((trip: any) => (
-                            <TableRow
-                              key={trip.id}
-                              className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => setSelectedTripId(trip.id)}
-                            >
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <User className="h-4 w-4 text-muted-foreground" />
-                                  <span className="font-medium">
-                                    {trip.technician?.name || trip.technician?.user?.name || trip.technicianId || "Unknown"}
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                                  <span>{trip.destinationCity}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-sm">
-                                    {new Date(trip.startDate).toLocaleDateString()} - {new Date(trip.endDate).toLocaleDateString()}
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  className={
-                                    trip.tripStatus === "completed"
-                                      ? "bg-green-500/20 text-green-400 border-green-400/30"
-                                      : trip.tripStatus === "in_progress"
-                                      ? "bg-blue-500/20 text-blue-400 border-blue-400/30"
-                                      : trip.tripStatus === "booked"
-                                      ? "bg-purple-500/20 text-purple-400 border-purple-400/30"
-                                      : trip.tripStatus === "cancelled"
-                                      ? "bg-red-500/20 text-red-400 border-red-400/30"
-                                      : "bg-gray-500/20 text-gray-400 border-gray-400/30"
-                                  }
-                                >
-                                  {trip.tripStatus || "planned"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="text-xs">
-                                  {trip.bookingStatus === "all_confirmed"
-                                    ? "✓ All Confirmed"
-                                    : trip.bookingStatus === "hotel_booked"
-                                    ? "🏨 Hotel Booked"
-                                    : trip.bookingStatus === "tickets_booked"
-                                    ? "🎫 Tickets Booked"
-                                    : "Not Started"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <span className="font-medium">
-                                  ₹{parseFloat(trip.costs?.totalEstimatedCost || 0).toLocaleString("en-IN")}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedTripId(trip.id);
-                                  }}
-                                  className="gap-2"
-                                >
-                                  <Eye className="h-4 w-4" />
-                                  View
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
             </TabsContent>
           </Tabs>
 
