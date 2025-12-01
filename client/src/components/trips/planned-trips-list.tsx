@@ -25,10 +25,12 @@ import {
   Send,
   IndianRupee,
   CheckCircle,
-  Clock
+  Clock,
+  Eye
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { TripFinancePDF } from "./trip-finance-pdf";
+import { TripDetailsModal } from "@/components/scheduling/trip-details-modal";
 
 interface PlannedTripsListProps {
   onTripSelected?: (tripId: string) => void;
@@ -37,6 +39,8 @@ interface PlannedTripsListProps {
 export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
   const [selectedTrip, setSelectedTrip] = useState<any>(null);
   const [showPDFPreview, setShowPDFPreview] = useState(false);
+  const [showTripDetailsModal, setShowTripDetailsModal] = useState(false);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data, isLoading, refetch } = useQuery({
@@ -241,6 +245,18 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => {
+                          setSelectedTripId(trip.id);
+                          setShowTripDetailsModal(true);
+                        }}
+                        className="gap-1"
+                      >
+                        <Eye className="h-3 w-3" />
+                        View
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => handleGeneratePDF(trip)}
                         className="gap-1"
                       >
@@ -289,6 +305,16 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Trip Details Modal */}
+      <TripDetailsModal
+        isOpen={showTripDetailsModal}
+        onClose={() => {
+          setShowTripDetailsModal(false);
+          setSelectedTripId(null);
+        }}
+        tripId={selectedTripId || ""}
+      />
     </div>
   );
 }
