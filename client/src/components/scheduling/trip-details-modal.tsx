@@ -236,7 +236,7 @@ export function TripDetailsModal({
             Trip Details: {trip?.destinationCity}
           </DialogTitle>
           <DialogDescription>
-            Complete trip information and cost breakdown
+            Complete trip information, assigned tasks, and cost breakdown
           </DialogDescription>
         </DialogHeader>
 
@@ -260,10 +260,10 @@ export function TripDetailsModal({
                     <p className="text-sm text-muted-foreground">TECH ID</p>
                     <p className="font-mono font-medium">{technician.employeeCode}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Current Location</p>
-                    <p className="font-medium">{technician.currentLocation || technician.baseLocation || 'N/A'}</p>
-                  </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Current Location</p>
+                      <p className="font-medium">{typeof technician.currentLocation === 'string' ? technician.currentLocation : (technician.baseLocation || 'N/A')}</p>
+                    </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Category</p>
                     <Badge variant="outline">{technician.grade || 'N/A'}</Badge>
@@ -328,7 +328,7 @@ export function TripDetailsModal({
                                 {task.container?.containerCode || task.serviceRequest?.requestNumber || 'N/A'}
                               </span>
                               <span className="text-sm text-muted-foreground">
-                                {task.customer?.companyName || 'Unknown Client'} • {task.container?.currentLocation?.address || 'N/A'}
+                                {task.customer?.companyName || 'Unknown Client'} • {typeof task.container?.currentLocation?.address === 'string' ? task.container.currentLocation.address : 'N/A'}
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
@@ -398,7 +398,7 @@ export function TripDetailsModal({
                                 {task.container?.containerCode || 'N/A'}
                               </span>
                               <span className="text-sm text-muted-foreground">
-                                {task.customer?.companyName || 'Unknown Client'} • {task.container?.currentLocation?.address || 'N/A'}
+                                {task.customer?.companyName || 'Unknown Client'} • {typeof task.container?.currentLocation?.address === 'string' ? task.container.currentLocation.address : 'N/A'}
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
