@@ -115,7 +115,9 @@ export function TripDetailsModal({
 
   // Group services by city
   const servicesByCity = serviceRequests.reduce((acc: any, task: any) => {
-    const city = task.container?.currentLocation?.city || task.customer?.city || 'Unknown';
+    const city = typeof (task.container?.currentLocation?.city || task.customer?.city) === 'string'
+      ? (task.container?.currentLocation?.city || task.customer?.city || 'Unknown')
+      : 'Unknown';
     if (!acc[city]) {
       acc[city] = {
         city,
@@ -134,7 +136,9 @@ export function TripDetailsModal({
 
   // Group PM tasks by city
   const pmTasksByCity = pmTasks.reduce((acc: any, task: any) => {
-    const city = task.container?.currentLocation?.city || task.customer?.city || 'Unknown';
+    const city = typeof (task.container?.currentLocation?.city || task.customer?.city) === 'string'
+      ? (task.container?.currentLocation?.city || task.customer?.city || 'Unknown')
+      : 'Unknown';
     if (!acc[city]) {
       acc[city] = {
         city,
@@ -469,30 +473,42 @@ export function TripDetailsModal({
                       <div>
                         <Label>Service Request Cost</Label>
                         <p className="text-lg font-medium">
-                          ₹{wageData.taskBreakdown?.serviceRequests?.total?.toLocaleString('en-IN') ||
-                            serviceRequests.reduce((sum, task) => sum + (task.estimatedCost || 0), 0).toLocaleString('en-IN')}
+                          ₹{typeof wageData.taskBreakdown?.serviceRequests?.total === 'number'
+                            ? wageData.taskBreakdown.serviceRequests.total.toLocaleString('en-IN')
+                            : serviceRequests.reduce((sum, task) => sum + (task.estimatedCost || 0), 0).toLocaleString('en-IN')}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {serviceRequests.length} × ₹{wageData.taskBreakdown?.serviceRequests?.rate || 0}
+                          {serviceRequests.length} × ₹{typeof wageData.taskBreakdown?.serviceRequests?.rate === 'number'
+                            ? wageData.taskBreakdown.serviceRequests.rate
+                            : 0}
                         </p>
                       </div>
                       <div>
                         <Label>PM Task Cost</Label>
                         <p className="text-lg font-medium">
-                          ₹{wageData.taskBreakdown?.pmTasks?.total?.toLocaleString('en-IN') ||
-                            pmTasks.reduce((sum, task) => sum + (task.estimatedCost || 1800), 0).toLocaleString('en-IN')}
+                          ₹{typeof wageData.taskBreakdown?.pmTasks?.total === 'number'
+                            ? wageData.taskBreakdown.pmTasks.total.toLocaleString('en-IN')
+                            : pmTasks.reduce((sum, task) => sum + (task.estimatedCost || 1800), 0).toLocaleString('en-IN')}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {pmTasks.length} × ₹{wageData.taskBreakdown?.pmTasks?.rate || 1800}
+                          {pmTasks.length} × ₹{typeof wageData.taskBreakdown?.pmTasks?.rate === 'number'
+                            ? wageData.taskBreakdown.pmTasks.rate
+                            : 1800}
                         </p>
                       </div>
                       <div>
                         <Label>Travel Allowance</Label>
                         <p className="text-lg font-medium">
-                          ₹{wageData.allowances?.dailyAllowance?.total?.toLocaleString('en-IN') || '0'}
+                          ₹{typeof wageData.allowances?.dailyAllowance?.total === 'number'
+                            ? wageData.allowances.dailyAllowance.total.toLocaleString('en-IN')
+                            : '0'}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          ₹{wageData.allowances?.dailyAllowance?.rate || 0} × {wageData.allowances?.dailyAllowance?.days || 0} days
+                          ₹{typeof wageData.allowances?.dailyAllowance?.rate === 'number'
+                            ? wageData.allowances.dailyAllowance.rate
+                            : 0} × {typeof wageData.allowances?.dailyAllowance?.days === 'number'
+                            ? wageData.allowances.dailyAllowance.days
+                            : 0} days
                         </p>
                       </div>
                       <div>
@@ -517,15 +533,21 @@ export function TripDetailsModal({
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
                         <span className="font-medium">Subtotal (Tasks)</span>
-                        <span>₹{wageData.summary?.subtotal?.toLocaleString('en-IN') || '0'}</span>
+                        <span>₹{typeof wageData.summary?.subtotal === 'number'
+                          ? wageData.summary.subtotal.toLocaleString('en-IN')
+                          : '0'}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="font-medium">Travel Allowance</span>
-                        <span>₹{wageData.summary?.totalAllowance?.toLocaleString('en-IN') || '0'}</span>
+                        <span>₹{typeof wageData.summary?.totalAllowance === 'number'
+                          ? wageData.summary.totalAllowance.toLocaleString('en-IN')
+                          : '0'}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="font-medium">Additional Costs</span>
-                        <span>₹{wageData.summary?.totalAdditional?.toLocaleString('en-IN') || '0'}</span>
+                        <span>₹{typeof wageData.summary?.totalAdditional === 'number'
+                          ? wageData.summary.totalAdditional.toLocaleString('en-IN')
+                          : '0'}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="font-medium">Miscellaneous</span>
@@ -538,7 +560,9 @@ export function TripDetailsModal({
                     <div className="flex justify-between items-center">
                       <span className="text-lg font-medium">Total Estimated Cost</span>
                       <span className="text-xl font-bold">
-                        ₹{(wageData.summary?.totalCost + miscellaneousCost).toLocaleString('en-IN')}
+                        ₹{(typeof wageData.summary?.totalCost === 'number'
+                          ? wageData.summary.totalCost + miscellaneousCost
+                          : miscellaneousCost).toLocaleString('en-IN')}
                       </span>
                     </div>
                   </>
