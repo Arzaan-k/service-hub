@@ -49,9 +49,45 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
 
   const trips = data?.trips || [];
 
-  const handleGeneratePDF = (trip: any) => {
-    setSelectedTrip(trip);
-    setShowPDFPreview(true);
+  const handleGeneratePDF = async (trip: any) => {
+    try {
+      toast({
+        title: "Generating PDF",
+        description: "Please wait while we generate your PDF...",
+      });
+
+      const res = await apiRequest("POST", "/api/trips/generate-finance-pdf", {
+        tripId: trip.id,
+        trip,
+        technician: trip.technician,
+      });
+
+      if (res.ok) {
+        // Create blob from response and trigger download
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Trip-Finance-Report-${trip.technician?.name || 'Technician'}-${trip.destinationCity || 'Destination'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        toast({
+          title: "PDF Generated Successfully",
+          description: "Finance approval PDF has been downloaded.",
+        });
+      } else {
+        throw new Error("Failed to generate PDF");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Failed to Generate PDF",
+        description: error?.message || "Could not generate PDF",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSendToFinance = async (trip: any) => {
