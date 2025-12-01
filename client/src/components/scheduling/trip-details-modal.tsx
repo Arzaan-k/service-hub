@@ -115,9 +115,17 @@ export function TripDetailsModal({
 
   // Group services by city
   const servicesByCity = serviceRequests.reduce((acc: any, task: any) => {
-    const city = typeof (task.container?.currentLocation?.city || task.customer?.city) === 'string'
-      ? (task.container?.currentLocation?.city || task.customer?.city || 'Unknown')
-      : 'Unknown';
+    let city = 'Unknown';
+
+    // Safely extract city from various possible locations
+    const containerCity = task.container?.currentLocation?.city;
+    const customerCity = task.customer?.city;
+
+    if (typeof containerCity === 'string' && containerCity.trim()) {
+      city = containerCity.trim();
+    } else if (typeof customerCity === 'string' && customerCity.trim()) {
+      city = customerCity.trim();
+    }
     if (!acc[city]) {
       acc[city] = {
         city,
@@ -136,9 +144,17 @@ export function TripDetailsModal({
 
   // Group PM tasks by city
   const pmTasksByCity = pmTasks.reduce((acc: any, task: any) => {
-    const city = typeof (task.container?.currentLocation?.city || task.customer?.city) === 'string'
-      ? (task.container?.currentLocation?.city || task.customer?.city || 'Unknown')
-      : 'Unknown';
+    let city = 'Unknown';
+
+    // Safely extract city from various possible locations
+    const containerCity = task.container?.currentLocation?.city;
+    const customerCity = task.customer?.city;
+
+    if (typeof containerCity === 'string' && containerCity.trim()) {
+      city = containerCity.trim();
+    } else if (typeof customerCity === 'string' && customerCity.trim()) {
+      city = customerCity.trim();
+    }
     if (!acc[city]) {
       acc[city] = {
         city,
