@@ -57,6 +57,7 @@ import { TechnicianCard } from "@/components/travel/technician-card";
 import { CostTable, CostState } from "@/components/travel/cost-table";
 import { TaskTable, TaskDraft } from "@/components/travel/task-table";
 import { CreateTripButton } from "@/components/travel/create-trip-button";
+import { TechnicianTripDetailsModal } from "@/components/scheduling/technician-trip-details-modal";
 
 interface ScheduledService {
   id: string;
@@ -135,6 +136,8 @@ export default function Scheduling() {
     customerName: string;
     daysSincePm: number | null;
   } | null>(null);
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState<string | null>(null);
+  const [showTechnicianDetailsModal, setShowTechnicianDetailsModal] = useState(false);
 
   const { data: serviceRequests, isLoading } = useQuery({
     queryKey: ["/api/service-requests"],
@@ -300,8 +303,7 @@ export default function Scheduling() {
     };
   } | null>(null);
   const [costDraft, setCostDraft] = useState<CostState | null>(null);
-  const [taskDraft, setTaskDraft] = useState<TaskDraft[]>([]);
-  const [selectedTechnicianId, setSelectedTechnicianId] = useState<string | null>(null);
+    const [taskDraft, setTaskDraft] = useState<TaskDraft[]>([]);
   const [planPurpose, setPlanPurpose] = useState("pm");
   const [planNotes, setPlanNotes] = useState("");
   const [pmFilter, setPmFilter] = useState<"all" | "needs_pm" | "overdue" | "never" | "due_soon" | "up_to_date">("overdue");
@@ -1124,7 +1126,14 @@ export default function Scheduling() {
           ) : (
             <div className="space-y-6">
               {technicianSchedules.map((techSchedule: any) => (
-                <Card key={techSchedule.technician.id} className="card-surface hover:shadow-soft transition-all">
+                <Card
+                  key={techSchedule.technician.id}
+                  className="card-surface hover:shadow-soft transition-all cursor-pointer"
+                  onClick={() => {
+                    setSelectedTechnicianId(techSchedule.technician.id);
+                    setShowTechnicianDetailsModal(true);
+                  }}
+                >
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -2787,6 +2796,16 @@ export default function Scheduling() {
           </Dialog>
         </div>
       </main>
+
+      {/* Technician Trip Details Modal */}
+      <TechnicianTripDetailsModal
+        isOpen={showTechnicianDetailsModal}
+        onClose={() => {
+          setShowTechnicianDetailsModal(false);
+          setSelectedTechnicianId(null);
+        }}
+        technicianId={selectedTechnicianId || ""}
+      />
     </div>
   );
 }

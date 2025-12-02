@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Plane, Sparkles } from "lucide-react";
 
 export type AutoPlanFormPayload = {
@@ -103,30 +104,27 @@ export function AutoPlanForm({
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Destination City *</Label>
-            <Select
-              value={useCustomCity ? "__custom" : destinationCity}
+            <Combobox
+              options={cities.map((city) => ({
+                value: city.name,
+                label: city.name,
+                searchText: city.name.toLowerCase()
+              }))}
+              value={useCustomCity ? "" : destinationCity}
               onValueChange={(value) => {
-                if (value === "__custom") {
+                if (value === "__custom" || !value) {
                   setUseCustomCity(true);
+                  setCustomCity("");
                 } else {
                   setUseCustomCity(false);
                   setDestinationCity(value);
                   setCustomCity("");
                 }
               }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select city" />
-              </SelectTrigger>
-              <SelectContent>
-                {cities.map((city) => (
-                  <SelectItem key={city.name} value={city.name}>
-                    {city.name}
-                  </SelectItem>
-                ))}
-                <SelectItem value="__custom">Other (type manually)</SelectItem>
-              </SelectContent>
-            </Select>
+              placeholder="Search cities..."
+              searchPlaceholder="Search cities..."
+              emptyText="No cities found."
+            />
             {useCustomCity && (
               <Input
                 placeholder="Enter destination city"

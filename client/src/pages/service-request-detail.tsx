@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -1284,18 +1285,18 @@ export default function ServiceRequestDetail() {
             <div className="flex gap-3">
               <div className="flex-1">
                 <Label htmlFor="part-select">Select Part</Label>
-                <Select value={selectedItemId} onValueChange={setSelectedItemId}>
-                  <SelectTrigger id="part-select">
-                    <SelectValue placeholder="Choose a part..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {inventory?.map((item: InventoryItem) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.partName} ({item.partNumber}) - Stock: {item.quantityInStock}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={inventory?.map((item: InventoryItem) => ({
+                    value: item.id,
+                    label: `${item.partName} (${item.partNumber}) - Stock: ${item.quantityInStock}`,
+                    searchText: `${item.partName} ${item.partNumber} ${item.category}`.toLowerCase()
+                  })) || []}
+                  value={selectedItemId}
+                  onValueChange={setSelectedItemId}
+                  placeholder="Choose a part..."
+                  searchPlaceholder="Search parts..."
+                  emptyText="No parts found."
+                />
               </div>
               <div className="w-24">
                 <Label htmlFor="quantity">Quantity</Label>

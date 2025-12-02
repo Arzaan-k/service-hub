@@ -25,10 +25,12 @@ import {
   Send,
   IndianRupee,
   CheckCircle,
-  Clock
+  Clock,
+  Eye
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { TripFinancePDF } from "./trip-finance-pdf";
+import { TripDetailsModal } from "@/components/scheduling/trip-details-modal";
 
 interface PlannedTripsListProps {
   onTripSelected?: (tripId: string) => void;
@@ -37,6 +39,8 @@ interface PlannedTripsListProps {
 export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
   const [selectedTrip, setSelectedTrip] = useState<any>(null);
   const [showPDFPreview, setShowPDFPreview] = useState(false);
+  const [showTripDetailsModal, setShowTripDetailsModal] = useState(false);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data, isLoading, refetch } = useQuery({
@@ -49,9 +53,45 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
 
   const trips = data?.trips || [];
 
-  const handleGeneratePDF = (trip: any) => {
-    setSelectedTrip(trip);
-    setShowPDFPreview(true);
+  const handleGeneratePDF = async (trip: any) => {
+    try {
+      toast({
+        title: "Generating PDF",
+        description: "Please wait while we generate your PDF...",
+      });
+
+      const res = await apiRequest("POST", "/api/trips/generate-finance-pdf", {
+        tripId: trip.id,
+        trip,
+        technician: trip.technician,
+      });
+
+      if (res.ok) {
+        // Create blob from response and trigger download
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Trip-Finance-Report-${trip.technician?.name || 'Technician'}-${trip.destinationCity || 'Destination'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        toast({
+          title: "PDF Generated Successfully",
+          description: "Finance approval PDF has been downloaded.",
+        });
+      } else {
+        throw new Error("Failed to generate PDF");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Failed to Generate PDF",
+        description: error?.message || "Could not generate PDF",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSendToFinance = async (trip: any) => {
@@ -205,6 +245,18 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => {
+                          setSelectedTripId(trip.id);
+                          setShowTripDetailsModal(true);
+                        }}
+                        className="gap-1"
+                      >
+                        <Eye className="h-3 w-3" />
+                        View
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => handleGeneratePDF(trip)}
                         className="gap-1"
                       >
@@ -253,6 +305,16 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Trip Details Modal */}
+      <TripDetailsModal
+        isOpen={showTripDetailsModal}
+        onClose={() => {
+          setShowTripDetailsModal(false);
+          setSelectedTripId(null);
+        }}
+        tripId={selectedTripId || ""}
+      />
     </div>
   );
 }
