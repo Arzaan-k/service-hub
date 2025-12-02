@@ -37,6 +37,16 @@ export function TripFinancePDF({
 }: TripFinancePDFProps) {
   const pdfRef = useRef<HTMLDivElement>(null);
 
+  // Helper to safely extract city name
+  const getCityName = (val: any) => {
+    if (!val) return null;
+    if (typeof val === 'string') return val;
+    if (typeof val === 'object' && val.city) return val.city;
+    return null;
+  };
+
+  const destinationName = getCityName(tripData?.destinationCity) || getCityName(tripData?.city) || 'Destination';
+
   const handleDownloadPDF = async () => {
     if (!pdfRef.current) return;
 
@@ -47,8 +57,8 @@ export function TripFinancePDF({
       const element = pdfRef.current;
       const opt = {
         margin: 0.5,
-        filename: `Trip-Finance-Report-${technician?.name || 'Technician'}-${tripData?.city || 'Unknown'}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
+        filename: `Trip-Finance-Report-${technician?.name || 'Technician'}-${destinationName}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
         html2canvas: {
           scale: 2,
           useCORS: true,
@@ -57,7 +67,7 @@ export function TripFinancePDF({
         jsPDF: {
           unit: 'in',
           format: 'a4',
-          orientation: 'portrait'
+          orientation: 'portrait' as const
         }
       };
 
@@ -92,7 +102,7 @@ export function TripFinancePDF({
         <div className="text-center border-b-2 border-gray-300 pb-6 mb-6">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">TRIP FINANCE APPROVAL REPORT</h1>
           <h2 className="text-xl text-gray-600 mb-4">
-            {technician?.name || 'Technician'} - {tripData?.city || 'Destination'}
+            {technician?.name || 'Technician'} - {destinationName}
           </h2>
           <div className="flex justify-between text-sm text-gray-500">
             <span>Report ID: TRIP-{Date.now()}</span>
@@ -127,9 +137,9 @@ export function TripFinancePDF({
                 Trip Information
               </h4>
               <div className="space-y-1 text-sm">
-                <div><span className="font-medium">Destination:</span> {tripData?.city}</div>
-                <div><span className="font-medium">Start Date:</span> {new Date(tripData?.range?.start).toLocaleDateString()}</div>
-                <div><span className="font-medium">End Date:</span> {new Date(tripData?.range?.end).toLocaleDateString()}</div>
+                <div><span className="font-medium">Destination:</span> {destinationName}</div>
+                <div><span className="font-medium">Start Date:</span> {new Date(tripData?.range?.start || tripData?.startDate).toLocaleDateString()}</div>
+                <div><span className="font-medium">End Date:</span> {new Date(tripData?.range?.end || tripData?.endDate).toLocaleDateString()}</div>
                 <div><span className="font-medium">Total Tasks:</span> {wageBreakdown?.summary?.totalTasks || 0}</div>
                 <div><span className="font-medium">Service Requests:</span> {wageBreakdown?.taskBreakdown?.serviceRequests?.count || 0}</div>
                 <div><span className="font-medium">PM Tasks:</span> {wageBreakdown?.taskBreakdown?.pmTasks?.count || 0}</div>
@@ -199,8 +209,8 @@ export function TripFinancePDF({
                       <td className="border border-gray-300 p-2">
                         <Badge variant={
                           container.pmDetails?.pmStatus === 'OVERDUE' ? 'destructive' :
-                          container.pmDetails?.pmStatus === 'NEVER' ? 'destructive' :
-                          'secondary'
+                            container.pmDetails?.pmStatus === 'NEVER' ? 'destructive' :
+                              'secondary'
                         }>
                           {container.pmDetails?.pmStatus || 'UNKNOWN'}
                         </Badge>
@@ -209,11 +219,11 @@ export function TripFinancePDF({
                       <td className="border border-gray-300 p-2">
                         <Badge variant={
                           container.pmDetails?.pmStatus === 'OVERDUE' ? 'destructive' :
-                          container.pmDetails?.pmStatus === 'NEVER' ? 'destructive' :
-                          'secondary'
+                            container.pmDetails?.pmStatus === 'NEVER' ? 'destructive' :
+                              'secondary'
                         }>
                           {container.pmDetails?.pmStatus === 'OVERDUE' ? 'HIGH' :
-                           container.pmDetails?.pmStatus === 'NEVER' ? 'CRITICAL' : 'MEDIUM'}
+                            container.pmDetails?.pmStatus === 'NEVER' ? 'CRITICAL' : 'MEDIUM'}
                         </Badge>
                       </td>
                       <td className="border border-gray-300 p-2">₹{wageBreakdown?.taskBreakdown?.pmTasks?.rate?.toLocaleString() || '1,800'}</td>

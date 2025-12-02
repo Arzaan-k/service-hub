@@ -13,6 +13,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
+import {
   Plane,
   MapPin,
   Calendar,
@@ -21,10 +25,12 @@ import {
   Send,
   IndianRupee,
   CheckCircle,
-  Clock
+  Clock,
+  Eye
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { TripFinancePDF } from "./trip-finance-pdf";
+import { TripDetailsModal } from "@/components/scheduling/trip-details-modal";
 
 interface PlannedTripsListProps {
   onTripSelected?: (tripId: string) => void;
@@ -33,6 +39,8 @@ interface PlannedTripsListProps {
 export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
   const [selectedTrip, setSelectedTrip] = useState<any>(null);
   const [showPDFPreview, setShowPDFPreview] = useState(false);
+  const [showTripDetailsModal, setShowTripDetailsModal] = useState(false);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data, isLoading, refetch } = useQuery({
@@ -45,9 +53,45 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
 
   const trips = data?.trips || [];
 
-  const handleGeneratePDF = (trip: any) => {
-    setSelectedTrip(trip);
-    setShowPDFPreview(true);
+  const handleGeneratePDF = async (trip: any) => {
+    try {
+      toast({
+        title: "Generating PDF",
+        description: "Please wait while we generate your PDF...",
+      });
+
+      const res = await apiRequest("POST", "/api/trips/generate-finance-pdf", {
+        tripId: trip.id,
+        trip,
+        technician: trip.technician,
+      });
+
+      if (res.ok) {
+        // Create blob from response and trigger download
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Trip-Finance-Report-${trip.technician?.name || 'Technician'}-${trip.destinationCity || 'Destination'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        toast({
+          title: "PDF Generated Successfully",
+          description: "Finance approval PDF has been downloaded.",
+        });
+      } else {
+        throw new Error("Failed to generate PDF");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Failed to Generate PDF",
+        description: error?.message || "Could not generate PDF",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSendToFinance = async (trip: any) => {
@@ -150,7 +194,11 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <MapPin className="h-3 w-3 text-muted-foreground" />
-                      <span>{trip.destinationCity}</span>
+                      <span>
+                        {typeof trip.destinationCity === 'object'
+                          ? (trip.destinationCity as any).city
+                          : trip.destinationCity}
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -173,8 +221,8 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                       <span>
                         {trip.costs?.totalEstimatedCost
                           ? Number(trip.costs.totalEstimatedCost).toLocaleString(
-                              "en-IN"
-                            )
+                            "en-IN"
+                          )
                           : "0"}
                       </span>
                     </div>
@@ -185,8 +233,8 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                         trip.tripStatus === "planned"
                           ? "default"
                           : trip.tripStatus === "completed"
-                          ? "secondary"
-                          : "outline"
+                            ? "secondary"
+                            : "outline"
                       }
                     >
                       {trip.tripStatus}
@@ -194,6 +242,18 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedTripId(trip.id);
+                          setShowTripDetailsModal(true);
+                        }}
+                        className="gap-1"
+                      >
+                        <Eye className="h-3 w-3" />
+                        View
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -220,22 +280,41 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
         </CardContent>
       </Card>
 
-      {/* PDF Preview */}
-      {showPDFPreview && selectedTrip && (
-        <TripFinancePDF
-          tripData={selectedTrip.tripData || selectedTrip}
-          technician={selectedTrip.technician}
-          serviceRequests={selectedTrip.serviceRequests || selectedTrip.tasks?.filter((t: any) => t.taskType !== 'pm') || []}
-          pmContainers={selectedTrip.pmContainers || selectedTrip.tasks?.filter((t: any) => t.taskType === 'pm') || []}
-          wageBreakdown={selectedTrip.wageBreakdown || selectedTrip.costs || {}}
-          generatedAt={selectedTrip.generatedAt || new Date().toISOString()}
-          generatedBy={selectedTrip.generatedBy || "System"}
-          onClose={() => {
-            setShowPDFPreview(false);
-            setSelectedTrip(null);
-          }}
-        />
-      )}
+      {/* PDF Preview Dialog */}
+      <Dialog open={showPDFPreview} onOpenChange={(open) => {
+        setShowPDFPreview(open);
+        if (!open) {
+          setSelectedTrip(null);
+        }
+      }}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          {selectedTrip && (
+            <TripFinancePDF
+              tripData={selectedTrip.tripData || selectedTrip}
+              technician={selectedTrip.technician}
+              serviceRequests={selectedTrip.serviceRequests || selectedTrip.tasks?.filter((t: any) => t.taskType !== 'pm') || []}
+              pmContainers={selectedTrip.pmContainers || selectedTrip.tasks?.filter((t: any) => t.taskType === 'pm') || []}
+              wageBreakdown={selectedTrip.wageBreakdown || selectedTrip.costs || {}}
+              generatedAt={selectedTrip.generatedAt || new Date().toISOString()}
+              generatedBy={selectedTrip.generatedBy || "System"}
+              onClose={() => {
+                setShowPDFPreview(false);
+                setSelectedTrip(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Trip Details Modal */}
+      <TripDetailsModal
+        isOpen={showTripDetailsModal}
+        onClose={() => {
+          setShowTripDetailsModal(false);
+          setSelectedTripId(null);
+        }}
+        tripId={selectedTripId || ""}
+      />
     </div>
   );
 }

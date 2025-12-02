@@ -25,12 +25,20 @@ class WebSocketClient {
 
     this.isIntentionallyClosed = false;
 
-    // Determine WebSocket URL - use same origin for proxy support
+    // Determine WebSocket URL - always connect to backend server
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Use environment variable if available, otherwise construct from current location
-    const wsUrl = import.meta.env.VITE_WS_URL ||
-                  import.meta.env.VITE_WEBSOCKET_URL ||
-                  `${protocol}//${window.location.host}/ws`;
+
+    // Use environment variable if available, otherwise construct backend URL
+    let wsUrl;
+    if (import.meta.env.VITE_WS_URL) {
+      wsUrl = import.meta.env.VITE_WS_URL;
+    } else if (import.meta.env.VITE_WEBSOCKET_URL) {
+      wsUrl = import.meta.env.VITE_WEBSOCKET_URL;
+    } else {
+      // Always connect to backend on port 5000
+      const hostname = window.location.hostname || 'localhost';
+      wsUrl = `${protocol}//${hostname}:5000/ws`;
+    }
 
     console.log('Connecting to WebSocket:', wsUrl);
 
