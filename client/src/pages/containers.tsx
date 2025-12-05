@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AnimatedCard, GlassCard } from "@/components/ui/animated-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelectCombobox } from "@/components/ui/multi-select-combobox";
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Search, Filter, Download, Eye, MapPin, Calendar, Package, Zap, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 
@@ -62,9 +63,10 @@ export default function Containers() {
   const authToken = getAuthToken();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [gradeFilter, setGradeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [gradeFilter, setGradeFilter] = useState<string[]>([]);
+  const [sizeTypeFilter, setSizeTypeFilter] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("containerCode");
 
   // Pagination state
@@ -72,7 +74,7 @@ export default function Containers() {
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
   // Determine if we should use pagination or fetch all data for filtering
-  const hasActiveFilters = searchTerm !== "" || statusFilter !== "all" || typeFilter !== "all" || gradeFilter !== "all";
+  const hasActiveFilters = searchTerm !== "" || statusFilter.length > 0 || typeFilter.length > 0 || gradeFilter.length > 0 || sizeTypeFilter.length > 0;
 
   // Determine API endpoints based on user role
   const isClient = user?.role === 'client';
@@ -141,6 +143,21 @@ export default function Containers() {
   const totalCount = containersData?.totalCount || (Array.isArray(containersData) ? containersData.length : 0) || allContainers.length;
   const isUsingPagination = containersData?.isPaginated || false;
 
+  // Get unique size types for filter
+  const uniqueSizeTypes = useMemo(() => {
+    const types = new Set<string>();
+    // Use allContainers if available (for admins), otherwise use current containers (for clients)
+    const source = isClient ? containers : allContainers;
+
+    if (Array.isArray(source)) {
+      source.forEach((c: any) => {
+        const type = c.excelMetadata?.sizeType || c.sizeType || c.size_type;
+        if (type) types.add(type);
+      });
+    }
+    return Array.from(types).sort();
+  }, [containers, allContainers, isClient]);
+
   const filteredAndSortedContainers = useMemo(() => {
     if (!Array.isArray(containers)) {
       return [];
@@ -183,20 +200,27 @@ export default function Containers() {
           location.includes(search) ||
           depot.includes(search);
 
-        const matchesStatus = statusFilter === "all" ||
-          (statusFilter === "deployed" && ((container as any).inventoryStatus === "DEPLOYED" || (container as any).inventory_status === "DEPLOYED" || metadata.status === "DEPLOYED")) ||
-          (statusFilter === "sale" && ((container as any).inventoryStatus === "SALE" || (container as any).inventory_status === "SALE" || metadata.status === "SALE")) ||
-          (statusFilter === "sold" && ((container as any).inventoryStatus === "SOLD" || (container as any).inventory_status === "SOLD" || metadata.status === "SOLD")) ||
-          (statusFilter === "maintenance" && (container.status === "maintenance" || (container as any).inventoryStatus === "maintenance" || (container as any).inventory_status === "maintenance"));
+        const matchesStatus = statusFilter.length === 0 ||
+          statusFilter.some(status =>
+            (status === "deployed" && ((container as any).inventoryStatus === "DEPLOYED" || (container as any).inventory_status === "DEPLOYED" || metadata.status === "DEPLOYED")) ||
+            (status === "sale" && ((container as any).inventoryStatus === "SALE" || (container as any).inventory_status === "SALE" || metadata.status === "SALE")) ||
+            (status === "sold" && ((container as any).inventoryStatus === "SOLD" || (container as any).inventory_status === "SOLD" || metadata.status === "SOLD")) ||
+            (status === "maintenance" && (container.status === "maintenance" || (container as any).inventoryStatus === "maintenance" || (container as any).inventory_status === "maintenance"))
+          );
 
-        const matchesType = typeFilter === "all" ||
-          (typeFilter === "reefer" && ((container as any).productType === "Reefer" || (container as any).product_type === "Reefer" || metadata.productType === "Reefer")) ||
-          (typeFilter === "dry" && ((container as any).productType === "Dry" || (container as any).product_type === "Dry" || metadata.productType === "Dry"));
+        const matchesType = typeFilter.length === 0 ||
+          typeFilter.some(type =>
+            (type === "reefer" && ((container as any).productType === "Reefer" || (container as any).product_type === "Reefer" || metadata.productType === "Reefer")) ||
+            (type === "dry" && ((container as any).productType === "Dry" || (container as any).product_type === "Dry" || metadata.productType === "Dry"))
+          );
 
-        const matchesGrade = gradeFilter === "all" ||
-          ((container as any).grade === gradeFilter.toUpperCase() || metadata.grade === gradeFilter.toUpperCase());
+        const matchesGrade = gradeFilter.length === 0 ||
+          gradeFilter.some(grade => (container as any).grade === grade.toUpperCase() || metadata.grade === grade.toUpperCase());
 
-        return matchesSearch && matchesStatus && matchesType && matchesGrade;
+        const matchesSizeType = sizeTypeFilter.length === 0 ||
+          sizeTypeFilter.some(sizeType => (container as any).sizeType === sizeType || (container as any).size_type === sizeType || metadata.sizeType === sizeType);
+
+        return matchesSearch && matchesStatus && matchesType && matchesGrade && matchesSizeType;
       } catch (err) {
         console.error("Error filtering container:", container, err);
         return false;
@@ -246,7 +270,7 @@ export default function Containers() {
   // Reset to page 1 when filters change or pagination mode changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, typeFilter, gradeFilter, itemsPerPage, hasActiveFilters]);
+  }, [searchTerm, statusFilter, typeFilter, gradeFilter, sizeTypeFilter, itemsPerPage, hasActiveFilters]);
 
   const getStatusBadge = (status: string) => {
     const statusMap = {
@@ -377,40 +401,47 @@ export default function Containers() {
                   className="pl-10 bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 focus:bg-white dark:focus:bg-black/40 transition-all rounded-xl"
                 />
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 rounded-xl">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="deployed">Deployed</SelectItem>
-                  <SelectItem value="sale">For Sale</SelectItem>
-                  <SelectItem value="sold">Sold</SelectItem>
-                  <SelectItem value="maintenance">Maintenance</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 rounded-xl">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="reefer">Reefer</SelectItem>
-                  <SelectItem value="dry">Dry</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={gradeFilter} onValueChange={setGradeFilter}>
-                <SelectTrigger className="bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 rounded-xl">
-                  <SelectValue placeholder="Grade" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Grades</SelectItem>
-                  <SelectItem value="a">Grade A</SelectItem>
-                  <SelectItem value="b">Grade B</SelectItem>
-                  <SelectItem value="c">Grade C</SelectItem>
-                  <SelectItem value="d">Grade D</SelectItem>
-                </SelectContent>
-              </Select>
+              <MultiSelectCombobox
+                options={[
+                  { value: "deployed", label: "Deployed" },
+                  { value: "sale", label: "For Sale" },
+                  { value: "sold", label: "Sold" },
+                  { value: "maintenance", label: "Maintenance" }
+                ]}
+                selectedValues={statusFilter}
+                onSelectedValuesChange={setStatusFilter}
+                placeholder="Status"
+                searchPlaceholder="Search status..."
+              />
+              <MultiSelectCombobox
+                options={[
+                  { value: "reefer", label: "Reefer" },
+                  { value: "dry", label: "Dry" }
+                ]}
+                selectedValues={typeFilter}
+                onSelectedValuesChange={setTypeFilter}
+                placeholder="Type"
+                searchPlaceholder="Search type..."
+              />
+              <MultiSelectCombobox
+                options={uniqueSizeTypes.map(type => ({ value: type, label: type }))}
+                selectedValues={sizeTypeFilter}
+                onSelectedValuesChange={setSizeTypeFilter}
+                placeholder="Size/Type"
+                searchPlaceholder="Search size..."
+              />
+              <MultiSelectCombobox
+                options={[
+                  { value: "a", label: "Grade A" },
+                  { value: "b", label: "Grade B" },
+                  { value: "c", label: "Grade C" },
+                  { value: "d", label: "Grade D" }
+                ]}
+                selectedValues={gradeFilter}
+                onSelectedValuesChange={setGradeFilter}
+                placeholder="Grade"
+                searchPlaceholder="Search grade..."
+              />
               <Select value={sortBy} onValueChange={setSortBy}>
                 <SelectTrigger className="bg-white/50 dark:bg-black/20 border-transparent focus:border-primary/30 rounded-xl">
                   <SelectValue placeholder="Sort By" />
