@@ -170,7 +170,8 @@ app.use((req, res, next) => {
   console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
   console.log('[SERVER] ENABLE_ORBCOMM_DEV:', process.env.ENABLE_ORBCOMM_DEV);
 
-  if (process.env.NODE_ENV !== 'development' || process.env.ENABLE_ORBCOMM_DEV === 'true' || process.env.FORCE_ORBCOMM_DEV === 'true') {
+  // Temporarily disabled Orbcomm in dev to fix stability
+  if (process.env.NODE_ENV !== 'development') { // || process.env.ENABLE_ORBCOMM_DEV === 'true' || process.env.FORCE_ORBCOMM_DEV === 'true') {
     // console.log('[SERVER] Initializing Orbcomm connection...');
     // try {
     //   await initializeOrbcommConnection();

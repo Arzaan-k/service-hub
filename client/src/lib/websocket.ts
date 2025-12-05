@@ -35,12 +35,30 @@ class WebSocketClient {
     } else if (import.meta.env.VITE_WEBSOCKET_URL) {
       wsUrl = import.meta.env.VITE_WEBSOCKET_URL;
     } else {
-      // Always connect to backend on port 5000
+      // Always connect to backend on port 5000 with /ws path
       const hostname = window.location.hostname || 'localhost';
       wsUrl = `${protocol}//${hostname}:5000/ws`;
     }
 
-    console.log('Connecting to WebSocket:', wsUrl);
+    // Safety check for undefined port in URL (fixes issue where env var might be malformed)
+    if (wsUrl.includes('undefined')) {
+      console.warn('Detected undefined port in WebSocket URL, falling back to default');
+      const hostname = window.location.hostname || 'localhost';
+      wsUrl = `${protocol}//${hostname}:5000/ws`;
+    }
+
+    // Ensure URL has /ws path (some configurations might set URL without path)
+    if (!wsUrl.includes('/ws')) {
+      wsUrl = wsUrl.replace(/\/$/, '') + '/ws';
+    }
+
+    // Append token if userId is provided
+    if (userId) {
+      const separator = wsUrl.includes('?') ? '&' : '?';
+      wsUrl += `${separator}token=${encodeURIComponent(userId)}`;
+    }
+
+    console.log('Final WebSocket URL:', wsUrl);
 
     try {
       this.ws = new WebSocket(wsUrl);

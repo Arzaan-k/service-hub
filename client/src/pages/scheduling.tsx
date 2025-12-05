@@ -43,6 +43,7 @@ import {
   Phone,
   Wrench,
   FileText,
+  Save,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -185,6 +186,9 @@ export default function Scheduling() {
   const [showPDFPreview, setShowPDFPreview] = useState(false);
   const [pdfData, setPdfData] = useState<any>(null);
 
+  // State for editable miscellaneous cost in trip planning
+  const [editableMiscCost, setEditableMiscCost] = useState<number>(0);
+
   const { data: pendingRequests } = useQuery({
     queryKey: ["/api/service-requests/pending"],
     queryFn: async () => {
@@ -200,20 +204,31 @@ export default function Scheduling() {
     queryKey: ["/api/pm/overview"],
     queryFn: async () => {
       console.log('[PM Overview] Fetching data...');
-      const res = await apiRequest("GET", "/api/pm/overview");
-      const text = await res.text();
-      console.log('[PM Overview] Raw response:', text.substring(0, 500));
       try {
+        const res = await apiRequest("GET", "/api/pm/overview");
+        console.log('[PM Overview] Response status:', res.status);
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('[PM Overview] Error response:', errorText);
+          throw new Error(`HTTP ${res.status}: ${errorText}`);
+        }
+
+        const text = await res.text();
+        console.log('[PM Overview] Raw response:', text.substring(0, 500));
+
         const data = JSON.parse(text);
         console.log('[PM Overview] Parsed data:', data);
         return data;
-      } catch (e) {
-        console.error('[PM Overview] JSON parse error:', e);
-        throw new Error('Invalid JSON response from server');
+      } catch (e: any) {
+        console.error('[PM Overview] Fetch error:', e);
+        throw e;
       }
     },
-    enabled: canSchedule && activeTab === "pm-overview",
+    enabled: canSchedule,
     staleTime: 30000,
+    retry: 2,
+    retryDelay: 1000,
   });
 
   const internalTechnicianIds = useMemo(() => {
@@ -267,7 +282,7 @@ export default function Scheduling() {
         if (!res.ok) throw new Error("Failed to fetch cities");
         const data = await res.json();
         // Ensure data is in the expected format: array of { name: string }
-        return Array.isArray(data) ? data.map((item: any) => 
+        return Array.isArray(data) ? data.map((item: any) =>
           typeof item === 'string' ? { name: item } : item
         ) : [];
       } catch {
@@ -301,9 +316,10 @@ export default function Scheduling() {
       miscCost?: { value: number | string };
       totalEstimatedCost?: number | string;
     };
+    trip_id?: string;
   } | null>(null);
   const [costDraft, setCostDraft] = useState<CostState | null>(null);
-    const [taskDraft, setTaskDraft] = useState<TaskDraft[]>([]);
+  const [taskDraft, setTaskDraft] = useState<TaskDraft[]>([]);
   const [planPurpose, setPlanPurpose] = useState("pm");
   const [planNotes, setPlanNotes] = useState("");
   const [pmFilter, setPmFilter] = useState<"all" | "needs_pm" | "overdue" | "never" | "due_soon" | "up_to_date">("overdue");
@@ -330,6 +346,13 @@ export default function Scheduling() {
       setSelectedPmTaskIds(allTaskIds);
     } else {
       setSelectedPmTaskIds(new Set());
+    }
+  }, [pmPlanData]);
+
+  // Initialize editableMiscCost when pmPlanData changes
+  useEffect(() => {
+    if (pmPlanData && (pmPlanData as any).costs) {
+      setEditableMiscCost(Number((pmPlanData as any).costs.miscCost?.value || 0));
     }
   }, [pmPlanData]);
 
@@ -409,18 +432,40 @@ export default function Scheduling() {
         ...day,
         tasks: day.tasks.filter(task => selectedPmTaskIds.has(task.id))
       })).filter(day => day.tasks.length > 0);
-      
-      const filteredPlan = {
-        ...pmPlanData,
-        dailyPlan: filteredDailyPlan,
-        pmCount: selectedPmTaskIds.size,
+
+      // Convert to SaveTripPayload format
+      const tripPayload = {
+        tripId: pmPlanData.trip_id,
+        technicianId: pmPlanData.techId,
+        destinationCity: pmPlanData.city,
+        startDate: pmPlanData.range.start,
+        endDate: pmPlanData.range.end,
+        origin: pmPlanData.origin || "Base Location",
+        purpose: "pm",
+        currency: "INR",
+        miscellaneousAmount: 0, // Default value, will be editable in trip details
+        tasks: filteredDailyPlan.flatMap(day =>
+          day.tasks.map(task => ({
+            containerId: task.containerId,
+            taskType: task.type === 'PM' ? 'pm' : 'inspection',
+            priority: task.priority || 'normal',
+            scheduledDate: new Date(day.date).toISOString().split('T')[0], // Ensure proper date format
+            estimatedDurationHours: task.estimatedDuration || 2,
+            siteName: task.siteName,
+            source: 'auto-plan',
+            isManual: false
+          }))
+        ),
+        costs: {
+          travelFare: { value: pmPlanData.costs?.travelAllowance || 0 },
+          stayCost: { value: pmPlanData.costs?.hotelAllowance || 0 },
+          dailyAllowance: { value: pmPlanData.costs?.dailyAllowance || 0 },
+          localTravelCost: { value: pmPlanData.costs?.localTravelAllowance || 0 },
+          miscCost: { value: pmPlanData.costs?.miscellaneous || 0 }
+        }
       };
-      
-      const res = await apiRequest("POST", "/api/scheduling/confirm-trip", {
-        techId: pmPlanData.techId,
-        plan: filteredPlan,
-        selectedTaskIds: Array.from(selectedPmTaskIds),
-      });
+
+      const res = await apiRequest("POST", "/api/scheduling/confirm-trip", tripPayload);
       if (!res.ok) {
         const errorText = await res.text();
         let errorMessage = "Failed to confirm trip";
@@ -556,21 +601,21 @@ export default function Scheduling() {
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
       queryClient.invalidateQueries({ queryKey: ["/api/technicians"] });
       queryClient.invalidateQueries({ queryKey: ["/api/technicians/assigned-services-summary"] });
-      
+
       const assignedCount = data?.assigned?.length || 0;
       const skippedCount = data?.skipped?.length || 0;
       const totalCount = assignedCount + skippedCount;
-      
+
       if (assignedCount > 0) {
         // Show success notification with distribution summary
         const distributionInfo = data?.distributionSummary?.length > 0 || data?.byTechnician?.length > 0
           ? `\nDistribution: ${(data.distributionSummary || data.byTechnician || []).map((d: any) => {
-              const count = d.newAssignments || d.countAssigned || 0;
-              const name = d.name || d.technicianId?.slice(0, 8) || d.techId?.slice(0, 8) || 'tech';
-              return count > 0 ? `${count} to ${name}` : null;
-            }).filter(Boolean).join(', ')}`
+            const count = d.newAssignments || d.countAssigned || 0;
+            const name = d.name || d.technicianId?.slice(0, 8) || d.techId?.slice(0, 8) || 'tech';
+            return count > 0 ? `${count} to ${name}` : null;
+          }).filter(Boolean).join(', ')}`
           : '';
-        
+
         toast({
           title: "Successfully auto-assigned requests.",
           description: `Assigned ${assignedCount} request${assignedCount === 1 ? '' : 's'}${skippedCount > 0 ? `, ${skippedCount} skipped` : ''}${distributionInfo}`,
@@ -594,14 +639,14 @@ export default function Scheduling() {
     onError: (error: any) => {
       const errorMessage = error?.response?.data?.error || error?.message || "Failed to run auto-assignment";
       const errorCode = error?.response?.data?.code;
-      
+
       toast({
         title: "Auto-Scheduling Failed",
-        description: errorCode === 'NO_INTERNAL_TECHNICIANS' 
+        description: errorCode === 'NO_INTERNAL_TECHNICIANS'
           ? "No internal technicians available. Please ensure technicians have category = 'internal' and are available."
           : errorCode === 'NO_UNASSIGNED_SERVICE_REQUESTS'
-          ? "No unassigned requests found. All requests are already assigned."
-          : errorMessage,
+            ? "No unassigned requests found. All requests are already assigned."
+            : errorMessage,
         variant: "destructive",
       });
     },
@@ -660,10 +705,10 @@ export default function Scheduling() {
     mutationFn: async (payload: { customerId: string; technicianId: string; scheduledDate: string; containerIds?: string[] }) => {
       // Check if it's a third-party technician
       const isThirdParty = payload.technicianId.startsWith('thirdparty:');
-      const actualTechId = isThirdParty 
-        ? payload.technicianId.replace('thirdparty:', '') 
+      const actualTechId = isThirdParty
+        ? payload.technicianId.replace('thirdparty:', '')
         : payload.technicianId;
-      
+
       const res = await apiRequest("POST", "/api/pm/assign-client-bulk", {
         customerId: payload.customerId,
         technicianId: actualTechId,
@@ -757,21 +802,9 @@ export default function Scheduling() {
   const generateTripPDF = useMutation({
     mutationFn: async () => {
       if (!pmPlanData) throw new Error("No trip data available");
-
-      const pdfData = {
-        tripData: pmPlanData,
-        technician: technicians?.find((t: any) => t.id === pmPlanData.techId),
-        selectedTasks: Array.from(selectedPmTaskIds),
-        generatedAt: new Date().toISOString(),
-        generatedBy: getCurrentUser()?.name || 'System',
-      };
-
-      const res = await apiRequest("POST", "/api/trips/generate-finance-pdf", pdfData);
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to generate PDF");
-      }
-      return await res.json();
+      // We generate the preview locally using the data we already have
+      // The API endpoint returns a PDF file which causes JSON parse error if we try to read it here
+      return { success: true };
     },
     onSuccess: (data) => {
       // Prepare data for PDF component
@@ -824,8 +857,8 @@ export default function Scheduling() {
           totalAllowance: Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)) * ((technician?.hotelAllowance || 0) + (technician?.localTravelAllowance || 0)),
           totalAdditional: Math.round((selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) * 0.08),
           totalCost: (selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) +
-                    Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)) * ((technician?.hotelAllowance || 0) + (technician?.localTravelAllowance || 0)) +
-                    Math.round((selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) * 0.08)
+            Math.ceil(selectedTasks.length / (technician?.tasksPerDay || 3)) * ((technician?.hotelAllowance || 0) + (technician?.localTravelAllowance || 0)) +
+            Math.round((selectedServiceRequests.length * serviceRate + pmContainers.length * pmRate) * 0.08)
         }
       };
 
@@ -870,7 +903,7 @@ export default function Scheduling() {
         action: data.action || "Move to Maintenance Bay",
       });
       setShowPmDialog(true);
-      
+
       // Show toast notification
       toast({
         title: "Preventive Maintenance Alert",
@@ -899,11 +932,11 @@ export default function Scheduling() {
       // For now, just close the dialog and refresh data
       setShowPmDialog(false);
       setPmAlert(null);
-      
+
       // Refresh service requests
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/service-requests/pending"] });
-      
+
       toast({
         title: "PM Alert Acknowledged",
         description: `Service request ${pmAlert.requestNumber} has been created for Container ${pmAlert.containerCode}`,
@@ -1031,190 +1064,190 @@ export default function Scheduling() {
                 </div>
               </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-            <Card className="card-surface hover:shadow-soft transition-all">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                    <Calendar className="h-5 w-5 text-blue-200" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">
-                      {scheduledRequests.length}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Scheduled Services</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="card-surface hover:shadow-soft transition-all">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
-                    <User className="h-5 w-5 text-green-200" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">
-                      {technicians?.filter((t: any) => t.status === 'available' || t.status === 'on_duty').length || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Active Technicians</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {canSchedule && (
-              <Card className="card-surface hover:shadow-soft transition-all">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
-                      <AlertCircle className="h-5 w-5 text-orange-200" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-foreground">
-                        {derivedPendingRequests.length}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Pending Requests</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {canSchedule && (
-              <Card className="card-surface hover:shadow-soft transition-all">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                      <CheckCircle className="h-5 w-5 text-purple-200" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-foreground">85%</p>
-                      <p className="text-xs text-muted-foreground">Optimization Score</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          {/* Technician Schedules */}
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            </div>
-          ) : technicianSchedules.length === 0 ? (
-            <Card>
-              <CardContent className="p-12 text-center">
-                <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-foreground mb-2">
-                  No Schedule for this Date
-                </h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {canSchedule ? "Run auto-assignment to schedule pending requests" : "Schedule will appear here when generated"}
-                </p>
-                {canSchedule && (
-                  <Button onClick={handleRunOptimization} disabled={runOptimization.isPending}>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Auto-Assign Requests
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-6">
-              {technicianSchedules.map((techSchedule: any) => (
-                <Card
-                  key={techSchedule.technician.id}
-                  className="card-surface hover:shadow-soft transition-all cursor-pointer"
-                  onClick={() => {
-                    setSelectedTechnicianId(techSchedule.technician.id);
-                    setShowTechnicianDetailsModal(true);
-                  }}
-                >
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                          <User className="h-6 w-6 text-primary" />
-                        </div>
-                        <div>
-                          <CardTitle>{techSchedule.technician.name}</CardTitle>
-                          <p className="text-sm text-muted-foreground">
-                            {techSchedule.services.length} services scheduled
-                          </p>
-                        </div>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                <Card className="card-surface hover:shadow-soft transition-all">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                        <Calendar className="h-5 w-5 text-blue-200" />
                       </div>
-                      <Badge className="bg-blue-500/20 text-blue-400 border-blue-400/30 border">
-                        {techSchedule.services.reduce(
-                          (total: number, s: any) =>
-                            total + (s.estimatedDuration || 90),
-                          0
-                        )}{" "}
-                        min
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {techSchedule.services
-                        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-                        .map((service: any, index: number) => (
-                          <div
-                            key={service.id}
-                            className="flex items-start gap-4 p-4 border rounded-lg transition-colors"
-                            style={{ borderColor: '#FFE0D6', background: 'white' }}
-                          >
-                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm">
-                              {index + 1}
-                            </div>
-                            <div className="flex-1 space-y-2">
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <h4 className="font-medium text-foreground">
-                                    {service.container?.containerCode || service.containerId}
-                                  </h4>
-                                  <p className="text-sm text-muted-foreground">
-                                    SR #{service.requestNumber}
-                                  </p>
-                                </div>
-                                <div className="flex gap-2">
-                                  <Badge className={`${getPriorityBadge(service.priority)} border text-xs`}>
-                                    {service.priority}
-                                  </Badge>
-                                  <Badge className={`${getStatusBadge(service.status)} border text-xs`}>
-                                    {service.status}
-                                  </Badge>
-                                </div>
-                              </div>
-                              <p className="text-sm text-foreground">
-                                {service.issueDescription}
-                              </p>
-                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                <div className="flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  {service.scheduledTimeWindow || 'ASAP'}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Package className="h-3 w-3" />
-                                  {service.estimatedDuration || 90} min
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <MapPin className="h-3 w-3" />
-                                  {service.scheduledDate ? new Date(service.scheduledDate).toLocaleDateString() : 'Not scheduled'}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
+                      <div>
+                        <p className="text-2xl font-bold text-foreground">
+                          {scheduledRequests.length}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Scheduled Services</p>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
-          )}
+
+                <Card className="card-surface hover:shadow-soft transition-all">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                        <User className="h-5 w-5 text-green-200" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-foreground">
+                          {technicians?.filter((t: any) => t.status === 'available' || t.status === 'on_duty').length || 0}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Active Technicians</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {canSchedule && (
+                  <Card className="card-surface hover:shadow-soft transition-all">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                          <AlertCircle className="h-5 w-5 text-orange-200" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold text-foreground">
+                            {derivedPendingRequests.length}
+                          </p>
+                          <p className="text-xs text-muted-foreground">Pending Requests</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {canSchedule && (
+                  <Card className="card-surface hover:shadow-soft transition-all">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                          <CheckCircle className="h-5 w-5 text-purple-200" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold text-foreground">85%</p>
+                          <p className="text-xs text-muted-foreground">Optimization Score</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+
+              {/* Technician Schedules */}
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+                </div>
+              ) : technicianSchedules.length === 0 ? (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-foreground mb-2">
+                      No Schedule for this Date
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      {canSchedule ? "Run auto-assignment to schedule pending requests" : "Schedule will appear here when generated"}
+                    </p>
+                    {canSchedule && (
+                      <Button onClick={handleRunOptimization} disabled={runOptimization.isPending}>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Auto-Assign Requests
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-6">
+                  {technicianSchedules.map((techSchedule: any) => (
+                    <Card
+                      key={techSchedule.technician.id}
+                      className="card-surface hover:shadow-soft transition-all cursor-pointer"
+                      onClick={() => {
+                        setSelectedTechnicianId(techSchedule.technician.id);
+                        setShowTechnicianDetailsModal(true);
+                      }}
+                    >
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                              <User className="h-6 w-6 text-primary" />
+                            </div>
+                            <div>
+                              <CardTitle>{techSchedule.technician.name}</CardTitle>
+                              <p className="text-sm text-muted-foreground">
+                                {techSchedule.services.length} services scheduled
+                              </p>
+                            </div>
+                          </div>
+                          <Badge className="bg-blue-500/20 text-blue-400 border-blue-400/30 border">
+                            {techSchedule.services.reduce(
+                              (total: number, s: any) =>
+                                total + (s.estimatedDuration || 90),
+                              0
+                            )}{" "}
+                            min
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {techSchedule.services
+                            .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                            .map((service: any, index: number) => (
+                              <div
+                                key={service.id}
+                                className="flex items-start gap-4 p-4 border rounded-lg transition-colors"
+                                style={{ borderColor: '#FFE0D6', background: 'white' }}
+                              >
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-medium text-sm">
+                                  {index + 1}
+                                </div>
+                                <div className="flex-1 space-y-2">
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <h4 className="font-medium text-foreground">
+                                        {service.container?.containerCode || service.containerId}
+                                      </h4>
+                                      <p className="text-sm text-muted-foreground">
+                                        SR #{service.requestNumber}
+                                      </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Badge className={`${getPriorityBadge(service.priority)} border text-xs`}>
+                                        {service.priority}
+                                      </Badge>
+                                      <Badge className={`${getStatusBadge(service.status)} border text-xs`}>
+                                        {service.status}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                  <p className="text-sm text-foreground">
+                                    {service.issueDescription}
+                                  </p>
+                                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                    <div className="flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      {service.scheduledTimeWindow || 'ASAP'}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Package className="h-3 w-3" />
+                                      {service.estimatedDuration || 90} min
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <MapPin className="h-3 w-3" />
+                                      {service.scheduledDate ? new Date(service.scheduledDate).toLocaleDateString() : 'Not scheduled'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </TabsContent>
 
             {/* PM Overview Tab */}
@@ -1262,8 +1295,8 @@ export default function Scheduling() {
                       className="gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700"
                     >
                       <Users className="h-4 w-4" />
-                      {selectedContainerIds.size > 0 
-                        ? `Assign ${selectedContainerIds.size} Selected` 
+                      {selectedContainerIds.size > 0
+                        ? `Assign ${selectedContainerIds.size} Selected`
                         : `Assign All ${clientPmContainers.summary.pendingPm} Pending`}
                     </Button>
                   )}
@@ -1466,65 +1499,65 @@ export default function Scheduling() {
                                   const needsPm = container.pmStatus === 'NEVER' || container.pmStatus === 'OVERDUE' || container.pmStatus === 'DUE_SOON';
                                   const isSelected = selectedContainerIds.has(container.id);
                                   return (
-                                  <TableRow key={container.id} className={`
+                                    <TableRow key={container.id} className={`
                                     ${container.pmStatus === 'NEVER' ? 'bg-red-500/5' :
-                                    container.pmStatus === 'OVERDUE' ? 'bg-orange-500/5' :
-                                    container.pmStatus === 'DUE_SOON' ? 'bg-yellow-500/5' : ''}
+                                        container.pmStatus === 'OVERDUE' ? 'bg-orange-500/5' :
+                                          container.pmStatus === 'DUE_SOON' ? 'bg-yellow-500/5' : ''}
                                     ${isSelected ? 'ring-2 ring-blue-400 ring-inset bg-blue-500/10' : ''}
                                   `}>
-                                    <TableCell>
-                                      {needsPm && (
-                                        <Checkbox
-                                          checked={isSelected}
-                                          onCheckedChange={(checked) => {
-                                            const newSet = new Set(selectedContainerIds);
-                                            if (checked) {
-                                              newSet.add(container.id);
-                                            } else {
-                                              newSet.delete(container.id);
-                                            }
-                                            setSelectedContainerIds(newSet);
-                                          }}
-                                        />
-                                      )}
-                                    </TableCell>
-                                    <TableCell className="font-mono font-medium">
-                                      {container.containerId}
-                                    </TableCell>
-                                    <TableCell>{container.depot || '-'}</TableCell>
-                                    <TableCell>
-                                      {container.lastPmDate 
-                                        ? new Date(container.lastPmDate).toLocaleDateString('en-IN', {
+                                      <TableCell>
+                                        {needsPm && (
+                                          <Checkbox
+                                            checked={isSelected}
+                                            onCheckedChange={(checked) => {
+                                              const newSet = new Set(selectedContainerIds);
+                                              if (checked) {
+                                                newSet.add(container.id);
+                                              } else {
+                                                newSet.delete(container.id);
+                                              }
+                                              setSelectedContainerIds(newSet);
+                                            }}
+                                          />
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="font-mono font-medium">
+                                        {container.containerId}
+                                      </TableCell>
+                                      <TableCell>{container.depot || '-'}</TableCell>
+                                      <TableCell>
+                                        {container.lastPmDate
+                                          ? new Date(container.lastPmDate).toLocaleDateString('en-IN', {
                                             day: '2-digit',
                                             month: 'short',
                                             year: 'numeric'
                                           })
-                                        : <span className="text-red-400 font-medium">Never</span>}
-                                    </TableCell>
-                                    <TableCell>
-                                      {container.daysSincePm !== null 
-                                        ? <span className={container.daysSincePm > 90 ? 'text-orange-400 font-medium' : ''}>
+                                          : <span className="text-red-400 font-medium">Never</span>}
+                                      </TableCell>
+                                      <TableCell>
+                                        {container.daysSincePm !== null
+                                          ? <span className={container.daysSincePm > 90 ? 'text-orange-400 font-medium' : ''}>
                                             {container.daysSincePm} days
                                           </span>
-                                        : <span className="text-red-400">-</span>}
-                                    </TableCell>
-                                    <TableCell>{container.pmCount || 0}</TableCell>
-                                    <TableCell>
-                                      <Badge
-                                        className={
-                                          container.pmStatus === 'NEVER' ? 'bg-red-600' :
-                                          container.pmStatus === 'OVERDUE' ? 'bg-orange-600' :
-                                          container.pmStatus === 'DUE_SOON' ? 'bg-yellow-600 text-black' :
-                                          'bg-green-600'
-                                        }
-                                      >
-                                        {container.pmStatus === 'NEVER' ? 'Never PM\'d' :
-                                         container.pmStatus === 'OVERDUE' ? 'Overdue' :
-                                         container.pmStatus === 'DUE_SOON' ? 'Due Soon' :
-                                         'Up to Date'}
-                                      </Badge>
-                                    </TableCell>
-                                  </TableRow>
+                                          : <span className="text-red-400">-</span>}
+                                      </TableCell>
+                                      <TableCell>{container.pmCount || 0}</TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          className={
+                                            container.pmStatus === 'NEVER' ? 'bg-red-600' :
+                                              container.pmStatus === 'OVERDUE' ? 'bg-orange-600' :
+                                                container.pmStatus === 'DUE_SOON' ? 'bg-yellow-600 text-black' :
+                                                  'bg-green-600'
+                                          }
+                                        >
+                                          {container.pmStatus === 'NEVER' ? 'Never PM\'d' :
+                                            container.pmStatus === 'OVERDUE' ? 'Overdue' :
+                                              container.pmStatus === 'DUE_SOON' ? 'Due Soon' :
+                                                'Up to Date'}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
                                   );
                                 })}
                               </TableBody>
@@ -1558,7 +1591,7 @@ export default function Scheduling() {
               {/* PM Summary Cards - Clickable Filters (only when no client selected) */}
               {!selectedClient && pmOverview?.success && pmOverview?.summary && (
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <Card 
+                  <Card
                     className={`border-l-4 border-l-gray-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'all' ? 'ring-2 ring-gray-400 bg-gray-500/20' : 'hover:bg-gray-500/10'}`}
                     onClick={() => setPmFilter('all')}
                   >
@@ -1567,7 +1600,7 @@ export default function Scheduling() {
                       <p className="text-xs text-muted-foreground">Total Containers</p>
                     </CardContent>
                   </Card>
-                  <Card 
+                  <Card
                     className={`border-l-4 border-l-red-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'never' ? 'ring-2 ring-red-400 bg-red-500/30' : 'bg-red-500/10 hover:bg-red-500/20'}`}
                     onClick={() => setPmFilter('never')}
                   >
@@ -1576,7 +1609,7 @@ export default function Scheduling() {
                       <p className="text-xs text-muted-foreground">Never PM'd</p>
                     </CardContent>
                   </Card>
-                  <Card 
+                  <Card
                     className={`border-l-4 border-l-orange-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'overdue' ? 'ring-2 ring-orange-400 bg-orange-500/30' : 'bg-orange-500/10 hover:bg-orange-500/20'}`}
                     onClick={() => setPmFilter('overdue')}
                   >
@@ -1585,7 +1618,7 @@ export default function Scheduling() {
                       <p className="text-xs text-muted-foreground">Overdue (90+ days)</p>
                     </CardContent>
                   </Card>
-                  <Card 
+                  <Card
                     className={`border-l-4 border-l-yellow-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'due_soon' ? 'ring-2 ring-yellow-400 bg-yellow-500/30' : 'bg-yellow-500/10 hover:bg-yellow-500/20'}`}
                     onClick={() => setPmFilter('due_soon')}
                   >
@@ -1594,7 +1627,7 @@ export default function Scheduling() {
                       <p className="text-xs text-muted-foreground">Due Soon (75-90 days)</p>
                     </CardContent>
                   </Card>
-                  <Card 
+                  <Card
                     className={`border-l-4 border-l-green-500 cursor-pointer transition-all hover:scale-[1.02] ${pmFilter === 'up_to_date' ? 'ring-2 ring-green-400 bg-green-500/30' : 'bg-green-500/10 hover:bg-green-500/20'}`}
                     onClick={() => setPmFilter('up_to_date')}
                   >
@@ -1632,11 +1665,11 @@ export default function Scheduling() {
                       <AlertTriangle className="h-5 w-5" />
                       Containers {
                         pmFilter === 'all' ? '- All' :
-                        pmFilter === 'never' ? '- Never PM\'d' :
-                        pmFilter === 'overdue' ? '- Overdue' :
-                        pmFilter === 'due_soon' ? '- Due Soon' :
-                        pmFilter === 'up_to_date' ? '- Up to Date' :
-                        pmFilter === 'needs_pm' ? '- Needing PM' : ''
+                          pmFilter === 'never' ? '- Never PM\'d' :
+                            pmFilter === 'overdue' ? '- Overdue' :
+                              pmFilter === 'due_soon' ? '- Due Soon' :
+                                pmFilter === 'up_to_date' ? '- Up to Date' :
+                                  pmFilter === 'needs_pm' ? '- Needing PM' : ''
                       }
                       <Badge variant="outline" className="ml-2">
                         {(() => {
@@ -1682,82 +1715,82 @@ export default function Scheduling() {
                             })
                             .slice(0, 100)
                             .map((container: any) => (
-                            <TableRow key={container.id} className={
-                              container.pm_status === 'NEVER' ? 'bg-red-500/5' :
-                              container.pm_status === 'OVERDUE' ? 'bg-orange-500/5' :
-                              ''
-                            }>
-                              <TableCell className="font-mono font-medium">
-                                {container.container_id}
-                              </TableCell>
-                              <TableCell>{container.customer_name || '-'}</TableCell>
-                              <TableCell>{container.depot || '-'}</TableCell>
-                              <TableCell>
-                                {container.last_pm_date 
-                                  ? new Date(container.last_pm_date).toLocaleDateString('en-IN', {
+                              <TableRow key={container.id} className={
+                                container.pm_status === 'NEVER' ? 'bg-red-500/5' :
+                                  container.pm_status === 'OVERDUE' ? 'bg-orange-500/5' :
+                                    ''
+                              }>
+                                <TableCell className="font-mono font-medium">
+                                  {container.container_id}
+                                </TableCell>
+                                <TableCell>{container.customer_name || '-'}</TableCell>
+                                <TableCell>{container.depot || '-'}</TableCell>
+                                <TableCell>
+                                  {container.last_pm_date
+                                    ? new Date(container.last_pm_date).toLocaleDateString('en-IN', {
                                       day: '2-digit',
                                       month: 'short',
                                       year: 'numeric'
                                     })
-                                  : <span className="text-red-400 font-medium">Never</span>}
-                              </TableCell>
-                              <TableCell>
-                                {container.days_since_pm !== null 
-                                  ? <span className={container.days_since_pm > 90 ? 'text-orange-400 font-medium' : ''}>
+                                    : <span className="text-red-400 font-medium">Never</span>}
+                                </TableCell>
+                                <TableCell>
+                                  {container.days_since_pm !== null
+                                    ? <span className={container.days_since_pm > 90 ? 'text-orange-400 font-medium' : ''}>
                                       {Math.round(container.days_since_pm)} days
                                     </span>
-                                  : <span className="text-red-400">-</span>}
-                              </TableCell>
-                              <TableCell>{container.pm_count || 0}</TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={
-                                    container.pm_status === 'NEVER' ? 'destructive' :
-                                    container.pm_status === 'OVERDUE' ? 'destructive' :
-                                    container.pm_status === 'DUE_SOON' ? 'secondary' :
-                                    'default'
-                                  }
-                                  className={
-                                    container.pm_status === 'NEVER' ? 'bg-red-600' :
-                                    container.pm_status === 'OVERDUE' ? 'bg-orange-600' :
-                                    container.pm_status === 'DUE_SOON' ? 'bg-yellow-600 text-black' :
-                                    'bg-green-600'
-                                  }
-                                >
-                                  {container.pm_status === 'NEVER' ? 'Never PM\'d' :
-                                   container.pm_status === 'OVERDUE' ? `Overdue (${Math.round(container.days_since_pm)}d)` :
-                                   container.pm_status === 'DUE_SOON' ? 'Due Soon' :
-                                   'Up to Date'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {(container.pm_status === 'NEVER' || container.pm_status === 'OVERDUE' || container.pm_status === 'DUE_SOON') && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="gap-1 text-xs border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
-                                    onClick={() => {
-                                      setSelectedPmContainer({
-                                        containerId: container.id,
-                                        containerCode: container.container_id,
-                                        depot: container.depot || '',
-                                        customerName: container.customer_name || '',
-                                        daysSincePm: container.days_since_pm,
-                                      });
-                                      setActiveTab("travel");
-                                      toast({
-                                        title: "Schedule PM",
-                                        description: `Navigate to Travel & Auto PM to schedule PM for ${container.container_id}${container.depot ? ` in ${container.depot}` : ''}`,
-                                      });
-                                    }}
+                                    : <span className="text-red-400">-</span>}
+                                </TableCell>
+                                <TableCell>{container.pm_count || 0}</TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={
+                                      container.pm_status === 'NEVER' ? 'destructive' :
+                                        container.pm_status === 'OVERDUE' ? 'destructive' :
+                                          container.pm_status === 'DUE_SOON' ? 'secondary' :
+                                            'default'
+                                    }
+                                    className={
+                                      container.pm_status === 'NEVER' ? 'bg-red-600' :
+                                        container.pm_status === 'OVERDUE' ? 'bg-orange-600' :
+                                          container.pm_status === 'DUE_SOON' ? 'bg-yellow-600 text-black' :
+                                            'bg-green-600'
+                                    }
                                   >
-                                    <Plane className="h-3 w-3" />
-                                    Schedule PM
-                                  </Button>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                    {container.pm_status === 'NEVER' ? 'Never PM\'d' :
+                                      container.pm_status === 'OVERDUE' ? `Overdue (${Math.round(container.days_since_pm)}d)` :
+                                        container.pm_status === 'DUE_SOON' ? 'Due Soon' :
+                                          'Up to Date'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {(container.pm_status === 'NEVER' || container.pm_status === 'OVERDUE' || container.pm_status === 'DUE_SOON') && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="gap-1 text-xs border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+                                      onClick={() => {
+                                        setSelectedPmContainer({
+                                          containerId: container.id,
+                                          containerCode: container.container_id,
+                                          depot: container.depot || '',
+                                          customerName: container.customer_name || '',
+                                          daysSincePm: container.days_since_pm,
+                                        });
+                                        setActiveTab("travel");
+                                        toast({
+                                          title: "Schedule PM",
+                                          description: `Navigate to Travel & Auto PM to schedule PM for ${container.container_id}${container.depot ? ` in ${container.depot}` : ''}`,
+                                        });
+                                      }}
+                                    >
+                                      <Plane className="h-3 w-3" />
+                                      Schedule PM
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
                         </TableBody>
                       </Table>
                     </div>
@@ -1804,9 +1837,9 @@ export default function Scheduling() {
                     Click on a technician to see PM recommendations for their location
                   </p>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => refetchLocationOverview()}
                   disabled={locationLoading}
                 >
@@ -1828,13 +1861,12 @@ export default function Scheduling() {
                     </h3>
                     <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
                       {locationOverview.technicians?.map((tech: any) => (
-                        <Card 
+                        <Card
                           key={tech.id}
-                          className={`cursor-pointer transition-all hover:shadow-md ${
-                            selectedTechForSmartPlan?.id === tech.id 
-                              ? 'ring-2 ring-blue-500 bg-blue-500/5' 
-                              : 'hover:bg-muted/50'
-                          }`}
+                          className={`cursor-pointer transition-all hover:shadow-md ${selectedTechForSmartPlan?.id === tech.id
+                            ? 'ring-2 ring-blue-500 bg-blue-500/5'
+                            : 'hover:bg-muted/50'
+                            }`}
                           onClick={() => setSelectedTechForSmartPlan(
                             selectedTechForSmartPlan?.id === tech.id ? null : tech
                           )}
@@ -1936,9 +1968,8 @@ export default function Scheduling() {
                                   return (
                                     <div
                                       key={city}
-                                      className={`p-3 border rounded-lg cursor-pointer transition-all hover:bg-muted/50 ${
-                                        selectedCityForPlan === city ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''
-                                      }`}
+                                      className={`p-3 border rounded-lg cursor-pointer transition-all hover:bg-muted/50 ${selectedCityForPlan === city ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''
+                                        }`}
                                       onClick={() => setSelectedCityForPlan(selectedCityForPlan === city ? "" : city)}
                                       title={`${clients.join(', ')} — ${city}`}
                                     >
@@ -1975,11 +2006,10 @@ export default function Scheduling() {
                                 {Object.entries(selectedTechForSmartPlan.pmRecommendations || {}).map(([city, pm]: [string, any]) => (
                                   <div
                                     key={city}
-                                    className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                                      selectedCityForPlan === city
-                                        ? 'ring-2 ring-orange-500 bg-orange-500/10 border-orange-500'
-                                        : 'hover:bg-orange-500/5'
-                                    }`}
+                                    className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${selectedCityForPlan === city
+                                      ? 'ring-2 ring-orange-500 bg-orange-500/10 border-orange-500'
+                                      : 'hover:bg-orange-500/5'
+                                      }`}
                                     onClick={() => setSelectedCityForPlan(selectedCityForPlan === city ? "" : city)}
                                   >
                                     <div className="flex items-center justify-between mb-1">
@@ -2050,7 +2080,7 @@ export default function Scheduling() {
                                             <div className="flex items-center gap-3 mb-2">
                                               <Checkbox
                                                 checked={isClientFullySelected}
-                                                indeterminate={isClientPartiallySelected}
+                                                indeterminate={isClientPartiallySelected || undefined}
                                                 onCheckedChange={(checked) => {
                                                   const newSet = new Set(selectedPmTaskIds);
                                                   if (checked) {
@@ -2085,9 +2115,8 @@ export default function Scheduling() {
                                               {clientContainers.map((container: any) => (
                                                 <div
                                                   key={container.id}
-                                                  className={`flex items-center gap-2 p-2 rounded text-sm ${
-                                                    selectedPmTaskIds.has(container.id) ? 'bg-orange-50 dark:bg-orange-950/30' : 'opacity-75'
-                                                  }`}
+                                                  className={`flex items-center gap-2 p-2 rounded text-sm ${selectedPmTaskIds.has(container.id) ? 'bg-orange-50 dark:bg-orange-950/30' : 'opacity-75'
+                                                    }`}
                                                 >
                                                   <Checkbox
                                                     checked={selectedPmTaskIds.has(container.id)}
@@ -2105,14 +2134,14 @@ export default function Scheduling() {
                                                   <Badge
                                                     variant={
                                                       container.pmStatus === 'OVERDUE' ? 'destructive' :
-                                                      container.pmStatus === 'NEVER' ? 'destructive' :
-                                                      container.pmStatus === 'DUE_SOON' ? 'secondary' : 'outline'
+                                                        container.pmStatus === 'NEVER' ? 'destructive' :
+                                                          container.pmStatus === 'DUE_SOON' ? 'secondary' : 'outline'
                                                     }
                                                     className="text-xs"
                                                   >
                                                     {container.pmStatus === 'OVERDUE' ? 'Overdue' :
-                                                     container.pmStatus === 'NEVER' ? 'Never Done' :
-                                                     container.pmStatus === 'DUE_SOON' ? 'Due Soon' : 'Up to Date'}
+                                                      container.pmStatus === 'NEVER' ? 'Never Done' :
+                                                        container.pmStatus === 'DUE_SOON' ? 'Due Soon' : 'Up to Date'}
                                                   </Badge>
                                                   <span className="text-xs text-muted-foreground ml-auto">
                                                     {container.daysSincePm ? `${container.daysSincePm}d ago` : 'Never'}
@@ -2203,13 +2232,7 @@ export default function Scheduling() {
             {/* Technician Travel Tab */}
             <TabsContent value="travel" className="space-y-6 mt-6">
               {/* Planned Trips Section */}
-              <PlannedTripsList onTripSelected={(tripId) => {
-                // Could navigate to trip details or show in dialog
-                toast({
-                  title: "Trip Selected",
-                  description: `Selected trip ${tripId}`,
-                });
-              }} />
+              <PlannedTripsList />
 
               <div>
                 <h2 className="text-2xl font-bold text-foreground mb-2">Plan New Trip</h2>
@@ -2310,9 +2333,9 @@ export default function Scheduling() {
                       <div>
                         <Label className="text-muted-foreground">Technician</Label>
                         <p className="font-medium">
-                          {technicians?.find((t: any) => t.id === pmPlanData.techId)?.name || 
-                           technicians?.find((t: any) => t.id === pmPlanData.techId)?.employeeCode || 
-                           "Selected Technician"}
+                          {technicians?.find((t: any) => t.id === pmPlanData.techId)?.name ||
+                            technicians?.find((t: any) => t.id === pmPlanData.techId)?.employeeCode ||
+                            "Selected Technician"}
                         </p>
                       </div>
                       <div>
@@ -2349,11 +2372,58 @@ export default function Scheduling() {
                             <span className="text-muted-foreground">Local Travel:</span>
                             <p className="font-medium">₹{Number((pmPlanData as any).costs.localTravelCost?.value || 0).toLocaleString('en-IN')}</p>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">Miscellaneous:</span>
-                            <p className="font-medium">₹{Number((pmPlanData as any).costs.miscCost?.value || 0).toLocaleString('en-IN')}</p>
+                          <div className="col-span-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1">
+                                <Label htmlFor="misc-cost" className="text-muted-foreground mb-1 block">Miscellaneous:</Label>
+                                <Input
+                                  id="misc-cost"
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={editableMiscCost}
+                                  onChange={(e) => setEditableMiscCost(Number(e.target.value))}
+                                  className="h-9"
+                                  placeholder="Enter miscellaneous cost"
+                                />
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  // Update the pmPlanData with new misc cost
+                                  if (pmPlanData && (pmPlanData as any).costs) {
+                                    const updatedCosts = {
+                                      ...(pmPlanData as any).costs,
+                                      miscCost: {
+                                        ...((pmPlanData as any).costs.miscCost || {}),
+                                        value: editableMiscCost,
+                                      },
+                                      totalEstimatedCost:
+                                        Number((pmPlanData as any).costs.travelFare?.value || 0) +
+                                        Number((pmPlanData as any).costs.stayCost?.value || 0) +
+                                        Number((pmPlanData as any).costs.dailyAllowance?.value || 0) +
+                                        Number((pmPlanData as any).costs.localTravelCost?.value || 0) +
+                                        editableMiscCost
+                                    };
+                                    setPmPlanData({
+                                      ...pmPlanData,
+                                      costs: updatedCosts,
+                                    });
+                                    toast({
+                                      title: "Cost Updated",
+                                      description: "Miscellaneous cost has been updated in the plan.",
+                                    });
+                                  }
+                                }}
+                                className="mt-6"
+                              >
+                                <Save className="h-4 w-4 mr-1" />
+                                Save
+                              </Button>
+                            </div>
                           </div>
-                          <div>
+                          <div className="col-span-2 pt-2 border-t">
                             <span className="text-muted-foreground">Total Estimated Cost:</span>
                             <p className="font-bold text-lg">₹{Number((pmPlanData as any).costs.totalEstimatedCost || 0).toLocaleString('en-IN')}</p>
                           </div>
@@ -2386,8 +2456,8 @@ export default function Scheduling() {
                             }}
                             className="text-xs h-7"
                           >
-                            {selectedPmTaskIds.size === pmPlanData.dailyPlan.reduce((acc, day) => acc + day.tasks.length, 0) 
-                              ? "Deselect All" 
+                            {selectedPmTaskIds.size === pmPlanData.dailyPlan.reduce((acc, day) => acc + day.tasks.length, 0)
+                              ? "Deselect All"
                               : "Select All"}
                           </Button>
                         </div>
@@ -2422,11 +2492,10 @@ export default function Scheduling() {
                               </div>
                               <div className="space-y-1 ml-6">
                                 {day.tasks.map((task, taskIdx) => (
-                                  <div 
-                                    key={taskIdx} 
-                                    className={`flex items-center gap-2 text-sm p-1 rounded ${
-                                      selectedPmTaskIds.has(task.id) ? 'bg-orange-50 dark:bg-orange-950/20' : 'opacity-50'
-                                    }`}
+                                  <div
+                                    key={taskIdx}
+                                    className={`flex items-center gap-2 text-sm p-1 rounded ${selectedPmTaskIds.has(task.id) ? 'bg-orange-50 dark:bg-orange-950/20' : 'opacity-50'
+                                      }`}
                                   >
                                     <Checkbox
                                       checked={selectedPmTaskIds.has(task.id)}
@@ -2440,7 +2509,7 @@ export default function Scheduling() {
                                         setSelectedPmTaskIds(newSet);
                                       }}
                                     />
-                                    <Badge 
+                                    <Badge
                                       variant={task.type === 'PM' ? 'default' : 'secondary'}
                                       className={task.type === 'PM' ? 'bg-orange-500/20 text-orange-400 border-orange-400/30' : ''}
                                     >
@@ -2465,8 +2534,8 @@ export default function Scheduling() {
                         className="flex-1 gap-2"
                       >
                         <CheckCircle className="h-4 w-4" />
-                        {confirmTripMutation.isPending 
-                          ? "Confirming..." 
+                        {confirmTripMutation.isPending
+                          ? "Confirming..."
                           : `Confirm & Send (${selectedPmTaskIds.size} PMs)`}
                       </Button>
                       <Button
@@ -2604,7 +2673,7 @@ export default function Scheduling() {
                   Assign PMs to Technician
                 </DialogTitle>
                 <DialogDescription>
-                  {selectedContainerIds.size > 0 
+                  {selectedContainerIds.size > 0
                     ? `Assign ${selectedContainerIds.size} selected containers for PM to a technician`
                     : `Assign all ${clientPmContainers?.summary?.pendingPm || 0} pending PMs for ${selectedClient?.customerName} to a technician`}
                 </DialogDescription>
@@ -2620,7 +2689,7 @@ export default function Scheduling() {
                       <div className="flex items-center justify-between">
                         <span className="font-medium">Containers to Assign:</span>
                         <Badge variant={selectedContainerIds.size > 0 ? "default" : "destructive"} className={selectedContainerIds.size > 0 ? "bg-blue-500" : ""}>
-                          {selectedContainerIds.size > 0 
+                          {selectedContainerIds.size > 0
                             ? `${selectedContainerIds.size} selected`
                             : `${clientPmContainers?.summary?.pendingPm || 0} all pending`}
                         </Badge>
@@ -2643,7 +2712,7 @@ export default function Scheduling() {
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="assign-technician">Select Technician</Label>
                     <Select value={assignTechnicianId} onValueChange={setAssignTechnicianId}>
@@ -2686,7 +2755,7 @@ export default function Scheduling() {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="assign-date">Scheduled Date</Label>
                     <input
