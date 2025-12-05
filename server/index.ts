@@ -29,7 +29,7 @@ import { initializeOrbcommConnection, populateOrbcommDevices } from "./services/
 import { startOrbcommIntegration } from "./services/orbcommIntegration";
 import { startDataUpdateScheduler } from "./services/dataUpdateScheduler";
 import { vectorStore } from "./services/vectorStore";
-import { db } from "./db";
+import { db, closeDatabase } from "./db";
 
 const app = express();
 
@@ -254,11 +254,71 @@ app.use((req, res, next) => {
     console.log(`[SERVER] Server listening on ${JSON.stringify(addr)}`);
   });
 
-  process.on('SIGINT', () => {
-    console.log('[SERVER] Received SIGINT, shutting down gracefully');
-    server.close(() => {
-      console.log('[SERVER] Server closed');
+  // ===========================================================================
+  // Graceful Shutdown Handler
+  // ===========================================================================
+  let isShuttingDown = false;
+  
+  const gracefulShutdown = async (signal: string) => {
+    if (isShuttingDown) {
+      console.log('[SERVER] Shutdown already in progress...');
+      return;
+    }
+    
+    isShuttingDown = true;
+    console.log(`\n[SERVER] ${signal} received, starting graceful shutdown...`);
+    
+    // Set a timeout for forceful shutdown
+    const forceShutdownTimeout = setTimeout(() => {
+      console.error('[SERVER] ❌ Forceful shutdown after timeout');
+      process.exit(1);
+    }, 30000); // 30 second timeout
+    
+    try {
+      // 1. Stop accepting new connections
+      console.log('[SERVER] Closing HTTP server...');
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) {
+            console.error('[SERVER] Error closing HTTP server:', err);
+            reject(err);
+          } else {
+            console.log('[SERVER] ✅ HTTP server closed');
+            resolve();
+          }
+        });
+      });
+      
+      // 2. Close database connections
+      console.log('[SERVER] Closing database connections...');
+      await closeDatabase();
+      console.log('[SERVER] ✅ Database connections closed');
+      
+      // 3. Clear the force shutdown timeout
+      clearTimeout(forceShutdownTimeout);
+      
+      console.log('[SERVER] ✅ Graceful shutdown complete');
       process.exit(0);
-    });
+    } catch (error) {
+      console.error('[SERVER] ❌ Error during graceful shutdown:', error);
+      clearTimeout(forceShutdownTimeout);
+      process.exit(1);
+    }
+  };
+  
+  // Register signal handlers
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (error) => {
+    console.error('[SERVER] ❌ Uncaught Exception:', error);
+    gracefulShutdown('UNCAUGHT_EXCEPTION');
+  });
+  
+  // Handle unhandled promise rejections
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('[SERVER] ❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit on unhandled rejections, just log them
   });
 })();

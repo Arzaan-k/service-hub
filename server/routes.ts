@@ -130,6 +130,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Serve uploads directory statically
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
+  // ===========================================================================
+  // Health Check Endpoint (for Docker/Kubernetes health probes)
+  // ===========================================================================
+  app.get("/api/health", async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+      // Check database connection
+      await db.execute(sql`SELECT 1`);
+      
+      const healthStatus = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        database: 'connected',
+        responseTime: Date.now() - startTime,
+        environment: process.env.NODE_ENV || 'development',
+        version: process.env.npm_package_version || '1.0.0'
+      };
+      
+      res.status(200).json(healthStatus);
+    } catch (error: any) {
+      console.error('[HEALTH] Check failed:', error);
+      
+      res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        database: 'disconnected',
+        error: error.message || 'Database connection failed',
+        responseTime: Date.now() - startTime
+      });
+    }
+  });
+
+  // Readiness check (for Kubernetes)
+  app.get("/api/ready", async (req, res) => {
+    try {
+      // Check if database is ready
+      await db.execute(sql`SELECT 1`);
+      res.status(200).json({ ready: true });
+    } catch (error) {
+      res.status(503).json({ ready: false, error: 'Database not ready' });
+    }
+  });
+
+  // Liveness check (for Kubernetes)
+  app.get("/api/live", (req, res) => {
+    res.status(200).json({ alive: true, uptime: process.uptime() });
+  });
+
   // RAG API Endpoints
   app.post("/api/rag/query", authenticateUser, async (req: AuthRequest, res) => {
     try {
@@ -4385,7 +4436,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Clients routes (compat shim) -> use customers storage
-  app.get("/api/clients", authenticateUser, requireRole("admin", "coordinator", "amc", "senior_technician"), async (req: AuthRequest, res) => {
+  app.get("/api/clients", authenticateUser, requireRole("admin", "coordinator", "amc", "senior_technician", "super_admin"), async (req: AuthRequest, res) => {
     try {
       const role = (req.user?.role || '').toLowerCase();
       let list = await storage.getAllCustomers();
@@ -6322,6 +6373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/whatsapp/media/:ref", async (req, res) => {
     try {
       const ref = decodeURIComponent(req.params.ref || "");
+      console.log('[Media Proxy] Request for ref:', ref);
 
       // Handle both "wa:mediaId" format and plain "mediaId" format for backward compatibility
       let mediaId: string;
@@ -6332,7 +6384,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mediaId = ref;
       }
 
-      if (!mediaId) return res.status(400).send("Invalid reference");
+      if (!mediaId) {
+        console.error('[Media Proxy] No media ID provided');
+        return res.status(400).send("Invalid reference");
+      }
+
+      console.log('[Media Proxy] Extracted mediaId:', mediaId);
+
       const { default: axios } = await import("axios");
       const { WHATSAPP_TOKEN, GRAPH_VERSION } = await (async () => {
         const mod = await import("./services/whatsapp");
@@ -6342,28 +6400,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return { WHATSAPP_TOKEN: token, GRAPH_VERSION: ver };
       })();
 
-      if (!WHATSAPP_TOKEN) return res.status(500).send("Missing WhatsApp token");
+      if (!WHATSAPP_TOKEN) {
+        console.error('[Media Proxy] Missing WhatsApp token');
+        return res.status(500).send("Missing WhatsApp token");
+      }
+
+      console.log('[Media Proxy] Using Graph API version:', GRAPH_VERSION);
 
       // Step 1: get media URL
       const metaUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`;
-      const metaResp = await axios.get(metaUrl, { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+      console.log('[Media Proxy] Fetching metadata from:', metaUrl);
+
+      const metaResp = await axios.get(metaUrl, {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+        timeout: 10000
+      });
+
       const directUrl = metaResp.data?.url;
-      if (!directUrl) return res.status(404).send("Media URL not found");
+      if (!directUrl) {
+        console.error('[Media Proxy] No URL in metadata response:', metaResp.data);
+        return res.status(404).send("Media URL not found");
+      }
+
+      console.log('[Media Proxy] Direct URL obtained, downloading...');
 
       // Step 2: download binary
       const binResp = await axios.get(directUrl, {
         headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-        responseType: "arraybuffer"
+        responseType: "arraybuffer",
+        timeout: 30000
       });
 
       // Infer content type
       const contentType = binResp.headers["content-type"] || "application/octet-stream";
+      console.log('[Media Proxy] Successfully fetched media, content-type:', contentType);
+
       res.setHeader("Content-Type", contentType);
       res.setHeader("Cache-Control", "public, max-age=300");
       res.status(200).send(Buffer.from(binResp.data));
     } catch (error: any) {
-      console.error("WhatsApp media proxy error:", error?.response?.data || error?.message);
-      res.status(500).send("Media fetch failed");
+      console.error("[Media Proxy] Error details:");
+      console.error("  Status:", error?.response?.status);
+      console.error("  Status Text:", error?.response?.statusText);
+      console.error("  Data:", error?.response?.data);
+      console.error("  Message:", error?.message);
+
+      if (error?.response?.status === 401) {
+        res.status(401).send("Invalid or expired WhatsApp access token");
+      } else if (error?.response?.status === 404) {
+        res.status(404).send("Media not found or expired");
+      } else {
+        res.status(500).send("Media fetch failed");
+      }
     }
   });
 
@@ -6551,7 +6639,7 @@ function generateFinancePDFContent(data: any) {
 })();
 
   // Customer routes
-  app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req, res) => {
+  app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
     try {
       const customers = await storage.getAllCustomers();
 

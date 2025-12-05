@@ -19,28 +19,54 @@ export default function Sidebar() {
 
   const role = (user?.role || "client").toLowerCase();
   const navItems = [
-    // Everyone
-    { path: "/", label: "Dashboard", icon: "fas fa-th-large", badge: "3", roles: ["admin", "coordinator", "technician", "client", "super_admin", "senior_technician"] },
-    { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250", roles: ["admin", "coordinator", "technician", "client", "super_admin", "senior_technician", "amc"] },
-    { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", roles: ["admin", "coordinator", "technician", "client", "super_admin", "senior_technician"] },
-    { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench", roles: ["admin", "coordinator", "technician", "client", "super_admin", "senior_technician"] },
-    { path: "/service-history", label: "Service History", icon: "fas fa-history", roles: ["admin", "coordinator", "technician", "client", "super_admin", "senior_technician"] },
-    // Client self profile quick link
-    { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", roles: ["client"] },
-    // Technician self profile quick link
-    { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", roles: ["technician", "senior_technician"] },
-    // AMC self profile
-    { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", roles: ["amc"] },
-    // Admin/Coordinator only
-    { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat", roles: ["admin", "coordinator", "super_admin"] },
-    { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", roles: ["admin", "coordinator", "super_admin"] },
-    { path: "/clients", label: "Clients", icon: "fas fa-users", roles: ["admin", "coordinator", "super_admin", "amc", "senior_technician"] },
-    // Admin/Coordinator/Technician
-    { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", roles: ["admin", "coordinator", "technician", "super_admin", "senior_technician"] },
-    // User management
-    { path: "/admin/user-management", label: "User Management", icon: "fas fa-users-cog", roles: ["admin", "super_admin"] },
-    // Admin-only analytics
-    { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", roles: ["admin", "super_admin"] },
+    // Dashboard - All roles except AMC
+    { path: "/", label: "Dashboard", icon: "fas fa-th-large", badge: "3", roles: ["admin", "technician", "senior_technician"] },
+    { path: "/client-dashboard", label: "Dashboard", icon: "fas fa-th-large", roles: ["client"] },
+
+    // Containers - All roles
+    { path: "/containers", label: "Containers", icon: "fas fa-box", badge: "250", roles: ["admin", "technician", "senior_technician", "amc", "client"] },
+
+    // Alerts - All except AMC
+    { path: "/alerts", label: "Alerts", icon: "fas fa-exclamation-triangle", badge: "12", roles: ["admin", "technician", "senior_technician", "client"] },
+
+    // Service Requests - All except AMC
+    { path: "/service-requests", label: "Service Requests", icon: "fas fa-wrench", roles: ["admin", "technician", "senior_technician", "client"] },
+
+    // Service History - All except AMC and Client
+    { path: "/service-history", label: "Service History", icon: "fas fa-history", roles: ["admin", "technician", "senior_technician"] },
+
+    // Technicians - Admin only
+    { path: "/technicians", label: "Technicians", icon: "fas fa-user-hard-hat", roles: ["admin"] },
+
+    // Scheduling - Admin only
+    { path: "/scheduling", label: "Scheduling", icon: "fas fa-calendar-alt", roles: ["admin"] },
+
+    // Clients - Admin, Senior Technician (read-only), AMC (contact only)
+    { path: "/clients", label: "Clients", icon: "fas fa-users", roles: ["admin", "senior_technician", "amc"] },
+
+    // Inventory - Admin, Technician, Senior Technician
+    { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", roles: ["admin", "technician", "senior_technician"] },
+
+    // WhatsApp - Admin, Technician, Client
+    { path: "/whatsapp", label: "WhatsApp", icon: "fab fa-whatsapp", roles: ["admin", "technician", "client"] },
+
+    // Manuals - Admin, Technician, Senior Technician
+    { path: "/manuals", label: "Manuals", icon: "fas fa-book", roles: ["admin", "technician", "senior_technician"] },
+
+    // RAG Chat - Admin, Technician, Senior Technician
+    { path: "/rag-chat", label: "AI Assistant", icon: "fas fa-robot", roles: ["admin", "technician", "senior_technician"] },
+
+    // User Management - Admin only
+    { path: "/admin/user-management", label: "User Management", icon: "fas fa-users-cog", roles: ["admin"] },
+
+    // Analytics - Admin only
+    { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", roles: ["admin"] },
+
+    // WhatsApp Admin - Admin only
+    { path: "/admin/whatsapp", label: "WhatsApp Admin", icon: "fas fa-cog", roles: ["admin"] },
+
+    // My Profile - All roles
+    { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", roles: ["admin", "technician", "senior_technician", "amc", "client"] },
   ].filter(item => item.roles.includes(role));
 
   const handleLogout = () => {
