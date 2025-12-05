@@ -68,6 +68,27 @@ interface InventoryItem {
   location: string;
 }
 
+/**
+ * Helper function to get media URL
+ * Handles both base64 data URIs (new format) and WhatsApp media IDs (old format)
+ */
+function getMediaUrl(ref: string | undefined | null): string {
+  if (!ref) return '';
+
+  // If it's already a base64 data URI, return as-is
+  if (ref.startsWith('data:')) {
+    return ref;
+  }
+
+  // If it's a WhatsApp media ID (old format), use media proxy endpoint
+  if (ref.startsWith('wa:')) {
+    return `/api/whatsapp/media/${encodeURIComponent(ref)}`;
+  }
+
+  // Default: treat as media ID
+  return `/api/whatsapp/media/${encodeURIComponent(ref)}`;
+}
+
 export default function ServiceRequestDetail() {
   const [, params] = useRoute("/service-requests/:id");
   const id = params?.id as string;
@@ -955,11 +976,11 @@ export default function ServiceRequestDetail() {
                         <div className="grid grid-cols-2 gap-3">
                           {Array.isArray(req.clientUploadedPhotos) && req.clientUploadedPhotos.length > 0 ? (
                             req.clientUploadedPhotos.map((ref: string, idx: number) => {
-                              const mediaRef = ref && !ref.startsWith('wa:') ? `wa:${ref}` : ref;
+                              const mediaUrl = getMediaUrl(ref);
                               return (
-                                <a key={`cp-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={`/api/whatsapp/media/${encodeURIComponent(mediaRef)}`} target="_blank" rel="noreferrer">
-                                  <img className="w-full h-full object-cover" src={`/api/whatsapp/media/${encodeURIComponent(mediaRef)}`} alt={`Client photo ${idx + 1}`} onError={(e) => {
-                                    console.error('Failed to load image:', mediaRef);
+                                <a key={`cp-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={mediaUrl} target="_blank" rel="noreferrer">
+                                  <img className="w-full h-full object-cover" src={mediaUrl} alt={`Client photo ${idx + 1}`} onError={(e) => {
+                                    console.error('Failed to load image:', ref);
                                     (e.target as HTMLImageElement).style.display = 'none';
                                   }} />
                                 </a>
@@ -975,11 +996,11 @@ export default function ServiceRequestDetail() {
                         <div className="space-y-3">
                           {Array.isArray(req.clientUploadedVideos) && req.clientUploadedVideos.length > 0 ? (
                             req.clientUploadedVideos.map((ref: string, idx: number) => {
-                              const mediaRef = ref && !ref.startsWith('wa:') ? `wa:${ref}` : ref;
+                              const mediaUrl = getMediaUrl(ref);
                               return (
-                                <a key={`cv-${idx}`} className="block aspect-video bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={`/api/whatsapp/media/${encodeURIComponent(mediaRef)}`} target="_blank" rel="noreferrer">
+                                <a key={`cv-${idx}`} className="block aspect-video bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={mediaUrl} target="_blank" rel="noreferrer">
                                   <video className="w-full h-full object-cover" controls>
-                                    <source src={`/api/whatsapp/media/${encodeURIComponent(mediaRef)}`} type="video/mp4" />
+                                    <source src={mediaUrl} type="video/mp4" />
                                     Client Video {idx + 1}
                                   </video>
                                 </a>
@@ -1010,11 +1031,14 @@ export default function ServiceRequestDetail() {
                       <p className="text-sm font-medium text-muted-foreground mb-3">Before Service ({req.beforePhotos?.length || 0})</p>
                       <div className="grid grid-cols-2 gap-3">
                         {(req.beforePhotos || []).length > 0 ? (
-                          req.beforePhotos.map((ref: string, idx: number) => (
-                            <a key={`b-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={`/api/whatsapp/media/${encodeURIComponent(ref)}`} target="_blank" rel="noreferrer">
-                              <img className="w-full h-full object-cover" src={`/api/whatsapp/media/${encodeURIComponent(ref)}`} alt={`Before photo ${idx + 1}`} />
-                            </a>
-                          ))
+                          req.beforePhotos.map((ref: string, idx: number) => {
+                            const mediaUrl = getMediaUrl(ref);
+                            return (
+                              <a key={`b-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={mediaUrl} target="_blank" rel="noreferrer">
+                                <img className="w-full h-full object-cover" src={mediaUrl} alt={`Before photo ${idx + 1}`} />
+                              </a>
+                            );
+                          })
                         ) : (
                           <span className="text-xs text-muted-foreground col-span-2">No photos</span>
                         )}
@@ -1024,11 +1048,14 @@ export default function ServiceRequestDetail() {
                       <p className="text-sm font-medium text-muted-foreground mb-3">After Service ({req.afterPhotos?.length || 0})</p>
                       <div className="grid grid-cols-2 gap-3">
                         {(req.afterPhotos || []).length > 0 ? (
-                          req.afterPhotos.map((ref: string, idx: number) => (
-                            <a key={`a-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={`/api/whatsapp/media/${encodeURIComponent(ref)}`} target="_blank" rel="noreferrer">
-                              <img className="w-full h-full object-cover" src={`/api/whatsapp/media/${encodeURIComponent(ref)}`} alt={`After photo ${idx + 1}`} />
-                            </a>
-                          ))
+                          req.afterPhotos.map((ref: string, idx: number) => {
+                            const mediaUrl = getMediaUrl(ref);
+                            return (
+                              <a key={`a-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={mediaUrl} target="_blank" rel="noreferrer">
+                                <img className="w-full h-full object-cover" src={mediaUrl} alt={`After photo ${idx + 1}`} />
+                              </a>
+                            );
+                          })
                         ) : (
                           <span className="text-xs text-muted-foreground col-span-2">No photos</span>
                         )}
@@ -1056,7 +1083,7 @@ export default function ServiceRequestDetail() {
                             <span className="text-sm font-medium">Client Signed Document</span>
                           </div>
                           <Button size="sm" variant="outline" asChild>
-                            <a href={req.signedDocumentUrl} target="_blank" rel="noreferrer">View</a>
+                            <a href={getMediaUrl(req.signedDocumentUrl)} target="_blank" rel="noreferrer">View</a>
                           </Button>
                         </div>
                       )}
@@ -1067,7 +1094,7 @@ export default function ServiceRequestDetail() {
                             <span className="text-sm font-medium">Vendor Invoice</span>
                           </div>
                           <Button size="sm" variant="outline" asChild>
-                            <a href={req.vendorInvoiceUrl} target="_blank" rel="noreferrer">View</a>
+                            <a href={getMediaUrl(req.vendorInvoiceUrl)} target="_blank" rel="noreferrer">View</a>
                           </Button>
                         </div>
                       )}

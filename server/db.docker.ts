@@ -1,15 +1,13 @@
 import 'dotenv/config';
-import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
-import { drizzle as drizzleNeon } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from "@shared/schema";
 
 // =============================================================================
-// Database Connection Configuration
+// Database Connection Configuration - Standard PostgreSQL
 // =============================================================================
-// Currently uses Neon Serverless driver (cloud deployment)
-// For Docker/local PostgreSQL, set USE_STANDARD_PG=true and the application
-// will need to be started with the pg driver variant
+// This file is used for Docker/local PostgreSQL deployment
+// It uses the standard 'pg' driver instead of Neon serverless
 // =============================================================================
 
 if (!process.env.DATABASE_URL) {
@@ -18,16 +16,30 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Configure Neon to use WebSocket
-neonConfig.webSocketConstructor = ws;
+console.log('[DATABASE] Using standard PostgreSQL driver (pg)');
 
 // Create connection pool
-export const pool = new NeonPool({ connectionString: process.env.DATABASE_URL });
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Connection pool settings
+  max: 20,                      // Maximum connections in pool
+  idleTimeoutMillis: 30000,     // Close idle connections after 30s
+  connectionTimeoutMillis: 5000, // Timeout for new connections
+});
+
+// Connection event handlers
+pool.on('connect', () => {
+  console.log('[DATABASE] ✅ Connected to PostgreSQL');
+});
+
+pool.on('error', (err: Error) => {
+  console.error('[DATABASE] ❌ Unexpected error on idle client:', err);
+});
 
 // Create Drizzle instance
-export const db = drizzleNeon({ client: pool, schema });
+export const db = drizzle(pool, { schema });
 
-console.log('[DATABASE] ✅ Neon serverless connection configured');
+console.log('[DATABASE] ✅ PostgreSQL connection configured');
 
 // =============================================================================
 // Graceful Shutdown Helper

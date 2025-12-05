@@ -52,9 +52,15 @@ import {
   type InsertTechnicianTripCost,
   type InsertTechnicianTripTask,
 } from "@shared/schema";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { eq, and, desc, asc, gte, sql, isNull, ilike, inArray, notInArray } from "drizzle-orm";
-import { Pool } from '@neondatabase/serverless';
+import { Pool as NeonPool } from '@neondatabase/serverless';
+
+// Helper to create a pool for external database connections
+// External databases (like inventory) are typically cloud-hosted, so we use Neon
+function createExternalPool(connectionString: string) {
+  return new NeonPool({ connectionString });
+}
 
 export interface IStorage {
   ensureServiceRequestAssignmentColumns(): Promise<void>;
@@ -1852,12 +1858,12 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
     const externalUrl = process.env.INVENTORY_SOURCE_DATABASE_URL;
     let rows: any[] = [];
     if (externalUrl) {
-      const pool = new Pool({ connectionString: externalUrl });
+      const externalPool = await createExternalPool(externalUrl);
       try {
-        const res = await pool.query(queryText);
+        const res = await externalPool.query(queryText);
         rows = res.rows as any[];
       } finally {
-        await pool.end();
+        await externalPool.end();
       }
     } else {
       const q = sql.raw(queryText);

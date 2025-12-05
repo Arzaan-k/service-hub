@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": "18.x"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
@@ -30,7 +30,20 @@
     "setup:rag:full": "node setup-rag-full.js",
     "setup:chroma": "python setup-chroma-local.py",
     "check:rag": "node check-rag-setup.js",
-    "seed:rag": "node seed-rag-manuals.js"
+    "seed:rag": "node seed-rag-manuals.js",
+    "docker:build": "docker build -t service-hub:latest .",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f app",
+    "docker:logs:all": "docker-compose logs -f",
+    "docker:restart": "docker-compose restart app",
+    "docker:shell": "docker-compose exec app sh",
+    "docker:db": "docker-compose exec postgres psql -U service_hub_user -d service_hub",
+    "docker:clean": "docker-compose down -v && docker system prune -f",
+    "docker:rebuild": "docker-compose down && docker-compose build --no-cache && docker-compose up -d",
+    "docker:prod": "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d",
+    "docker:prod:build": "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build",
+    "docker:backup": "docker-compose exec postgres pg_dump -U service_hub_user service_hub > backup_$(date +%Y%m%d_%H%M%S).sql"
   },
   "dependencies": {
     "@google/genai": "^1.21.0",
@@ -105,6 +118,7 @@
     "openai": "^6.8.1",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
+    "pg": "^8.13.1",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.17.2",
     "postcss": "^8.4.47",
@@ -141,6 +155,7 @@
     "@types/nodemailer": "^7.0.4",
     "@types/passport": "^1.0.16",
     "@types/passport-local": "^1.0.38",
+    "@types/pg": "^8.11.10",
     "@types/pdfkit": "^0.17.3",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",

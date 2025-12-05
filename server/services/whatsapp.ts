@@ -119,6 +119,63 @@ function cleanPhone(number: string): string {
   return String(number || '').replace(/\D/g, '');
 }
 
+/**
+ * Download WhatsApp media and return as base64 data URI
+ * This ensures media is permanently stored in the database
+ * rather than relying on temporary WhatsApp media IDs that expire
+ */
+export async function downloadWhatsAppMediaAsBase64(mediaId: string): Promise<string | null> {
+  try {
+    if (!mediaId) {
+      console.log('[Media Download] No media ID provided');
+      return null;
+    }
+
+    console.log(`[Media Download] Downloading media ID: ${mediaId}`);
+
+    // Step 1: Get media URL from Graph API
+    const metaUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`;
+    const metaResp = await axios.get(metaUrl, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+      timeout: 10000
+    });
+
+    const directUrl = metaResp.data?.url;
+    const mimeType = metaResp.data?.mime_type || 'image/jpeg';
+
+    if (!directUrl) {
+      console.error('[Media Download] No direct URL found in response');
+      return null;
+    }
+
+    console.log(`[Media Download] Got direct URL, mime type: ${mimeType}`);
+
+    // Step 2: Download binary data
+    const binResp = await axios.get(directUrl, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+      responseType: 'arraybuffer',
+      timeout: 30000
+    });
+
+    // Step 3: Convert to base64 data URI
+    const buffer = Buffer.from(binResp.data);
+    const base64 = buffer.toString('base64');
+    const dataUri = `data:${mimeType};base64,${base64}`;
+
+    console.log(`[Media Download] Successfully downloaded media (${buffer.length} bytes)`);
+
+    return dataUri;
+  } catch (error: any) {
+    console.error('[Media Download] Error downloading media:', {
+      mediaId,
+      status: error?.response?.status,
+      message: error?.message,
+      data: error?.response?.data
+    });
+    return null;
+  }
+}
+
 // Test number helpers (role-flow testing; production-safe)
 // Allow configuration via env WHATSAPP_TEST_NUMBERS=comma,separated,digits
 // Removed 918218994855 to use real data for Crystal Group
@@ -836,14 +893,25 @@ async function handleIssueDescriptionInput(description: string, from: string, us
 
 async function handlePhotoUpload(mediaId: string, from: string, user: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
-  
+
   try {
     const conversationState = session.conversationState || {};
     const beforePhotos = conversationState.beforePhotos || [];
-    
-    // Store media ID with wa: prefix for consistency with media endpoint
-    beforePhotos.push(`wa:${mediaId}`);
-    
+
+    // Download media immediately and store as base64 data URI
+    console.log(`[Photo Upload] Attempting to download media ID: ${mediaId}`);
+    const base64Data = await downloadWhatsAppMediaAsBase64(mediaId);
+
+    if (base64Data) {
+      // Store base64 data URI instead of temporary media ID
+      beforePhotos.push(base64Data);
+      console.log(`[Photo Upload] Successfully stored base64 photo (photo ${beforePhotos.length})`);
+    } else {
+      // Fallback to media ID if download fails
+      console.warn(`[Photo Upload] Failed to download media, storing media ID as fallback`);
+      beforePhotos.push(`wa:${mediaId}`);
+    }
+
     await storage.updateWhatsappSession(session.id, {
       conversationState: {
         ...conversationState,
@@ -863,14 +931,25 @@ async function handlePhotoUpload(mediaId: string, from: string, user: any, sessi
 
 async function handleVideoUpload(mediaId: string, from: string, user: any, session: any): Promise<void> {
   const { storage } = await import('../storage');
-  
+
   try {
     const conversationState = session.conversationState || {};
     const videos = conversationState.videos || [];
-    
-    // Store video media ID with wa: prefix for consistency with media endpoint
-    videos.push(`wa:${mediaId}`);
-    
+
+    // Download media immediately and store as base64 data URI
+    console.log(`[Video Upload] Attempting to download media ID: ${mediaId}`);
+    const base64Data = await downloadWhatsAppMediaAsBase64(mediaId);
+
+    if (base64Data) {
+      // Store base64 data URI instead of temporary media ID
+      videos.push(base64Data);
+      console.log(`[Video Upload] Successfully stored base64 video (video ${videos.length})`);
+    } else {
+      // Fallback to media ID if download fails
+      console.warn(`[Video Upload] Failed to download media, storing media ID as fallback`);
+      videos.push(`wa:${mediaId}`);
+    }
+
     await storage.updateWhatsappSession(session.id, {
       conversationState: {
         ...conversationState,
@@ -1174,17 +1253,17 @@ async function createServiceRequestFromWhatsApp(from: string, user: any, session
         const messagesToUpdate = recentMessages.filter(msg => !msg.relatedEntityId);
 
         if (messagesToUpdate.length > 0) {
-          // Use SQL to update messages directly through storage
-          const { neon } = await import('@neondatabase/serverless');
-          const dbSql = neon(process.env.DATABASE_URL!);
+          // Use SQL to update messages directly through db
+          const { db } = await import('../db');
+          const { sql } = await import('drizzle-orm');
 
           for (const msg of messagesToUpdate) {
-            await dbSql`
+            await db.execute(sql`
               UPDATE whatsapp_messages
               SET related_entity_type = 'ServiceRequest',
                   related_entity_id = ${firstServiceRequestId}
               WHERE id = ${msg.id}
-            `;
+            `);
           }
           console.log(`[WhatsApp] ✅ Linked ${messagesToUpdate.length} messages to service request ${firstServiceRequestId}`);
         }
