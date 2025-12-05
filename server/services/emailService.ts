@@ -11,10 +11,24 @@ const isMailgunConfigured = () => {
   return !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
 };
 
+// Check if Gmail is configured via EMAIL_USER/PASS (Preferred for Gmail)
+const isGmailConfigured = () => {
+  return !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+};
+
 // Configure SMTP transporter
 let smtpTransporter: nodemailer.Transporter | null = null;
 
-if (isSmtpConfigured()) {
+if (isGmailConfigured()) {
+  smtpTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+  console.log('✅ Email service configured with Gmail Service (using EMAIL_USER/EMAIL_PASS)');
+} else if (isSmtpConfigured()) {
   smtpTransporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587'),
@@ -27,7 +41,7 @@ if (isSmtpConfigured()) {
     greetingTimeout: 5000,
     socketTimeout: 10000, // 10 seconds
   });
-  console.log('✅ Email service configured with SMTP (Google)');
+  console.log('✅ Email service configured with SMTP (Google/Other)');
 }
 
 // Configure Mailgun transporter as fallback
@@ -50,14 +64,8 @@ if (isMailgunConfigured()) {
 }
 
 // Log configuration status
-if (!isSmtpConfigured() && !isMailgunConfigured()) {
-  console.warn('⚠️ No email service configured - both SMTP and Mailgun credentials missing. Emails will be skipped in development mode.');
-} else if (isSmtpConfigured() && isMailgunConfigured()) {
-  console.log('✅ Email service configured with Mailgun (primary) and Google SMTP (fallback)');
-} else if (isMailgunConfigured()) {
-  console.log('✅ Email service configured with Mailgun only');
-} else if (isSmtpConfigured()) {
-  console.log('✅ Email service configured with Google SMTP only');
+if (!isGmailConfigured() && !isSmtpConfigured() && !isMailgunConfigured()) {
+  console.warn('⚠️ No email service configured. Please set EMAIL_USER/EMAIL_PASS for Gmail, or SMTP_ details.');
 }
 
 export interface EmailAttachment {
@@ -80,7 +88,7 @@ export interface EmailOptions {
 async function sendViaMailgunApi({ to, subject, body, html, attachments, from }: EmailOptions): Promise<any> {
   const mailgunDomain = process.env.MAILGUN_DOMAIN;
   const mailgunApiKey = process.env.MAILGUN_API_KEY;
-  
+
   if (!mailgunDomain || !mailgunApiKey) {
     throw new Error('Mailgun not configured');
   }
@@ -157,7 +165,7 @@ async function sendViaMailgunSmtp(options: EmailOptions): Promise<any> {
 // Send email via Google SMTP
 async function sendViaGoogleSmtp(options: EmailOptions): Promise<any> {
   if (!smtpTransporter) {
-    throw new Error('Google SMTP transporter not initialized');
+    throw new Error('SMTP transporter not initialized');
   }
 
   const mailOptions = {
@@ -178,12 +186,12 @@ export async function sendEmail(options: EmailOptions) {
   const { to, subject, body, html, attachments, from } = options;
 
   // Skip email in development if not configured
-  if (!isSmtpConfigured() && !isMailgunConfigured()) {
+  if (!isGmailConfigured() && !isSmtpConfigured() && !isMailgunConfigured()) {
     if (process.env.NODE_ENV === 'development') {
       console.log(`📧 [DEV] Email skipped (no email service configured): ${subject} to ${to}`);
       return { messageId: 'dev-mock-id', skipped: true };
     } else {
-      throw new Error('No email service configured. Please set SMTP or Mailgun credentials.');
+      throw new Error('No email service configured. Please set EMAIL_USER/EMAIL_PASS, SMTP_ credentials, or Mailgun credentials.');
     }
   }
 
@@ -213,15 +221,17 @@ export async function sendEmail(options: EmailOptions) {
     }
   }
 
-  // Fallback to Google SMTP if configured
-  if (isSmtpConfigured() && smtpTransporter) {
+  // Fallback to Google SMTP / Gmail Service if configured
+  if (smtpTransporter) {
     try {
-      console.log('📧 Attempting to send email via Google SMTP (last resort)...');
+      console.log('📧 Attempting to send email via SMTP/Gmail...');
       const result = await sendViaGoogleSmtp(options);
+      console.log('✅ MAIL SENT SUCCESSFULLY to:', to);
       return result;
     } catch (error: any) {
-      console.warn('⚠️ Google SMTP failed:', error.message);
-      errors.push(`Google SMTP: ${error.message}`);
+      console.warn('⚠️ MAILER FAILED (SMTP/Gmail):', error.message);
+      console.error('Full Error:', error);
+      errors.push(`SMTP/Gmail: ${error.message}`);
     }
   }
 

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, pgEnum, decimal, uuid, point, customType } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, pgEnum, decimal, uuid, point, customType, date } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -29,7 +29,7 @@ export const feedbackRatingEnum = pgEnum("feedback_rating", ["1", "2", "3", "4",
 export const resolutionMethodEnum = pgEnum("resolution_method", ["auto", "service", "diy", "ignored"]);
 export const pmStatusEnum = pgEnum("pm_status_enum", ["UP_TO_DATE", "DUE_SOON", "OVERDUE"]);
 // Technician Travel Planning enums
-export const tripStatusEnum = pgEnum("trip_status", ["planned", "booked", "in_progress", "completed", "cancelled"]);
+export const tripStatusEnum = pgEnum("trip_status", ["planned", "confirmed", "booked", "in_progress", "completed", "cancelled"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["not_started", "tickets_booked", "hotel_booked", "all_confirmed"]);
 export const tripPurposeEnum = pgEnum("trip_purpose", ["pm", "breakdown", "audit", "mixed"]);
 export const tripTaskTypeEnum = pgEnum("trip_task_type", ["pm", "alert", "inspection"]);
@@ -134,7 +134,7 @@ export const containers = pgTable("containers", {
   locationLng: decimal("location_lng", { precision: 11, scale: 8 }), // Longitude from latest Orbcomm telemetry
   lastTelemetry: jsonb("last_telemetry"), // Full raw JSON from Orbcomm message
   lastSyncedAt: timestamp("last_synced_at"), // Timestamp when this container was last synced
- 
+
   // Master Sheet fields from Reefer/Container Master file
   productType: text("product_type"), // Reefer, Dry, Special, etc.
   sizeType: text("size_type"), // 40FT STD RF, 20FT, etc.
@@ -277,12 +277,12 @@ export const serviceRequests = pgTable("service_requests", {
   month: text("month"), // AUG, JUL, etc.
   year: integer("year"), // 2023, 2024, etc.
   excelData: jsonb("excel_data"), // Store all Excel data as JSON
-  
+
   // Inventory Integration fields
   inventoryOrderId: text("inventory_order_id"), // Order ID from Inventory System
   inventoryOrderNumber: text("inventory_order_number"), // Order Number from Inventory System
   inventoryOrderCreatedAt: timestamp("inventory_order_created_at"), // When order was created in Inventory System
-  
+
   // Coordinator Remarks for Pre-Service Report
   coordinatorRemarks: text("coordinator_remarks"),
   remarksAddedBy: varchar("remarks_added_by"),
@@ -594,6 +594,7 @@ export const technicianTrips = pgTable("technician_trips", {
   ticketReference: text("ticket_reference"), // PNR, booking ID, links for tickets
   hotelReference: text("hotel_reference"), // Hotel booking ID, links
   bookingAttachments: jsonb("booking_attachments"), // Store file uploads/references as JSON
+  miscellaneousAmount: decimal("miscellaneous_amount", { precision: 10, scale: 2 }).default("0.00"), // Additional miscellaneous costs
   createdBy: varchar("created_by").references(() => users.id), // Admin/Scheduler who created the trip
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -645,6 +646,15 @@ export const locationMultipliers = pgTable("location_multipliers", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Daily Summary Acknowledgment table
+export const dailySummaryAcknowledgment = pgTable("daily_summary_acknowledgment", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  date: date("date").notNull(),
+  summary: jsonb("summary").notNull(),
+  status: text("status").notNull().default("pending"),
+  acknowledgedAt: timestamp("acknowledged_at"),
 });
 
 // Relations (updated according to PRD)
@@ -794,6 +804,8 @@ export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: tr
 export const insertTechnicianTripSchema = createInsertSchema(technicianTrips).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertTechnicianTripCostSchema = createInsertSchema(technicianTripCosts).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertTechnicianTripTaskSchema = createInsertSchema(technicianTripTasks).omit({ id: true, createdAt: true, updatedAt: true } as any);
+
+export const insertDailySummaryAcknowledgmentSchema = createInsertSchema(dailySummaryAcknowledgment).omit({ id: true } as any);
 
 // Service Request Remarks (immutable)
 export const serviceRequestRemarks = pgTable("service_request_remarks", {

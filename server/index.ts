@@ -30,6 +30,8 @@ import { startOrbcommIntegration } from "./services/orbcommIntegration";
 import { startDataUpdateScheduler } from "./services/dataUpdateScheduler";
 import { vectorStore } from "./services/vectorStore";
 import { db, closeDatabase } from "./db";
+import cron from "node-cron";
+import { generateDailySummaryAndNotify, checkAndEscalate } from "./services/dailySummaryService";
 
 const app = express();
 
@@ -201,6 +203,22 @@ app.use((req, res, next) => {
     } catch (error) {
       console.error('❌ Error starting Orbcomm CDH integration:', error);
     }
+
+    // Daily Summary Cron Jobs
+    console.log('[SERVER] Starting Daily Summary Cron Jobs...');
+
+    // 6 AM Daily: Generate Summary
+    cron.schedule("0 6 * * *", () => {
+      console.log("Running daily summary generation...");
+      generateDailySummaryAndNotify();
+    });
+
+    // 12 PM Daily: Check Escalation
+    cron.schedule("0 12 * * *", () => {
+      console.log("Running daily summary escalation check...");
+      checkAndEscalate();
+    });
+    console.log('✅ Daily Summary Cron Jobs scheduled');
   } else {
     console.log('⏭️ Skipping Orbcomm initialization in development mode');
   }
@@ -259,22 +277,22 @@ app.use((req, res, next) => {
   // Graceful Shutdown Handler
   // ===========================================================================
   let isShuttingDown = false;
-  
+
   const gracefulShutdown = async (signal: string) => {
     if (isShuttingDown) {
       console.log('[SERVER] Shutdown already in progress...');
       return;
     }
-    
+
     isShuttingDown = true;
     console.log(`\n[SERVER] ${signal} received, starting graceful shutdown...`);
-    
+
     // Set a timeout for forceful shutdown
     const forceShutdownTimeout = setTimeout(() => {
       console.error('[SERVER] ❌ Forceful shutdown after timeout');
       process.exit(1);
     }, 30000); // 30 second timeout
-    
+
     try {
       // 1. Stop accepting new connections
       console.log('[SERVER] Closing HTTP server...');
@@ -289,15 +307,15 @@ app.use((req, res, next) => {
           }
         });
       });
-      
+
       // 2. Close database connections
       console.log('[SERVER] Closing database connections...');
       await closeDatabase();
       console.log('[SERVER] ✅ Database connections closed');
-      
+
       // 3. Clear the force shutdown timeout
       clearTimeout(forceShutdownTimeout);
-      
+
       console.log('[SERVER] ✅ Graceful shutdown complete');
       process.exit(0);
     } catch (error) {
@@ -306,17 +324,17 @@ app.use((req, res, next) => {
       process.exit(1);
     }
   };
-  
+
   // Register signal handlers
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-  
+
   // Handle uncaught exceptions
   process.on('uncaughtException', (error) => {
     console.error('[SERVER] ❌ Uncaught Exception:', error);
     gracefulShutdown('UNCAUGHT_EXCEPTION');
   });
-  
+
   // Handle unhandled promise rejections
   process.on('unhandledRejection', (reason, promise) => {
     console.error('[SERVER] ❌ Unhandled Rejection at:', promise, 'reason:', reason);
