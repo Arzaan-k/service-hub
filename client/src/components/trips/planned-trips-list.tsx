@@ -94,38 +94,76 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
     }
   };
 
-  const handleSendToFinance = async (trip: any) => {
-    try {
-      const res = await apiRequest("POST", "/api/trips/generate-finance-pdf", {
-        tripId: trip.id,
-        trip,
-        technician: trip.technician,
-      });
+  const handleSendToFinance = (trip: any) => {
+    // Map trip data to PDF component format
+    // Note: trip.costs might need to be mapped if it doesn't match wageBreakdown structure exactly
+    // But for now we pass it as is, assuming it contains necessary data or the component handles missing data gracefully
+    const pdfData = {
+      tripData: trip,
+      technician: trip.technician,
+      serviceRequests: trip.tasks?.filter((t: any) => t.taskType !== 'pm') || [],
+      pmContainers: trip.tasks?.filter((t: any) => t.taskType === 'pm') || [],
+      wageBreakdown: trip.costs || {},
+      generatedAt: new Date().toISOString(),
+      generatedBy: "System"
+    };
 
-      if (res.ok) {
-        const data = await res.json();
-        // Show PDF preview with the generated data
-        if (data.pdfData) {
-          setSelectedTrip({
-            ...trip,
-            ...data.pdfData
-          });
-          setShowPDFPreview(true);
+    // Calculate wage breakdown if not fully present (reconstruct from trip data)
+    const technician = trip.technician;
+    if (technician && (!trip.costs.taskBreakdown || !trip.costs.summary)) {
+      const serviceRate = technician.serviceRequestCost || 0;
+      const pmRate = technician.pmCost || 0;
+      const tasksPerDay = technician.tasksPerDay || 3;
+
+      const serviceRequests = pdfData.serviceRequests;
+      const pmContainers = pdfData.pmContainers;
+      const totalTasks = serviceRequests.length + pmContainers.length;
+      const estimatedDays = Math.ceil(totalTasks / tasksPerDay);
+
+      // Use stored costs if available, otherwise calculate
+      const travelFare = Number(trip.costs?.travelFare || 0);
+      const stayCost = Number(trip.costs?.stayCost || 0);
+      const dailyAllowance = Number(trip.costs?.dailyAllowance || 0);
+      const localTravel = Number(trip.costs?.localTravelCost || 0);
+      const misc = Number(trip.costs?.miscCost || 0);
+
+      const serviceTotal = serviceRequests.length * serviceRate;
+      const pmTotal = pmContainers.length * pmRate;
+
+      pdfData.wageBreakdown = {
+        taskBreakdown: {
+          serviceRequests: { count: serviceRequests.length, rate: serviceRate, total: serviceTotal },
+          pmTasks: { count: pmContainers.length, rate: pmRate, total: pmTotal }
+        },
+        allowances: {
+          dailyAllowance: {
+            rate: (technician.hotelAllowance || 0) + (technician.localTravelAllowance || 0),
+            days: estimatedDays,
+            total: dailyAllowance // Use stored total
+          },
+          hotelAllowance: { total: stayCost }, // Use stored total
+          localTravelAllowance: { total: localTravel } // Use stored total
+        },
+        additionalCosts: {
+          miscellaneous: { percentage: 0, amount: misc },
+          contingency: { percentage: 0, amount: 0 } // Already included in totals if any
+        },
+        summary: {
+          totalTasks: totalTasks,
+          estimatedDays: estimatedDays,
+          subtotal: serviceTotal + pmTotal,
+          totalAllowance: dailyAllowance + stayCost + localTravel,
+          totalAdditional: misc,
+          totalCost: Number(trip.costs?.totalEstimatedCost || (serviceTotal + pmTotal + dailyAllowance + stayCost + localTravel + misc))
         }
-        toast({
-          title: "PDF Generated Successfully",
-          description: "Finance approval PDF is ready. Preview shown below.",
-        });
-      } else {
-        throw new Error("Failed to generate PDF");
-      }
-    } catch (error: any) {
-      toast({
-        title: "Failed to Generate PDF",
-        description: error?.message || "Could not generate PDF",
-        variant: "destructive",
-      });
+      };
     }
+
+    setSelectedTrip({
+      ...trip,
+      ...pdfData
+    });
+    setShowPDFPreview(true);
   };
 
   if (isLoading) {
@@ -248,6 +286,8 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                         onClick={() => {
                           setSelectedTripId(trip.id);
                           setShowTripDetailsModal(true);
+                          // Also call the parent callback if provided
+                          onTripSelected?.(trip.id);
                         }}
                         className="gap-1"
                       >
