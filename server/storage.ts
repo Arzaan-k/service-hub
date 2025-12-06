@@ -52,9 +52,15 @@ import {
   type InsertTechnicianTripCost,
   type InsertTechnicianTripTask,
 } from "@shared/schema";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { eq, and, desc, asc, gte, sql, isNull, ilike, inArray, notInArray } from "drizzle-orm";
-import { Pool } from '@neondatabase/serverless';
+import { Pool as NeonPool } from '@neondatabase/serverless';
+
+// Helper to create a pool for external database connections
+// External databases (like inventory) are typically cloud-hosted, so we use Neon
+function createExternalPool(connectionString: string) {
+  return new NeonPool({ connectionString });
+}
 
 export interface IStorage {
   ensureServiceRequestAssignmentColumns(): Promise<void>;
@@ -197,7 +203,7 @@ export interface IStorage {
   // Technician Travel Planning operations
   createTechnicianTrip(trip: any): Promise<any>;
   getTechnicianTrip(id: string): Promise<any | undefined>;
-  getTechnicianTrips(filters?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string }): Promise<any[]>;
+  getTechnicianTrips(filters?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string | string[] }): Promise<any[]>;
   updateTechnicianTrip(id: string, trip: any): Promise<any>;
   deleteTechnicianTrip(id: string): Promise<void>;
   getTechnicianTripCosts(tripId: string): Promise<any | undefined>;
@@ -1869,12 +1875,12 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
     const externalUrl = process.env.INVENTORY_SOURCE_DATABASE_URL;
     let rows: any[] = [];
     if (externalUrl) {
-      const pool = new Pool({ connectionString: externalUrl });
+      const externalPool = await createExternalPool(externalUrl);
       try {
-        const res = await pool.query(queryText);
+        const res = await externalPool.query(queryText);
         rows = res.rows as any[];
       } finally {
-        await pool.end();
+        await externalPool.end();
       }
     } else {
       const q = sql.raw(queryText);
@@ -2136,7 +2142,7 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
   return trip;
 }
 
-  async getTechnicianTrips(filters ?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string }): Promise < TechnicianTrip[] > {
+  async getTechnicianTrips(filters ?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string | string[] }): Promise < TechnicianTrip[] > {
   let query = db.select().from(technicianTrips);
   const conditions = [];
 
@@ -2153,7 +2159,11 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
     conditions.push(ilike(technicianTrips.destinationCity, `%${filters.destinationCity}%`));
   }
     if(filters?.tripStatus) {
-    conditions.push(eq(technicianTrips.tripStatus, filters.tripStatus as any));
+    if (Array.isArray(filters.tripStatus)) {
+      conditions.push(inArray(technicianTrips.tripStatus, filters.tripStatus));
+    } else {
+      conditions.push(eq(technicianTrips.tripStatus, filters.tripStatus));
+    }
   }
 
     if(conditions.length > 0) {

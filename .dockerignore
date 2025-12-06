@@ -1,0 +1,77 @@
+# =============================================================================
+# Docker Ignore File - Service Hub Application
+# =============================================================================
+
+# Dependencies (will be installed fresh in container)
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs (will be rebuilt in container)
+dist
+.next
+.nuxt
+.cache
+*.tsbuildinfo
+
+# Environment files (sensitive)
+.env
+.env.local
+.env.development
+.env.production
+.env.docker.local
+.env*.local
+!.env.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE and Editor
+.vscode
+.idea
+*.swp
+*.swo
+*.swn
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage
+.nyc_output
+__tests__
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+.circleci
+
+# Logs
+logs
+*.log
+
+# Uploads (mount as volume)
+uploads/*
+!uploads/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+.parcel-cache
+
+# Replit specific
+.replit
+replit.nix
+.local
+.agent
+.claude
+
+# Miscellaneous
+orbcomm-fastapi

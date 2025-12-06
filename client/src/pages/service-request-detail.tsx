@@ -16,14 +16,6 @@ import { Combobox } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -47,10 +39,7 @@ import {
   Wrench,
   Plus,
   Minus,
-  Box,
-  FileDown,
-  FileStack,
-  ChevronDown
+  Box
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { generateServiceRequestPDF } from "@/lib/pdfGenerator";
@@ -66,6 +55,27 @@ interface InventoryItem {
   reorderLevel: number;
   unitPrice: number;
   location: string;
+}
+
+/**
+ * Helper function to get media URL
+ * Handles both base64 data URIs (new format) and WhatsApp media IDs (old format)
+ */
+function getMediaUrl(ref: string | undefined | null): string {
+  if (!ref) return '';
+
+  // If it's already a base64 data URI, return as-is
+  if (ref.startsWith('data:')) {
+    return ref;
+  }
+
+  // If it's a WhatsApp media ID (old format), use media proxy endpoint
+  if (ref.startsWith('wa:')) {
+    return `/api/whatsapp/media/${encodeURIComponent(ref)}`;
+  }
+
+  // Default: treat as media ID
+  return `/api/whatsapp/media/${encodeURIComponent(ref)}`;
 }
 
 export default function ServiceRequestDetail() {
@@ -98,37 +108,6 @@ export default function ServiceRequestDetail() {
     enabled: !!id,
   });
 
-  const generateReport = useMutation({
-    mutationFn: async (stage: string) => {
-      const response = await apiRequest("POST", `/api/service-requests/${id}/generate-report`, { stage });
-      return await response.json();
-    },
-    onSuccess: (data) => {
-      refreshReports();
-
-      if (data.emailSent) {
-        toast({
-          title: "Report Generated & Sent",
-          description: `Report generated and emailed to ${data.recipients?.join(', ') || 'recipient'} via ${data.emailProvider || 'email'}.`,
-        });
-      } else {
-        toast({
-          title: "Report Generated",
-          description: data.emailError
-            ? `Report saved but email failed: ${data.emailError}`
-            : "Report generated but email service is not configured.",
-          variant: "default",
-        });
-      }
-    },
-    onError: (e: Error) => {
-      toast({
-        title: "Generation Failed",
-        description: e.message,
-        variant: "destructive",
-      });
-    }
-  });
 
   const saveRemarksMutation = useMutation({
     mutationFn: async () => {
@@ -509,62 +488,6 @@ export default function ServiceRequestDetail() {
               <ArrowLeft className="w-4 h-4" /> Back to Service Requests
             </Link>
             <div className="flex items-center gap-3">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <FileDown className="w-4 h-4 mr-2" />
-                    Generate PDF
-                    <ChevronDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuLabel>Select Report Type</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  
-                  <DropdownMenuItem onClick={() => generateReport.mutate('initial')}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    <div className="flex flex-col">
-                      <span>Initial Service Request</span>
-                      <span className="text-xs text-muted-foreground">Basic request details</span>
-                    </div>
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuItem 
-                    onClick={() => generateReport.mutate('pre_service')}
-                    disabled={!technician.id}
-                  >
-                    <Wrench className="mr-2 h-4 w-4" />
-                    <div className="flex flex-col">
-                      <span>Pre-Service Deployment</span>
-                      <span className="text-xs text-muted-foreground">Technician & wage details</span>
-                    </div>
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuItem 
-                    onClick={() => generateReport.mutate('post_service')}
-                    disabled={req.status !== 'completed'}
-                  >
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    <div className="flex flex-col">
-                      <span>Post-Service Completion</span>
-                      <span className="text-xs text-muted-foreground">Work done & photos</span>
-                    </div>
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuSeparator />
-                  
-                  <DropdownMenuItem 
-                    onClick={() => generateReport.mutate('complete')}
-                    disabled={req.status !== 'completed'}
-                  >
-                    <FileStack className="mr-2 h-4 w-4" />
-                    <div className="flex flex-col">
-                      <span>Complete Service Report</span>
-                      <span className="text-xs text-muted-foreground">All stages combined</span>
-                    </div>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
               <Badge className={getStatusColor(req.status)}>{req.status}</Badge>
               <Badge className={getPriorityColor(req.priority)}>{req.priority}</Badge>
             </div>
@@ -955,11 +878,11 @@ export default function ServiceRequestDetail() {
                         <div className="grid grid-cols-2 gap-3">
                           {Array.isArray(req.clientUploadedPhotos) && req.clientUploadedPhotos.length > 0 ? (
                             req.clientUploadedPhotos.map((ref: string, idx: number) => {
-                              const mediaRef = ref && !ref.startsWith('wa:') ? `wa:${ref}` : ref;
+                              const mediaUrl = getMediaUrl(ref);
                               return (
-                                <a key={`cp-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={`/api/whatsapp/media/${encodeURIComponent(mediaRef)}`} target="_blank" rel="noreferrer">
-                                  <img className="w-full h-full object-cover" src={`/api/whatsapp/media/${encodeURIComponent(mediaRef)}`} alt={`Client photo ${idx + 1}`} onError={(e) => {
-                                    console.error('Failed to load image:', mediaRef);
+                                <a key={`cp-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={mediaUrl} target="_blank" rel="noreferrer">
+                                  <img className="w-full h-full object-cover" src={mediaUrl} alt={`Client photo ${idx + 1}`} onError={(e) => {
+                                    console.error('Failed to load image:', ref);
                                     (e.target as HTMLImageElement).style.display = 'none';
                                   }} />
                                 </a>
@@ -975,11 +898,11 @@ export default function ServiceRequestDetail() {
                         <div className="space-y-3">
                           {Array.isArray(req.clientUploadedVideos) && req.clientUploadedVideos.length > 0 ? (
                             req.clientUploadedVideos.map((ref: string, idx: number) => {
-                              const mediaRef = ref && !ref.startsWith('wa:') ? `wa:${ref}` : ref;
+                              const mediaUrl = getMediaUrl(ref);
                               return (
-                                <a key={`cv-${idx}`} className="block aspect-video bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={`/api/whatsapp/media/${encodeURIComponent(mediaRef)}`} target="_blank" rel="noreferrer">
+                                <a key={`cv-${idx}`} className="block aspect-video bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={mediaUrl} target="_blank" rel="noreferrer">
                                   <video className="w-full h-full object-cover" controls>
-                                    <source src={`/api/whatsapp/media/${encodeURIComponent(mediaRef)}`} type="video/mp4" />
+                                    <source src={mediaUrl} type="video/mp4" />
                                     Client Video {idx + 1}
                                   </video>
                                 </a>
@@ -1010,11 +933,14 @@ export default function ServiceRequestDetail() {
                       <p className="text-sm font-medium text-muted-foreground mb-3">Before Service ({req.beforePhotos?.length || 0})</p>
                       <div className="grid grid-cols-2 gap-3">
                         {(req.beforePhotos || []).length > 0 ? (
-                          req.beforePhotos.map((ref: string, idx: number) => (
-                            <a key={`b-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={`/api/whatsapp/media/${encodeURIComponent(ref)}`} target="_blank" rel="noreferrer">
-                              <img className="w-full h-full object-cover" src={`/api/whatsapp/media/${encodeURIComponent(ref)}`} alt={`Before photo ${idx + 1}`} />
-                            </a>
-                          ))
+                          req.beforePhotos.map((ref: string, idx: number) => {
+                            const mediaUrl = getMediaUrl(ref);
+                            return (
+                              <a key={`b-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={mediaUrl} target="_blank" rel="noreferrer">
+                                <img className="w-full h-full object-cover" src={mediaUrl} alt={`Before photo ${idx + 1}`} />
+                              </a>
+                            );
+                          })
                         ) : (
                           <span className="text-xs text-muted-foreground col-span-2">No photos</span>
                         )}
@@ -1024,11 +950,14 @@ export default function ServiceRequestDetail() {
                       <p className="text-sm font-medium text-muted-foreground mb-3">After Service ({req.afterPhotos?.length || 0})</p>
                       <div className="grid grid-cols-2 gap-3">
                         {(req.afterPhotos || []).length > 0 ? (
-                          req.afterPhotos.map((ref: string, idx: number) => (
-                            <a key={`a-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={`/api/whatsapp/media/${encodeURIComponent(ref)}`} target="_blank" rel="noreferrer">
-                              <img className="w-full h-full object-cover" src={`/api/whatsapp/media/${encodeURIComponent(ref)}`} alt={`After photo ${idx + 1}`} />
-                            </a>
-                          ))
+                          req.afterPhotos.map((ref: string, idx: number) => {
+                            const mediaUrl = getMediaUrl(ref);
+                            return (
+                              <a key={`a-${idx}`} className="block aspect-square bg-muted rounded-lg overflow-hidden border hover:border-primary transition-colors" href={mediaUrl} target="_blank" rel="noreferrer">
+                                <img className="w-full h-full object-cover" src={mediaUrl} alt={`After photo ${idx + 1}`} />
+                              </a>
+                            );
+                          })
                         ) : (
                           <span className="text-xs text-muted-foreground col-span-2">No photos</span>
                         )}
@@ -1056,7 +985,7 @@ export default function ServiceRequestDetail() {
                             <span className="text-sm font-medium">Client Signed Document</span>
                           </div>
                           <Button size="sm" variant="outline" asChild>
-                            <a href={req.signedDocumentUrl} target="_blank" rel="noreferrer">View</a>
+                            <a href={getMediaUrl(req.signedDocumentUrl)} target="_blank" rel="noreferrer">View</a>
                           </Button>
                         </div>
                       )}
@@ -1067,7 +996,7 @@ export default function ServiceRequestDetail() {
                             <span className="text-sm font-medium">Vendor Invoice</span>
                           </div>
                           <Button size="sm" variant="outline" asChild>
-                            <a href={req.vendorInvoiceUrl} target="_blank" rel="noreferrer">View</a>
+                            <a href={getMediaUrl(req.vendorInvoiceUrl)} target="_blank" rel="noreferrer">View</a>
                           </Button>
                         </div>
                       )}
@@ -1220,7 +1149,6 @@ export default function ServiceRequestDetail() {
                         <TableHead>Report Type</TableHead>
                         <TableHead>Generated At</TableHead>
                         <TableHead>Email Status</TableHead>
-                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1242,22 +1170,12 @@ export default function ServiceRequestDetail() {
                                 <Badge variant="outline">Pending</Badge>
                               )}
                             </TableCell>
-                            <TableCell>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => window.open(report.fileUrl, '_blank')}
-                              >
-                                <FileDown className="w-4 h-4 mr-2" />
-                                Download
-                              </Button>
-                            </TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                            No reports generated yet. Use the "Generate PDF" button to create one.
+                          <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                            No reports available.
                           </TableCell>
                         </TableRow>
                       )}

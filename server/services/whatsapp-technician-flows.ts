@@ -16,11 +16,12 @@ import {
   getServiceIdByIndex
 } from './whatsapp-technician-core';
 
-import { 
-  sendTextMessage, 
-  sendInteractiveButtons, 
+import {
+  sendTextMessage,
+  sendInteractiveButtons,
   sendInteractiveList,
-  sendTemplateMessage
+  sendTemplateMessage,
+  downloadWhatsAppMediaAsBase64
 } from './whatsapp';
 
 // ============================================================================
@@ -549,22 +550,28 @@ export async function initiateServiceCompletion(from: string, serviceId: string,
 /**
  * Handle photo upload step
  */
-export async function handlePhotoUploadStep(from: string, imageUrl: string, session: any, storage: any): Promise<void> {
+export async function handlePhotoUploadStep(from: string, mediaId: string, session: any, storage: any): Promise<void> {
   const state = session.conversationState;
   const serviceId = state.currentServiceId;
-  
+
   if (!serviceId) return;
-  
+
   const service = await storage.getServiceRequest(serviceId);
   const step = state.step; // 'upload_before_photos' or 'upload_after_photos'
-  
+
+  // Download media immediately and store as base64 data URI
+  console.log(`[Technician Photo Upload] Attempting to download media ID: ${mediaId}`);
+  const base64Data = await downloadWhatsAppMediaAsBase64(mediaId);
+
+  const imageToStore = base64Data || `wa:${mediaId}`; // Fallback to media ID if download fails
+
   if (step === 'upload_before_photos') {
     // Append to before photos
     const currentPhotos = service.beforePhotos || [];
     await storage.updateServiceRequest(serviceId, {
-      beforePhotos: [...currentPhotos, imageUrl]
+      beforePhotos: [...currentPhotos, imageToStore]
     });
-    
+
     await sendInteractiveButtons(from, "✅ Before photo received. Upload more or continue.", [
       { id: 'done_before_photos', title: '✅ Done / Next Step' }
     ]);
@@ -572,9 +579,9 @@ export async function handlePhotoUploadStep(from: string, imageUrl: string, sess
     // Append to after photos
     const currentPhotos = service.afterPhotos || [];
     await storage.updateServiceRequest(serviceId, {
-      afterPhotos: [...currentPhotos, imageUrl]
+      afterPhotos: [...currentPhotos, imageToStore]
     });
-    
+
     await sendInteractiveButtons(from, "✅ After photo received. Upload more or continue.", [
       { id: 'done_after_photos', title: '✅ Done / Next Step' }
     ]);
@@ -612,13 +619,19 @@ export async function requestSignatureUpload(from: string, session: any, storage
 /**
  * Handle Signature Upload
  */
-export async function handleSignatureUpload(from: string, imageUrl: string, session: any, storage: any): Promise<void> {
+export async function handleSignatureUpload(from: string, mediaId: string, session: any, storage: any): Promise<void> {
   const serviceId = session.conversationState.currentServiceId;
-  
+
+  // Download media immediately and store as base64 data URI
+  console.log(`[Signature Upload] Attempting to download media ID: ${mediaId}`);
+  const base64Data = await downloadWhatsAppMediaAsBase64(mediaId);
+
+  const imageToStore = base64Data || `wa:${mediaId}`; // Fallback to media ID if download fails
+
   await storage.updateServiceRequest(serviceId, {
-    signedDocumentUrl: imageUrl
+    signedDocumentUrl: imageToStore
   });
-  
+
   // Move to next step: Invoice
   await requestInvoiceUpload(from, session, storage);
 }
@@ -665,13 +678,19 @@ export async function handleInvoiceResponse(from: string, hasInvoice: boolean, s
 /**
  * Handle Invoice Upload
  */
-export async function handleInvoiceUpload(from: string, imageUrl: string, session: any, storage: any): Promise<void> {
+export async function handleInvoiceUpload(from: string, mediaId: string, session: any, storage: any): Promise<void> {
   const serviceId = session.conversationState.currentServiceId;
-  
+
+  // Download media immediately and store as base64 data URI
+  console.log(`[Invoice Upload] Attempting to download media ID: ${mediaId}`);
+  const base64Data = await downloadWhatsAppMediaAsBase64(mediaId);
+
+  const imageToStore = base64Data || `wa:${mediaId}`; // Fallback to media ID if download fails
+
   await storage.updateServiceRequest(serviceId, {
-    vendorInvoiceUrl: imageUrl
+    vendorInvoiceUrl: imageToStore
   });
-  
+
   await completeServiceRequest(from, session, storage);
 }
 
