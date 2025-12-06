@@ -138,6 +138,7 @@ export interface IStorage {
   getCourierShipment(id: string): Promise<any | undefined>;
   getCourierShipmentByAwb(awbNumber: string): Promise<any | undefined>;
   getCourierShipmentsByServiceRequest(serviceRequestId: string): Promise<any[]>;
+  getAllCourierShipments(): Promise<any[]>;
   createCourierShipment(shipment: any): Promise<any>;
   updateCourierShipment(id: string, shipment: any): Promise<any>;
   deleteCourierShipment(id: string): Promise<void>;
@@ -221,15 +222,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   // RAG operations
-  async createManual(manual: { title: string; description: string; fileName: string; filePath: string; uploadedBy: string; brand: string; model: string }): Promise<string> {
+  async createManual(manual: { title: string; description?: string; fileName?: string; filePath?: string; uploadedBy: string; brand?: string; model?: string; sourceUrl?: string; version?: string }): Promise<string> {
     const result = await db.insert(manuals).values({
-      title: manual.title,
-      description: manual.description,
-      fileName: manual.fileName,
-      filePath: manual.filePath,
+      name: manual.title, // Map title to name field
+      sourceUrl: manual.sourceUrl || manual.filePath,
       uploadedBy: manual.uploadedBy,
-      brand: manual.brand,
-      model: manual.model
+      version: manual.version,
+      meta: {
+        description: manual.description,
+        fileName: manual.fileName,
+        filePath: manual.filePath,
+        brand: manual.brand,
+        model: manual.model
+      }
     }).returning();
 
     return result[0].id;
@@ -269,9 +274,10 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     console.log(`[CREATE USER] Creating user with data:`, {
       ...insertUser,
-      password: insertUser.password ? '[HASHED]' : null
+      password: (insertUser as any).password ? '[HASHED]' : null
     });
-    const [user] = await db.insert(users).values(insertUser).returning();
+    const result = await db.insert(users).values(insertUser as any).returning();
+    const user = (result as any[])[0];
     console.log(`[CREATE USER] User created with ID: ${user.id}`);
     return user;
   }
@@ -279,7 +285,7 @@ export class DatabaseStorage implements IStorage {
   async updateUser(id: string, updateData: Partial<InsertUser>): Promise<User> {
     console.log(`[UPDATE USER] Updating user ${id} with data:`, {
       ...updateData,
-      password: updateData.password ? '[HASHED]' : undefined
+      password: (updateData as any).password ? '[HASHED]' : undefined
     });
     const [user] = await db
       .update(users)
@@ -301,7 +307,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCustomer(insertCustomer: InsertCustomer): Promise<Customer> {
-    const [customer] = await db.insert(customers).values(insertCustomer).returning();
+    const result = await db.insert(customers).values(insertCustomer).returning();
+    const customer = (result as any[])[0];
     return customer;
   }
 
@@ -693,7 +700,7 @@ export class DatabaseStorage implements IStorage {
   return updated;
 }
 
-  async getAllServiceRequests(): Promise < ServiceRequest[] > {
+  async getAllServiceRequests(): Promise<any[]> {
   // Select only fields that exist in the database to avoid schema mismatch errors
   return await db
     .select({
@@ -739,7 +746,7 @@ export class DatabaseStorage implements IStorage {
     .orderBy(desc(serviceRequests.createdAt));
 }
 
-  async getServiceRequest(id: string): Promise < ServiceRequest | undefined > {
+  async getServiceRequest(id: string): Promise<any | undefined> {
   const [request] = await db
     .select({
       id: serviceRequests.id,
@@ -777,6 +784,7 @@ export class DatabaseStorage implements IStorage {
       createdBy: serviceRequests.createdBy,
       createdAt: serviceRequests.createdAt,
       updatedAt: serviceRequests.updatedAt,
+      excelData: serviceRequests.excelData,
     })
     .from(serviceRequests)
     .where(eq(serviceRequests.id, id));
@@ -806,8 +814,8 @@ export class DatabaseStorage implements IStorage {
 
     // If activeOnly is true, filter by active statuses
     if(activeOnly) {
-      const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'];
-      conditions.push(inArray(serviceRequests.status, activeStatuses));
+      const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress'] as const;
+      conditions.push(inArray(serviceRequests.status, activeStatuses as any));
     }
 
       // Clean, simple select without nested objects to avoid orderSelectedFields issues
@@ -1511,10 +1519,18 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
   return shipments;
 }
 
+  async getAllCourierShipments(): Promise < CourierShipment[] > {
+  const shipments = await db
+    .select()
+    .from(courierShipments)
+    .orderBy(desc(courierShipments.createdAt));
+  return shipments;
+}
+
   async createCourierShipment(shipment: InsertCourierShipment): Promise < CourierShipment > {
   const [newShipment] = await db
     .insert(courierShipments)
-    .values(shipment)
+    .values(shipment as any)
     .returning();
   return newShipment;
 }
@@ -1611,6 +1627,7 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
       containerId: serviceRequests.containerId,
       customerId: serviceRequests.customerId,
       assignedTechnicianId: serviceRequests.assignedTechnicianId,
+      excelData: serviceRequests.excelData,
       // Container fields
       container: {
         id: containers.id,
@@ -1861,7 +1878,7 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
       }
     } else {
       const q = sql.raw(queryText);
-      rows = await db.execute(q) as any[];
+      rows = (await db.execute(q) as unknown) as any[];
     }
     // Normalize keys to match drizzle inventory schema consumers
     return (rows as any[]).map((r: any) => ({
@@ -1933,18 +1950,20 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
 }
 
   async getInventoryTransactions(itemId ?: string, limit: number = 100): Promise < any[] > {
-  let query = db
+  if(itemId) {
+    return await db
+      .select()
+      .from(inventoryTransactions)
+      .where(eq(inventoryTransactions.itemId, itemId))
+      .orderBy(desc(inventoryTransactions.timestamp))
+      .limit(limit);
+  }
+  
+  return await db
     .select()
     .from(inventoryTransactions)
-    .where(sql`1=1`) // Always true condition to satisfy where requirement
     .orderBy(desc(inventoryTransactions.timestamp))
     .limit(limit);
-
-  if(itemId) {
-    query = query.where(eq(inventoryTransactions.itemId, itemId));
-  }
-
-    return await query;
 }
 
   async createInventoryTransaction(transactionData: any): Promise < any > {
@@ -2035,25 +2054,28 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
 }
 
   async getScheduledServicesByTechnician(technicianId: string, date ?: string): Promise < ScheduledService[] > {
-  let query = db
-    .select()
-    .from(scheduledServices)
-    .where(eq(scheduledServices.technicianId, technicianId))
-    .orderBy(scheduledServices.sequenceNumber);
-
   if(date) {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    query = query.where(and(
-      sql`${scheduledServices.scheduledDate} >= ${startOfDay}`,
-      sql`${scheduledServices.scheduledDate} <= ${endOfDay}`
-    ));
+    return await db
+      .select()
+      .from(scheduledServices)
+      .where(and(
+        eq(scheduledServices.technicianId, technicianId),
+        sql`${scheduledServices.scheduledDate} >= ${startOfDay}`,
+        sql`${scheduledServices.scheduledDate} <= ${endOfDay}`
+      ))
+      .orderBy(scheduledServices.sequenceNumber);
   }
 
-    return await query;
+  return await db
+    .select()
+    .from(scheduledServices)
+    .where(eq(scheduledServices.technicianId, technicianId))
+    .orderBy(scheduledServices.sequenceNumber);
 }
 
   async createScheduledService(service: any): Promise < ScheduledService > {
@@ -2188,36 +2210,40 @@ return trips;
     return Boolean(value);
   };
 
-  const normalized = {
-    currency: costs.currency ?? existing?.currency ?? "INR",
-    travelFare: numberOr(costs.travelFare, Number(existing?.travelFare ?? 0)),
-    travelFareIsManual: boolOr(costs.travelFareIsManual, Boolean(existing?.travelFareIsManual)),
-    stayCost: numberOr(costs.stayCost, Number(existing?.stayCost ?? 0)),
-    stayCostIsManual: boolOr(costs.stayCostIsManual, Boolean(existing?.stayCostIsManual)),
-    dailyAllowance: numberOr(costs.dailyAllowance, Number(existing?.dailyAllowance ?? 0)),
-    dailyAllowanceIsManual: boolOr(costs.dailyAllowanceIsManual, Boolean(existing?.dailyAllowanceIsManual)),
-    localTravelCost: numberOr(costs.localTravelCost, Number(existing?.localTravelCost ?? 0)),
-    localTravelCostIsManual: boolOr(costs.localTravelCostIsManual, Boolean(existing?.localTravelCostIsManual)),
-    miscCost: numberOr(costs.miscCost, Number(existing?.miscCost ?? 0)),
-    miscCostIsManual: boolOr(costs.miscCostIsManual, Boolean(existing?.miscCostIsManual)),
-  };
+  // Calculate numeric values first
+  const travelFareNum = numberOr(costs.travelFare, Number(existing?.travelFare ?? 0));
+  const stayCostNum = numberOr(costs.stayCost, Number(existing?.stayCost ?? 0));
+  const dailyAllowanceNum = numberOr(costs.dailyAllowance, Number(existing?.dailyAllowance ?? 0));
+  const localTravelCostNum = numberOr(costs.localTravelCost, Number(existing?.localTravelCost ?? 0));
+  const miscCostNum = numberOr(costs.miscCost, Number(existing?.miscCost ?? 0));
 
   const totalEstimatedCost = (
-    normalized.travelFare +
-    normalized.stayCost +
-    normalized.dailyAllowance +
-    normalized.localTravelCost +
-    normalized.miscCost
+    travelFareNum + stayCostNum + dailyAllowanceNum + localTravelCostNum + miscCostNum
   ).toFixed(2);
+
+  // Convert to strings for decimal columns
+  const normalized = {
+    currency: costs.currency ?? existing?.currency ?? "INR",
+    travelFare: travelFareNum.toFixed(2),
+    travelFareIsManual: boolOr(costs.travelFareIsManual, Boolean(existing?.travelFareIsManual)),
+    stayCost: stayCostNum.toFixed(2),
+    stayCostIsManual: boolOr(costs.stayCostIsManual, Boolean(existing?.stayCostIsManual)),
+    dailyAllowance: dailyAllowanceNum.toFixed(2),
+    dailyAllowanceIsManual: boolOr(costs.dailyAllowanceIsManual, Boolean(existing?.dailyAllowanceIsManual)),
+    localTravelCost: localTravelCostNum.toFixed(2),
+    localTravelCostIsManual: boolOr(costs.localTravelCostIsManual, Boolean(existing?.localTravelCostIsManual)),
+    miscCost: miscCostNum.toFixed(2),
+    miscCostIsManual: boolOr(costs.miscCostIsManual, Boolean(existing?.miscCostIsManual)),
+    totalEstimatedCost,
+  };
 
   if(existing) {
     const [updated] = await db
       .update(technicianTripCosts)
       .set({
         ...normalized,
-        totalEstimatedCost,
         updatedAt: new Date(),
-      })
+      } as any)
       .where(eq(technicianTripCosts.tripId, tripId))
       .returning();
     return updated;
@@ -2228,10 +2254,9 @@ return trips;
     .values({
       tripId,
       ...normalized,
-      totalEstimatedCost,
       createdAt: new Date(),
       updatedAt: new Date(),
-    })
+    } as any)
     .returning();
   return created;
 }

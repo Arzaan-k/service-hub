@@ -2643,6 +2643,180 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== INVENTORY MANAGEMENT SHIPMENT SYNC ====================
+  // This endpoint allows the Inventory Management system to create/sync shipments
+  // that will automatically appear in Service Hub Courier Tracking section
+  
+  // Create shipment from Inventory Management (auto-links to service request)
+  app.post("/api/inventory/shipments", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { 
+        serviceRequestId, 
+        awbNumber, 
+        courierName, 
+        courierCode,
+        shipmentDescription, 
+        origin, 
+        destination,
+        trackingHistory,
+        status,
+        currentLocation,
+        estimatedDeliveryDate,
+        actualDeliveryDate
+      } = req.body;
+
+      if (!awbNumber || !courierName) {
+        return res.status(400).json({ error: "AWB number and courier name are required" });
+      }
+
+      // Check if AWB already exists - if so, update it instead of creating duplicate
+      const existing = await storage.getCourierShipmentByAwb(awbNumber);
+      
+      if (existing) {
+        // Update existing shipment with new data
+        const updated = await storage.updateCourierShipment(existing.id, {
+          serviceRequestId: serviceRequestId || existing.serviceRequestId,
+          courierName: courierName || existing.courierName,
+          courierCode: courierCode || existing.courierCode,
+          shipmentDescription: shipmentDescription || existing.shipmentDescription,
+          origin: origin || existing.origin,
+          destination: destination || existing.destination,
+          status: status || existing.status,
+          currentLocation: currentLocation || existing.currentLocation,
+          trackingHistory: trackingHistory || existing.trackingHistory,
+          estimatedDeliveryDate: estimatedDeliveryDate ? new Date(estimatedDeliveryDate) : existing.estimatedDeliveryDate,
+          actualDeliveryDate: actualDeliveryDate ? new Date(actualDeliveryDate) : existing.actualDeliveryDate,
+          lastTrackedAt: new Date(),
+        });
+        
+        console.log(`[INVENTORY SHIPMENT] Updated existing shipment ${awbNumber} for service request ${serviceRequestId}`);
+        return res.json({ ...updated, isUpdate: true });
+      }
+
+      // Track the shipment to get latest data if API key is configured
+      let trackingResult: any = null;
+      try {
+        const { trackShipment } = await import('./services/courierTracking');
+        trackingResult = await trackShipment(awbNumber, courierCode);
+      } catch (trackError) {
+        console.warn(`[INVENTORY SHIPMENT] Could not track shipment ${awbNumber}:`, trackError);
+      }
+
+      // Create new courier shipment record
+      const shipment = await storage.createCourierShipment({
+        serviceRequestId: serviceRequestId || null,
+        awbNumber,
+        courierName: trackingResult?.courierName || courierName,
+        courierCode: trackingResult?.courierCode || courierCode,
+        shipmentDescription,
+        origin: trackingResult?.origin || origin,
+        destination: trackingResult?.destination || destination,
+        estimatedDeliveryDate: trackingResult?.estimatedDeliveryDate 
+          ? new Date(trackingResult.estimatedDeliveryDate) 
+          : (estimatedDeliveryDate ? new Date(estimatedDeliveryDate) : undefined),
+        actualDeliveryDate: trackingResult?.actualDeliveryDate 
+          ? new Date(trackingResult.actualDeliveryDate) 
+          : (actualDeliveryDate ? new Date(actualDeliveryDate) : undefined),
+        status: trackingResult?.status || status || 'pending',
+        currentLocation: trackingResult?.currentLocation || currentLocation,
+        trackingHistory: trackingResult?.trackingHistory || trackingHistory || [],
+        lastTrackedAt: new Date(),
+        rawApiResponse: trackingResult?.rawResponse,
+        addedBy: req.user!.id,
+      });
+
+      console.log(`[INVENTORY SHIPMENT] Created shipment ${awbNumber} for service request ${serviceRequestId}`);
+      res.json(shipment);
+    } catch (error: any) {
+      console.error("[INVENTORY SHIPMENT] Error creating shipment:", error);
+      res.status(500).json({ error: error.message || "Failed to create shipment from inventory" });
+    }
+  });
+
+  // Get all shipments for a service request (used by both Service Hub and Inventory)
+  app.get("/api/inventory/shipments/by-service-request/:serviceRequestId", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { serviceRequestId } = req.params;
+      const shipments = await storage.getCourierShipmentsByServiceRequest(serviceRequestId);
+      res.json(shipments);
+    } catch (error: any) {
+      console.error("[INVENTORY SHIPMENT] Error fetching shipments:", error);
+      res.status(500).json({ error: "Failed to fetch shipments" });
+    }
+  });
+
+  // Bulk sync shipments from Inventory Management
+  app.post("/api/inventory/shipments/sync", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { shipments } = req.body;
+      
+      if (!Array.isArray(shipments)) {
+        return res.status(400).json({ error: "shipments must be an array" });
+      }
+
+      const results = {
+        created: 0,
+        updated: 0,
+        errors: [] as string[]
+      };
+
+      for (const shipmentData of shipments) {
+        try {
+          const { awbNumber, serviceRequestId, courierName, ...rest } = shipmentData;
+          
+          if (!awbNumber) {
+            results.errors.push(`Missing AWB number for shipment`);
+            continue;
+          }
+
+          const existing = await storage.getCourierShipmentByAwb(awbNumber);
+          
+          if (existing) {
+            // Update existing
+            await storage.updateCourierShipment(existing.id, {
+              serviceRequestId: serviceRequestId || existing.serviceRequestId,
+              courierName: courierName || existing.courierName,
+              ...rest,
+              lastTrackedAt: new Date(),
+            });
+            results.updated++;
+          } else {
+            // Create new
+            await storage.createCourierShipment({
+              awbNumber,
+              serviceRequestId,
+              courierName: courierName || 'Unknown',
+              addedBy: req.user!.id,
+              ...rest,
+            });
+            results.created++;
+          }
+        } catch (err: any) {
+          results.errors.push(`Error processing ${shipmentData.awbNumber}: ${err.message}`);
+        }
+      }
+
+      console.log(`[INVENTORY SHIPMENT SYNC] Created: ${results.created}, Updated: ${results.updated}, Errors: ${results.errors.length}`);
+      res.json(results);
+    } catch (error: any) {
+      console.error("[INVENTORY SHIPMENT SYNC] Error:", error);
+      res.status(500).json({ error: "Failed to sync shipments" });
+    }
+  });
+
+  // Get all shipments (admin view)
+  app.get("/api/inventory/shipments", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const shipments = await storage.getAllCourierShipments();
+      res.json(shipments);
+    } catch (error: any) {
+      console.error("[INVENTORY SHIPMENT] Error fetching all shipments:", error);
+      res.status(500).json({ error: "Failed to fetch shipments" });
+    }
+  });
+
+  // ==================== END INVENTORY SHIPMENT SYNC ====================
+
   // ==================== END COURIER TRACKING ROUTES ====================
 
   // Technician routes

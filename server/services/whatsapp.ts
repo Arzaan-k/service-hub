@@ -3064,6 +3064,15 @@ What would you like to do?`;
     return;
   }
 
+  // Handle technician end service from list (end_service_direct_ prefix)
+  if (user.role === 'technician' && listId.startsWith('end_service_direct_')) {
+    const { storage } = await import('../storage');
+    const { initiateServiceCompletion } = await import('./whatsapp-technician-flows');
+    const serviceId = listId.replace('end_service_direct_', '');
+    await initiateServiceCompletion(from, serviceId, session, storage);
+    return;
+  }
+
   // Handle service request container selection (client flow)
   if (conversationState.flow === 'service_request' && conversationState.step === 'awaiting_container_selection') {
     await serviceRequestViaWhatsApp.handleContainerListSelection(listId, from, user, session);
