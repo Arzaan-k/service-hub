@@ -43,10 +43,15 @@ export function MultiSelectCombobox({
     const [open, setOpen] = React.useState(false)
 
     const handleSelect = (value: string) => {
-        if (selectedValues.includes(value)) {
-            onSelectedValuesChange(selectedValues.filter((v) => v !== value))
+        // Find the actual option value (Command normalizes values to lowercase)
+        const actualValue = options.find(opt =>
+            opt.value.toLowerCase() === value.toLowerCase()
+        )?.value || value;
+
+        if (selectedValues.includes(actualValue)) {
+            onSelectedValuesChange(selectedValues.filter((v) => v !== actualValue))
         } else {
-            onSelectedValuesChange([...selectedValues, value])
+            onSelectedValuesChange([...selectedValues, actualValue])
         }
     }
 
@@ -103,8 +108,10 @@ export function MultiSelectCombobox({
                             <CommandItem
                                 key={option.value}
                                 value={option.value}
+                                keywords={[option.label, option.value]}
                                 onSelect={(currentValue) => {
                                     handleSelect(currentValue)
+                                    // Don't close popover to allow multiple selections
                                 }}
                             >
                                 <Check
