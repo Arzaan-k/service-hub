@@ -16,14 +16,6 @@ import { Combobox } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -47,10 +39,7 @@ import {
   Wrench,
   Plus,
   Minus,
-  Box,
-  FileDown,
-  FileStack,
-  ChevronDown
+  Box
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { generateServiceRequestPDF } from "@/lib/pdfGenerator";
@@ -119,37 +108,6 @@ export default function ServiceRequestDetail() {
     enabled: !!id,
   });
 
-  const generateReport = useMutation({
-    mutationFn: async (stage: string) => {
-      const response = await apiRequest("POST", `/api/service-requests/${id}/generate-report`, { stage });
-      return await response.json();
-    },
-    onSuccess: (data) => {
-      refreshReports();
-
-      if (data.emailSent) {
-        toast({
-          title: "Report Generated & Sent",
-          description: `Report generated and emailed to ${data.recipients?.join(', ') || 'recipient'} via ${data.emailProvider || 'email'}.`,
-        });
-      } else {
-        toast({
-          title: "Report Generated",
-          description: data.emailError
-            ? `Report saved but email failed: ${data.emailError}`
-            : "Report generated but email service is not configured.",
-          variant: "default",
-        });
-      }
-    },
-    onError: (e: Error) => {
-      toast({
-        title: "Generation Failed",
-        description: e.message,
-        variant: "destructive",
-      });
-    }
-  });
 
   const saveRemarksMutation = useMutation({
     mutationFn: async () => {
@@ -530,62 +488,6 @@ export default function ServiceRequestDetail() {
               <ArrowLeft className="w-4 h-4" /> Back to Service Requests
             </Link>
             <div className="flex items-center gap-3">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <FileDown className="w-4 h-4 mr-2" />
-                    Generate PDF
-                    <ChevronDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuLabel>Select Report Type</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  
-                  <DropdownMenuItem onClick={() => generateReport.mutate('initial')}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    <div className="flex flex-col">
-                      <span>Initial Service Request</span>
-                      <span className="text-xs text-muted-foreground">Basic request details</span>
-                    </div>
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuItem 
-                    onClick={() => generateReport.mutate('pre_service')}
-                    disabled={!technician.id}
-                  >
-                    <Wrench className="mr-2 h-4 w-4" />
-                    <div className="flex flex-col">
-                      <span>Pre-Service Deployment</span>
-                      <span className="text-xs text-muted-foreground">Technician & wage details</span>
-                    </div>
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuItem 
-                    onClick={() => generateReport.mutate('post_service')}
-                    disabled={req.status !== 'completed'}
-                  >
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    <div className="flex flex-col">
-                      <span>Post-Service Completion</span>
-                      <span className="text-xs text-muted-foreground">Work done & photos</span>
-                    </div>
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuSeparator />
-                  
-                  <DropdownMenuItem 
-                    onClick={() => generateReport.mutate('complete')}
-                    disabled={req.status !== 'completed'}
-                  >
-                    <FileStack className="mr-2 h-4 w-4" />
-                    <div className="flex flex-col">
-                      <span>Complete Service Report</span>
-                      <span className="text-xs text-muted-foreground">All stages combined</span>
-                    </div>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
               <Badge className={getStatusColor(req.status)}>{req.status}</Badge>
               <Badge className={getPriorityColor(req.priority)}>{req.priority}</Badge>
             </div>
@@ -1247,7 +1149,6 @@ export default function ServiceRequestDetail() {
                         <TableHead>Report Type</TableHead>
                         <TableHead>Generated At</TableHead>
                         <TableHead>Email Status</TableHead>
-                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1269,22 +1170,12 @@ export default function ServiceRequestDetail() {
                                 <Badge variant="outline">Pending</Badge>
                               )}
                             </TableCell>
-                            <TableCell>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => window.open(report.fileUrl, '_blank')}
-                              >
-                                <FileDown className="w-4 h-4 mr-2" />
-                                Download
-                              </Button>
-                            </TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                            No reports generated yet. Use the "Generate PDF" button to create one.
+                          <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                            No reports available.
                           </TableCell>
                         </TableRow>
                       )}
