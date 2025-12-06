@@ -47,23 +47,11 @@ export default function Sidebar() {
     // Inventory - Admin, Technician, Senior Technician
     { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", roles: ["admin", "technician", "senior_technician"] },
 
-    // WhatsApp - Admin, Technician, Client
-    { path: "/whatsapp", label: "WhatsApp", icon: "fab fa-whatsapp", roles: ["admin", "technician", "client"] },
-
-    // Manuals - Admin, Technician, Senior Technician
-    { path: "/manuals", label: "Manuals", icon: "fas fa-book", roles: ["admin", "technician", "senior_technician"] },
-
-    // RAG Chat - Admin, Technician, Senior Technician
-    { path: "/rag-chat", label: "AI Assistant", icon: "fas fa-robot", roles: ["admin", "technician", "senior_technician"] },
-
     // User Management - Admin only
     { path: "/admin/user-management", label: "User Management", icon: "fas fa-users-cog", roles: ["admin"] },
 
     // Analytics - Admin only
     { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", roles: ["admin"] },
-
-    // WhatsApp Admin - Admin only
-    { path: "/admin/whatsapp", label: "WhatsApp Admin", icon: "fas fa-cog", roles: ["admin"] },
 
     // My Profile - All roles
     { path: "/my-profile", label: "My Profile", icon: "fas fa-id-card", roles: ["admin", "technician", "senior_technician", "amc", "client"] },
