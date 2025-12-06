@@ -49,6 +49,7 @@ import { sql, eq, desc } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
 import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings } from '@shared/schema';
+import { acknowledgeSummary } from './services/dailySummaryService';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -846,34 +847,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/users/:userId/send-credentials", authenticateUser, requireRole('admin', 'super_admin'), async (req, res) => {
     try {
       const { userId } = req.params;
-      const { generateSecurePassword, sendUserCredentials } = await import('./services/auth');
+
 
       const user = await storage.getUser(userId);
+
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
 
-      // Generate new secure password
+      const { generateSecurePassword, sendUserCredentials, hashPassword } = await import('./services/auth');
+
+      // Generate secure password
       const plainPassword = generateSecurePassword();
-      const { hashPassword } = await import('./services/auth');
       const passwordHash = await hashPassword(plainPassword);
 
-      // Update user with new password
+      // Update user password
       await storage.updateUser(userId, {
         password: passwordHash,
-        emailVerified: true, // Keep verified - we're sending to their confirmed email
-        requiresPasswordReset: true // Force password reset on next login
-      });
+        requiresPasswordReset: true // Force reset on next login
+      } as any);
 
       // Send credentials via email
       const emailResult = await sendUserCredentials(user, plainPassword);
 
       const message = emailResult.success
-        ? 'New credentials sent via email'
-        : `${emailResult.error || 'Check server logs for credentials.'}`;
+        ? 'Credentials sent via email'
+        : `Credentials generated. ${emailResult.error || 'Check server logs.'}`;
 
       res.json({
-        user: { ...user, password: undefined },
         message,
         emailSent: emailResult.success,
         plainPassword: plainPassword // Only for development/debugging
@@ -882,6 +883,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Send credentials error:", error);
       res.status(500).json({ error: "Failed to send credentials" });
     }
+  });
+
+  // Daily Summary Acknowledgment Routes
+  app.post("/api/summary/acknowledge", async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: "ID is required" });
+
+      const result = await acknowledgeSummary(id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/summary/acknowledge-view/:id", async (req, res) => {
+    const { id } = req.params;
+    // Return a simple HTML page that calls the POST endpoint
+    res.send(`
+      <html>
+        <head>
+          <title>Acknowledge Summary</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f5f5f5; }
+            .container { text-align: center; padding: 40px; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 90%; width: 400px; }
+            h2 { color: #333; margin-bottom: 20px; }
+            p { color: #666; margin-bottom: 30px; line-height: 1.5; }
+            button { background-color: #1976d2; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 4px; cursor: pointer; transition: background-color 0.3s; width: 100%; }
+            button:hover { background-color: #1565c0; }
+            button:disabled { background-color: #ccc; cursor: not-allowed; }
+            .success { color: #2e7d32; display: none; margin-top: 20px; padding: 10px; background-color: #e8f5e9; border-radius: 4px; }
+            .error { color: #c62828; display: none; margin-top: 20px; padding: 10px; background-color: #ffebee; border-radius: 4px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h2>Daily Summary Acknowledgment</h2>
+            <p>Please confirm that you have reviewed the daily service request summary.</p>
+            <button id="ackBtn" onclick="acknowledge()">Acknowledge Summary</button>
+            <div id="successMsg" class="success">Acknowledgment received successfully!</div>
+            <div id="errorMsg" class="error"></div>
+          </div>
+          <script>
+            async function acknowledge() {
+              const btn = document.getElementById('ackBtn');
+              const successMsg = document.getElementById('successMsg');
+              const errorMsg = document.getElementById('errorMsg');
+              
+              btn.disabled = true;
+              btn.innerText = "Processing...";
+              errorMsg.style.display = 'none';
+              
+              try {
+                const response = await fetch('/api/summary/acknowledge', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: '${id}' })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                  btn.style.display = 'none';
+                  successMsg.style.display = 'block';
+                  if (data.message === "Already acknowledged") {
+                    successMsg.innerText = "This summary was already acknowledged.";
+                  }
+                } else {
+                  throw new Error(data.error || 'Failed to acknowledge');
+                }
+              } catch (err) {
+                btn.disabled = false;
+                btn.innerText = "Acknowledge Summary";
+                errorMsg.innerText = err.message || "An error occurred";
+                errorMsg.style.display = 'block';
+              }
+            }
+          </script>
+        </body>
+      </html>
+    `);
   });
 
   // Test endpoint to get all users (for development only)

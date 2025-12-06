@@ -202,7 +202,7 @@ export interface IStorage {
   // Technician Travel Planning operations
   createTechnicianTrip(trip: any): Promise<any>;
   getTechnicianTrip(id: string): Promise<any | undefined>;
-  getTechnicianTrips(filters?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string }): Promise<any[]>;
+  getTechnicianTrips(filters?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string | string[] }): Promise<any[]>;
   updateTechnicianTrip(id: string, trip: any): Promise<any>;
   deleteTechnicianTrip(id: string): Promise<void>;
   getTechnicianTripCosts(tripId: string): Promise<any | undefined>;
@@ -2120,7 +2120,7 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
   return trip;
 }
 
-  async getTechnicianTrips(filters ?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string }): Promise < TechnicianTrip[] > {
+  async getTechnicianTrips(filters ?: { technicianId?: string; startDate?: Date; endDate?: Date; destinationCity?: string; tripStatus?: string | string[] }): Promise < TechnicianTrip[] > {
   let query = db.select().from(technicianTrips);
   const conditions = [];
 
@@ -2137,7 +2137,11 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
     conditions.push(ilike(technicianTrips.destinationCity, `%${filters.destinationCity}%`));
   }
     if(filters?.tripStatus) {
-    conditions.push(eq(technicianTrips.tripStatus, filters.tripStatus as any));
+    if (Array.isArray(filters.tripStatus)) {
+      conditions.push(inArray(technicianTrips.tripStatus, filters.tripStatus));
+    } else {
+      conditions.push(eq(technicianTrips.tripStatus, filters.tripStatus));
+    }
   }
 
     if(conditions.length > 0) {
