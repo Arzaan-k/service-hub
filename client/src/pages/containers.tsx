@@ -253,7 +253,7 @@ export default function Containers() {
     });
 
     return filtered;
-  }, [containers, searchTerm, statusFilter, typeFilter, gradeFilter, sortBy, isUsingPagination]);
+  }, [containers, searchTerm, statusFilter, typeFilter, gradeFilter, sizeTypeFilter, sortBy, isUsingPagination]);
 
   // Pagination calculations
   const displayItems = hasActiveFilters ? filteredAndSortedContainers : containers;
