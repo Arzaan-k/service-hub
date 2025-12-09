@@ -29,6 +29,7 @@
     "clear:travel-data": "tsx server/tools/clear-travel-data.ts",
     "clear:auto-pm": "tsx server/tools/clear-auto-pm-data.ts",
     "whatsapp:templates": "tsx register-templates.js",
+    "check:whatsapp": "tsx server/tools/check-whatsapp-config.ts",
     "setup:rag": "node setup-rag.js",
     "setup:rag:full": "node setup-rag-full.js",
     "setup:chroma": "python setup-chroma-local.py",

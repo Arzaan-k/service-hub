@@ -6591,12 +6591,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // WhatsApp webhook for incoming messages (matches ngrok URL path)
   app.post("/api/whatsapp/webhook", async (req, res) => {
+    console.log('🔔 [WEBHOOK] POST request received at /api/whatsapp/webhook');
+    console.log('📦 [WEBHOOK] Request body:', JSON.stringify(req.body, null, 2));
+
     try {
       const { whatsappService } = await import('./services/whatsapp');
       const result = await whatsappService.handleWebhook(req.body);
+      console.log('✅ [WEBHOOK] Processed successfully:', result);
       res.json({ status: 'ok', result });
     } catch (error) {
-      console.error('WhatsApp webhook error:', error);
+      console.error('❌ [WEBHOOK] Error processing webhook:', error);
       res.status(500).json({ error: 'Webhook processing failed' });
     }
   });

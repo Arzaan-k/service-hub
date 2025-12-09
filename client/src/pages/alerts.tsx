@@ -13,6 +13,7 @@ import { Search, X, SlidersHorizontal, ArrowUpDown, Loader2 } from "lucide-react
 import { AlertSummaryPanel } from "@/components/alerts/alert-summary-panel";
 import { ContainerAlertCard } from "@/components/alerts/container-alert-card";
 import { AlertSidePanel } from "@/components/alerts/alert-side-panel";
+import { PerContainerTemperature } from "@/components/alerts/per-container-temperature";
 
 // Filter state interface
 interface AlertFilters {
@@ -289,6 +290,9 @@ export default function Alerts() {
               highCount={summaryStats.high}
               topContainer={summaryStats.topContainer}
             />
+
+            {/* Per-Container Temperature Monitoring */}
+            <PerContainerTemperature alerts={filteredAlerts} containers={containers} />
 
             {/* Search and Filter Bar */}
             <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
