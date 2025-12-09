@@ -49,6 +49,7 @@ export const users = pgTable("users", {
   whatsappVerified: boolean("whatsapp_verified").default(false).notNull(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   requiresPasswordReset: boolean("requires_password_reset").default(false).notNull(),
+  passwordReminderSentAt: timestamp("password_reminder_sent_at"), // Tracks when 24-hour password reminder was sent
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }) as any;
