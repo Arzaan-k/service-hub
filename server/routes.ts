@@ -45,10 +45,10 @@ import {
   recalculateTripCosts
 } from "./services/travel-planning";
 import { db } from './db';
-import { sql, eq, desc } from 'drizzle-orm';
+import { sql, eq, desc, isNotNull, isNull, and } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
-import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings } from '@shared/schema';
+import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
 
 // Initialize RAG services
@@ -136,11 +136,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================================================================
   app.get("/api/health", async (req, res) => {
     const startTime = Date.now();
-    
+
     try {
       // Check database connection
       await db.execute(sql`SELECT 1`);
-      
+
       const healthStatus = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -150,11 +150,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         environment: process.env.NODE_ENV || 'development',
         version: process.env.npm_package_version || '1.0.0'
       };
-      
+
       res.status(200).json(healthStatus);
     } catch (error: any) {
       console.error('[HEALTH] Check failed:', error);
-      
+
       res.status(503).json({
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
@@ -1080,6 +1080,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Analytics routes - Client & Technician Performance Analytics
+  app.get("/api/analytics/clients", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const role = (req.user?.role || '').toLowerCase();
+      const range = parseInt(req.query.range as string) || 90;
+
+      console.log(`Client analytics requested by ${role} user: ${req.user?.id}, range: ${range} days`);
+
+      // Fetch real data from storage
+      let data = await storage.getClientAnalytics(range);
+
+      // Apply role-based filtering
+      if (role === 'client') {
+        const customer = await storage.getCustomerByUserId(req.user!.id);
+        if (customer) {
+          data = data.filter(c => c.client_id === customer.id);
+        } else {
+          data = [];
+        }
+      }
+
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching client analytics:', error);
+      res.status(500).json({ error: "Failed to fetch client analytics" });
+    }
+  });
+
+  app.get("/api/analytics/technicians", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const role = (req.user?.role || '').toLowerCase();
+      const range = parseInt(req.query.range as string) || 90;
+
+      console.log(`Technician analytics requested by ${role} user: ${req.user?.id}, range: ${range} days`);
+
+      // Fetch real data from storage
+      let data = await storage.getTechnicianAnalytics(range);
+
+      // Apply role-based filtering
+      if (role === 'technician') {
+        const technician = await storage.getTechnicianByUserId(req.user!.id);
+        if (technician) {
+          data = data.filter(t => t.technician_id === technician.id);
+        } else {
+          data = [];
+        }
+      }
+
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching technician analytics:', error);
+      console.error('Error stack:', error.stack);
+      res.status(500).json({
+        error: "Failed to fetch technician analytics",
+        details: error.message,
+        stack: error.stack
+      });
+    }
+  });
+
   // Container routes
   // Zod: pagination schema
   const paginationSchema = z.object({
@@ -1939,14 +1999,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(list);
       }
       const requests = await storage.getAllServiceRequests();
+
+      // Apply filters if provided
+      let filteredRequests = requests;
+      const customerId = req.query.customerId as string;
+      const technicianId = req.query.technicianId as string;
+
+      if (customerId) {
+        filteredRequests = filteredRequests.filter(r => r.customerId === customerId);
+      }
+
+      if (technicianId) {
+        filteredRequests = filteredRequests.filter(r => r.assignedTechnicianId === technicianId);
+      }
+
       const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
       const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
       if (hasLimit || hasOffset) {
         const { limit, offset } = paginationSchema.parse(req.query);
-        res.setHeader('x-total-count', String(requests.length));
-        return res.json(requests.slice(offset, offset + limit));
+        res.setHeader('x-total-count', String(filteredRequests.length));
+        return res.json(filteredRequests.slice(offset, offset + limit));
       }
-      res.json(requests);
+      res.json(filteredRequests);
     } catch (error) {
       console.error("Error fetching service requests:", error);
       res.status(500).json({ error: "Failed to fetch service requests", details: error instanceof Error ? error.message : String(error) });
@@ -6690,15 +6764,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     };
   }
 
-  // Start Preventive Maintenance checker (runs daily at midnight)
-  (async () => {
-    try {
-      const { startPMChecker } = await import('./services/preventive-maintenance');
-      startPMChecker();
-    } catch (error) {
-      console.error('[Routes] Failed to start PM checker:', error);
-    }
-  })();
+  // Start Preventive Maintenance checker (runs daily at midnight) - DISABLED
+  // (async () => {
+  //   try {
+  //     const { startPMChecker } = await import('./services/preventive-maintenance');
+  //     startPMChecker();
+  //   } catch (error) {
+  //     console.error('[Routes] Failed to start PM checker:', error);
+  //   }
+  // })();
 
   // Customer routes
   app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {

@@ -2,6 +2,7 @@ import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import AnalyticsDashboard from "@/components/analytics/AnalyticsDashboard";
 import {
   BarChart,
   Bar,
@@ -302,6 +303,9 @@ export default function Analytics() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Client & Technician Performance Analytics Dashboard */}
+          <AnalyticsDashboard />
         </div>
       </main>
     </div>
