@@ -1575,7 +1575,7 @@ function getStatusEmoji(status: string): string {
     'maintenance': '⚠️',
     'retired': '🔴',
     'in_transit': '🚚',
-    'for_sale': '💰',
+    'stock': '💰',
     'sold': '✅'
   };
   return emojis[status] || '⚪';
@@ -3140,6 +3140,15 @@ What would you like to do?`;
     const { showServiceDetails } = await import('./whatsapp-technician-flows');
     const serviceId = listId.replace('view_service_', '');
     await showServiceDetails(from, serviceId, storage);
+    return;
+  }
+
+  // Handle technician end service from list (end_service_direct_ prefix)
+  if (user.role === 'technician' && listId.startsWith('end_service_direct_')) {
+    const { storage } = await import('../storage');
+    const { initiateServiceCompletion } = await import('./whatsapp-technician-flows');
+    const serviceId = listId.replace('end_service_direct_', '');
+    await initiateServiceCompletion(from, serviceId, session, storage);
     return;
   }
 
