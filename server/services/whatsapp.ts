@@ -1575,7 +1575,7 @@ function getStatusEmoji(status: string): string {
     'maintenance': '⚠️',
     'retired': '🔴',
     'in_transit': '🚚',
-    'for_sale': '💰',
+    'stock': '💰',
     'sold': '✅'
   };
   return emojis[status] || '⚪';

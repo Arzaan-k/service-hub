@@ -323,9 +323,9 @@ export default function ContainerDetail() {
     const statusMap: Record<string, { color: string; label: string; icon: any }> = {
       "DEPLOYED": { color: "bg-green-500/20 text-green-200 border-green-400/30", label: "Deployed", icon: CheckCircle },
       "ACTIVE": { color: "bg-green-500/20 text-green-200 border-green-400/30", label: "Active", icon: Activity },
-      "SALE": { color: "bg-blue-500/20 text-blue-200 border-blue-400/30", label: "For Sale", icon: Package },
+      "SALE": { color: "bg-blue-500/20 text-blue-200 border-blue-400/30", label: "Stock", icon: Package },
       "MAINTENANCE": { color: "bg-yellow-500/20 text-yellow-200 border-yellow-400/30", label: "Maintenance", icon: Settings },
-      "STOCK": { color: "bg-gray-500/20 text-gray-200 border-gray-400/30", label: "In Stock", icon: Package },
+      "STOCK": { color: "bg-gray-500/20 text-gray-200 border-gray-400/30", label: "Stock", icon: Package },
     };
 
     const statusInfo = statusMap[normalizedStatus] || {
@@ -1592,7 +1592,7 @@ export default function ContainerDetail() {
                   <SelectContent>
                     <SelectItem value="ACTIVE">Active</SelectItem>
                     <SelectItem value="DEPLOYED">Deployed</SelectItem>
-                    <SelectItem value="SALE">For Sale</SelectItem>
+                    <SelectItem value="SALE">Stock</SelectItem>
                     <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
                     <SelectItem value="STORAGE">Storage</SelectItem>
                   </SelectContent>

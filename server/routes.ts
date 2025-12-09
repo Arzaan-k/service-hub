@@ -1093,7 +1093,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     type: z.enum(["refrigerated", "dry", "special", "iot_enabled", "manual"]).optional(),
     hasIot: z.boolean().optional(),
     orbcommDeviceId: z.string().optional(),
-    status: z.enum(["active", "in_service", "maintenance", "retired", "in_transit", "for_sale", "sold"]).optional(),
+    status: z.enum(["active", "in_service", "maintenance", "retired", "in_transit", "stock", "sold"]).optional(),
     currentCustomerId: z.string().uuid().optional().nullable(),
     currentLocation: z.any().optional(),
   }).passthrough();
@@ -1360,13 +1360,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const role = (req.user?.role || '').toLowerCase();
       const isPrivileged = ["admin", "coordinator", "super_admin"].includes(role);
+      const requested = String(req.params.status || '').toLowerCase();
+      const normalizedStatus = requested === 'sale' ? 'stock' : req.params.status;
       if (!isPrivileged) {
         const customer = await storage.getCustomerByUserId(req.user.id);
         if (!customer) return res.json([]);
-        const all = await storage.getContainersByStatus(req.params.status);
+        const all = await storage.getContainersByStatus(normalizedStatus);
         return res.json(all.filter((c) => c.currentCustomerId === customer.id));
       }
-      const all = await storage.getContainersByStatus(req.params.status);
+      const all = await storage.getContainersByStatus(normalizedStatus);
       res.json(all);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch containers by status" });
