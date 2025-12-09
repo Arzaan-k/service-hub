@@ -39,7 +39,8 @@ import {
   Wrench,
   Plus,
   Minus,
-  Box
+  Box,
+  Download
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { generateServiceRequestPDF } from "@/lib/pdfGenerator";
@@ -488,6 +489,15 @@ export default function ServiceRequestDetail() {
               <ArrowLeft className="w-4 h-4" /> Back to Service Requests
             </Link>
             <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGeneratePDF}
+                className="flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Generate PDF
+              </Button>
               <Badge className={getStatusColor(req.status)}>{req.status}</Badge>
               <Badge className={getPriorityColor(req.priority)}>{req.priority}</Badge>
             </div>
