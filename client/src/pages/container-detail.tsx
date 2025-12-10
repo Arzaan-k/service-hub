@@ -739,7 +739,7 @@ export default function ContainerDetail() {
                               <p className="text-sm font-medium">{customer.companyName}</p>
                               <Button
                                 variant="outline"
-                                size="xs"
+                                size="sm"
                                 className="h-6 px-2"
                                 onClick={() => setLocation(`/clients/${customer.id}`)}
                               >
