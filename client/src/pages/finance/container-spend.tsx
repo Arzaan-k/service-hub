@@ -169,7 +169,7 @@ export default function ContainerSpend() {
                     {!selectedContainerId && (
                         <ReeferSpendList onSelect={(id, code) => {
                             setSelectedContainerId(id);
-                            setSearchTerm(code);
+                            setSearchTerm(code || "");
                         }} />
                     )}
 

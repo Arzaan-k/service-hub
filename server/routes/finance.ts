@@ -613,7 +613,7 @@ export function registerFinanceRoutes(app: Express) {
                     totalSpend += cost;
                     travelSpend += cost;
 
-                    const date = new Date(trip.date);
+                    const date = new Date(trip.startDate);
                     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
                     monthlySpendMap.set(monthKey, (monthlySpendMap.get(monthKey) || 0) + cost);
 

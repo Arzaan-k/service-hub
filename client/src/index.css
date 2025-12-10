@@ -382,3 +382,42 @@
   margin: 0;
   line-height: 1.5;
 }
+
+/* Custom India Recenter Button */
+.leaflet-control-india {
+  margin-bottom: 10px !important;
+}
+
+.leaflet-control-india-button {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  color: #333;
+  text-decoration: none;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.leaflet-control-india-button:hover {
+  background: #f4f4f4;
+  color: #000;
+}
+
+.leaflet-control-india-button:focus {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* Mobile touch target */
+@media (max-width: 768px) {
+  .leaflet-control-india-button {
+    width: 44px;
+    height: 44px;
+    font-size: 16px;
+  }
+}

@@ -203,7 +203,15 @@ export default function Containers() {
         const matchesStatus = statusFilter.length === 0 ||
           statusFilter.some(status =>
             (status === "deployed" && ((container as any).inventoryStatus === "DEPLOYED" || (container as any).inventory_status === "DEPLOYED" || metadata.status === "DEPLOYED")) ||
-            (status === "sale" && ((container as any).inventoryStatus === "SALE" || (container as any).inventory_status === "SALE" || metadata.status === "SALE")) ||
+            (status === "stock" && (
+              (container as any).inventoryStatus === "STOCK" ||
+              (container as any).inventory_status === "STOCK" ||
+              metadata.status === "STOCK" ||
+              // legacy support for existing data still using SALE
+              (container as any).inventoryStatus === "SALE" ||
+              (container as any).inventory_status === "SALE" ||
+              metadata.status === "SALE"
+            )) ||
             (status === "sold" && ((container as any).inventoryStatus === "SOLD" || (container as any).inventory_status === "SOLD" || metadata.status === "SOLD")) ||
             (status === "maintenance" && (container.status === "maintenance" || (container as any).inventoryStatus === "maintenance" || (container as any).inventory_status === "maintenance"))
           );
@@ -275,10 +283,11 @@ export default function Containers() {
   const getStatusBadge = (status: string) => {
     const statusMap = {
       "DEPLOYED": { color: "bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/20", label: "Deployed" },
-      "SALE": { color: "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/20", label: "For Sale" },
+      // legacy label: render SALE as Stock
+      "SALE": { color: "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/20", label: "Stock" },
       "SOLD": { color: "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/20", label: "Sold" },
       "MAINTENANCE": { color: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/20", label: "Maintenance" },
-      "STOCK": { color: "bg-gray-500/20 text-gray-600 dark:text-gray-400 border-gray-500/20", label: "In Stock" },
+      "STOCK": { color: "bg-gray-500/20 text-gray-600 dark:text-gray-400 border-gray-500/20", label: "Stock" },
     };
     const statusInfo = statusMap[status as keyof typeof statusMap] || { color: "bg-gray-500/20 text-gray-600 dark:text-gray-400", label: status };
     return <Badge variant="outline" className={`${statusInfo.color} border font-medium`}>{statusInfo.label}</Badge>;
@@ -353,13 +362,13 @@ export default function Containers() {
 
             <AnimatedCard gradientColor="#F59E0B" className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-muted-foreground">For Sale</h3>
+                <h3 className="text-sm font-medium text-muted-foreground">Stock</h3>
                 <div className="p-2 bg-amber-500/10 rounded-xl">
                   <Zap className="h-5 w-5 text-amber-500" />
                 </div>
               </div>
               <div className="text-3xl font-bold text-foreground mb-1">
-                {containers.filter((c: Container) => c.excelMetadata?.status === "SALE").length}
+                {containers.filter((c: Container) => (c.excelMetadata?.status === "STOCK" || c.excelMetadata?.status === "SALE")).length}
               </div>
               <p className="text-xs text-muted-foreground">Available inventory</p>
             </AnimatedCard>
@@ -404,7 +413,7 @@ export default function Containers() {
               <MultiSelectCombobox
                 options={[
                   { value: "deployed", label: "Deployed" },
-                  { value: "sale", label: "For Sale" },
+                  { value: "stock", label: "Stock" },
                   { value: "sold", label: "Sold" },
                   { value: "maintenance", label: "Maintenance" }
                 ]}

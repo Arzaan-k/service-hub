@@ -134,7 +134,7 @@ export default function TechnicianSpend() {
                     {!selectedTechnicianId && (
                         <TechnicianSpendList onSelect={(id, name) => {
                             setSelectedTechnicianId(id);
-                            setSearchTerm(name);
+                            setSearchTerm(name || "");
                         }} />
                     )}
 

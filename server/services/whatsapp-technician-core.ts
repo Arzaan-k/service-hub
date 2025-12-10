@@ -137,10 +137,63 @@ export async function removeActiveService(session: any, serviceId: string, stora
 }
 
 /**
- * Get all active services for a technician
+ * Get all active services for a technician (from session - may be stale)
+ * Use getValidatedActiveServices for DB-validated list
  */
 export function getActiveServices(session: any): any[] {
   return session.conversationState?.activeServices || [];
+}
+
+/**
+ * Get validated active services - checks DB status and removes completed/cancelled ones
+ * This syncs the session with actual database state
+ */
+export async function getValidatedActiveServices(session: any, storage: any): Promise<any[]> {
+  const sessionActiveServices = session.conversationState?.activeServices || [];
+  
+  if (sessionActiveServices.length === 0) {
+    return [];
+  }
+  
+  // Validate each service against DB
+  const validatedServices = [];
+  const servicesToRemove = [];
+  
+  for (const activeService of sessionActiveServices) {
+    try {
+      const dbService = await storage.getServiceRequest(activeService.serviceId);
+      
+      // Only keep if service exists and is still in_progress
+      if (dbService && dbService.status === 'in_progress') {
+        validatedServices.push(activeService);
+      } else {
+        // Service is completed/cancelled in DB - mark for removal
+        servicesToRemove.push(activeService.serviceId);
+        console.log(`[WhatsApp] Removing stale active service: ${activeService.serviceId} (DB status: ${dbService?.status || 'not found'})`);
+      }
+    } catch (error) {
+      console.error(`[WhatsApp] Error validating service ${activeService.serviceId}:`, error);
+      // Keep it in case of error to avoid data loss
+      validatedServices.push(activeService);
+    }
+  }
+  
+  // Update session if any services were removed
+  if (servicesToRemove.length > 0) {
+    try {
+      await storage.updateWhatsappSession(session.id, {
+        conversationState: {
+          ...session.conversationState,
+          activeServices: validatedServices
+        }
+      });
+      console.log(`[WhatsApp] Synced session - removed ${servicesToRemove.length} stale services`);
+    } catch (updateError) {
+      console.error('[WhatsApp] Error updating session after validation:', updateError);
+    }
+  }
+  
+  return validatedServices;
 }
 
 /**

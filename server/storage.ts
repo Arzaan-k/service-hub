@@ -144,6 +144,7 @@ export interface IStorage {
   getCourierShipment(id: string): Promise<any | undefined>;
   getCourierShipmentByAwb(awbNumber: string): Promise<any | undefined>;
   getCourierShipmentsByServiceRequest(serviceRequestId: string): Promise<any[]>;
+  getAllCourierShipments(): Promise<any[]>;
   createCourierShipment(shipment: any): Promise<any>;
   updateCourierShipment(id: string, shipment: any): Promise<any>;
   deleteCourierShipment(id: string): Promise<void>;
@@ -231,15 +232,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   // RAG operations
-  async createManual(manual: { title: string; description: string; fileName: string; filePath: string; uploadedBy: string; brand: string; model: string }): Promise<string> {
+  async createManual(manual: { title: string; description?: string; fileName?: string; filePath?: string; uploadedBy: string; brand?: string; model?: string; sourceUrl?: string; version?: string }): Promise<string> {
     const result = await db.insert(manuals).values({
-      title: manual.title,
-      description: manual.description,
-      fileName: manual.fileName,
-      filePath: manual.filePath,
+      name: manual.title, // Map title to name field
+      sourceUrl: manual.sourceUrl || manual.filePath,
       uploadedBy: manual.uploadedBy,
-      brand: manual.brand,
-      model: manual.model
+      version: manual.version,
+      meta: {
+        description: manual.description,
+        fileName: manual.fileName,
+        filePath: manual.filePath,
+        brand: manual.brand,
+        model: manual.model
+      }
     }).returning();
 
     return result[0].id;
@@ -279,9 +284,10 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     console.log(`[CREATE USER] Creating user with data:`, {
       ...insertUser,
-      password: insertUser.password ? '[HASHED]' : null
+      password: (insertUser as any).password ? '[HASHED]' : null
     });
-    const [user] = await db.insert(users).values(insertUser).returning();
+    const result = await db.insert(users).values(insertUser as any).returning();
+    const user = (result as any[])[0];
     console.log(`[CREATE USER] User created with ID: ${user.id}`);
     return user;
   }
@@ -289,7 +295,7 @@ export class DatabaseStorage implements IStorage {
   async updateUser(id: string, updateData: Partial<InsertUser>): Promise<User> {
     console.log(`[UPDATE USER] Updating user ${id} with data:`, {
       ...updateData,
-      password: updateData.password ? '[HASHED]' : undefined
+      password: (updateData as any).password ? '[HASHED]' : undefined
     });
     const [user] = await db
       .update(users)
@@ -311,7 +317,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCustomer(insertCustomer: InsertCustomer): Promise<Customer> {
-    const [customer] = await db.insert(customers).values(insertCustomer).returning();
+    const result = await db.insert(customers).values(insertCustomer).returning();
+    const customer = (result as any[])[0];
     return customer;
   }
 
@@ -672,6 +679,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+
   async getAllAlerts(): Promise<Alert[]> {
     return await db.select().from(alerts).orderBy(desc(alerts.detectedAt));
   }
@@ -787,6 +795,7 @@ export class DatabaseStorage implements IStorage {
         createdBy: serviceRequests.createdBy,
         createdAt: serviceRequests.createdAt,
         updatedAt: serviceRequests.updatedAt,
+        excelData: serviceRequests.excelData,
       })
       .from(serviceRequests)
       .where(eq(serviceRequests.id, id));
@@ -1517,6 +1526,14 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(courierShipments)
       .where(eq(courierShipments.serviceRequestId, serviceRequestId))
+      .orderBy(desc(courierShipments.createdAt));
+    return shipments;
+  }
+
+  async getAllCourierShipments(): Promise<CourierShipment[]> {
+    const shipments = await db
+      .select()
+      .from(courierShipments)
       .orderBy(desc(courierShipments.createdAt));
     return shipments;
   }
