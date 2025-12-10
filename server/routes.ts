@@ -91,42 +91,7 @@ const upload = multer({
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
-  // Initialize WebSocket Server
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
-  const clients = new Set<WebSocket>();
 
-  function broadcast(message: any) {
-    const data = JSON.stringify(message);
-    clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(data);
-      }
-    });
-  }
-
-  wss.on('connection', (ws) => {
-    console.log('[WS] New connection established');
-    clients.add(ws);
-
-    ws.on('close', () => {
-      clients.delete(ws);
-    });
-
-    ws.on('error', (err) => {
-      console.error('[WS] Error:', err);
-    });
-
-    ws.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        if (msg.type === 'authenticate') {
-          console.log('[WS] Client authenticated:', msg.token);
-        }
-      } catch (e) {
-        // Ignore invalid JSON
-      }
-    });
-  });
 
   await storage.ensureServiceRequestAssignmentColumns();
 
