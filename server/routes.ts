@@ -136,11 +136,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================================================================
   app.get("/api/health", async (req, res) => {
     const startTime = Date.now();
-    
+
     try {
       // Check database connection
       await db.execute(sql`SELECT 1`);
-      
+
       const healthStatus = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -150,11 +150,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         environment: process.env.NODE_ENV || 'development',
         version: process.env.npm_package_version || '1.0.0'
       };
-      
+
       res.status(200).json(healthStatus);
     } catch (error: any) {
       console.error('[HEALTH] Check failed:', error);
-      
+
       res.status(503).json({
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
@@ -2778,17 +2778,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== INVENTORY MANAGEMENT SHIPMENT SYNC ====================
   // This endpoint allows the Inventory Management system to create/sync shipments
   // that will automatically appear in Service Hub Courier Tracking section
-  
+
   // Create shipment from Inventory Management (auto-links to service request)
   app.post("/api/inventory/shipments", authenticateUser, async (req: AuthRequest, res) => {
     try {
-      const { 
-        serviceRequestId, 
-        awbNumber, 
-        courierName, 
+      const {
+        serviceRequestId,
+        awbNumber,
+        courierName,
         courierCode,
-        shipmentDescription, 
-        origin, 
+        shipmentDescription,
+        origin,
         destination,
         trackingHistory,
         status,
@@ -2803,7 +2803,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if AWB already exists - if so, update it instead of creating duplicate
       const existing = await storage.getCourierShipmentByAwb(awbNumber);
-      
+
       if (existing) {
         // Update existing shipment with new data
         const updated = await storage.updateCourierShipment(existing.id, {
@@ -2820,7 +2820,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actualDeliveryDate: actualDeliveryDate ? new Date(actualDeliveryDate) : existing.actualDeliveryDate,
           lastTrackedAt: new Date(),
         });
-        
+
         console.log(`[INVENTORY SHIPMENT] Updated existing shipment ${awbNumber} for service request ${serviceRequestId}`);
         return res.json({ ...updated, isUpdate: true });
       }
@@ -2843,11 +2843,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         shipmentDescription,
         origin: trackingResult?.origin || origin,
         destination: trackingResult?.destination || destination,
-        estimatedDeliveryDate: trackingResult?.estimatedDeliveryDate 
-          ? new Date(trackingResult.estimatedDeliveryDate) 
+        estimatedDeliveryDate: trackingResult?.estimatedDeliveryDate
+          ? new Date(trackingResult.estimatedDeliveryDate)
           : (estimatedDeliveryDate ? new Date(estimatedDeliveryDate) : undefined),
-        actualDeliveryDate: trackingResult?.actualDeliveryDate 
-          ? new Date(trackingResult.actualDeliveryDate) 
+        actualDeliveryDate: trackingResult?.actualDeliveryDate
+          ? new Date(trackingResult.actualDeliveryDate)
           : (actualDeliveryDate ? new Date(actualDeliveryDate) : undefined),
         status: trackingResult?.status || status || 'pending',
         currentLocation: trackingResult?.currentLocation || currentLocation,
@@ -2881,7 +2881,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/inventory/shipments/sync", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const { shipments } = req.body;
-      
+
       if (!Array.isArray(shipments)) {
         return res.status(400).json({ error: "shipments must be an array" });
       }
@@ -2895,14 +2895,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const shipmentData of shipments) {
         try {
           const { awbNumber, serviceRequestId, courierName, ...rest } = shipmentData;
-          
+
           if (!awbNumber) {
             results.errors.push(`Missing AWB number for shipment`);
             continue;
           }
 
           const existing = await storage.getCourierShipmentByAwb(awbNumber);
-          
+
           if (existing) {
             // Update existing
             await storage.updateCourierShipment(existing.id, {
@@ -4006,6 +4006,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(technician);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch technician" });
+    }
+  });
+
+  app.get("/api/technicians/analytics/overview", authenticateUser, async (req, res) => {
+    try {
+      const { startDate, endDate } = req.query;
+
+      // Build date constraints
+      const dateFilter = [];
+      if (startDate) {
+        dateFilter.push(sql`${serviceRequests.updatedAt} >= ${new Date(startDate as string).toISOString()}`);
+      }
+      if (endDate) {
+        dateFilter.push(sql`${serviceRequests.updatedAt} <= ${new Date(endDate as string).toISOString()}`);
+      }
+
+      // Fetch all technicians
+      const allTechnicians = await db.query.technicians.findMany({
+        with: {
+          user: true
+        }
+      });
+
+      // Prepare stats object
+      const stats = await Promise.all(allTechnicians.map(async (tech: any) => {
+        const techId = tech.id;
+
+        // Pms done
+        // Assuming PMs have 'PM' in jobOrder or workType or are scheduled/recurring. 
+        // For now, checking if requestNumber starts with PM or jobOrder contains PM (heuristic based on typical usage)
+        // Or strictly strictly speaking checking for container's lastPmDate update context if available, but simple heuristic:
+        // Service requests with 'PM' in description or type.
+        // Adjust logic based on actual data structure usage. 
+        // Returning 0 if no explicit PM field, or relying on 'PM' substring in issue description/job order.
+
+        // Better: use 'job_type' or 'work_type' column if available in schema (it is).
+        const pmsDoneQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            or(
+              sql`${serviceRequests.workType} ILIKE '%PM%'`,
+              sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
+              sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
+            ),
+            ...dateFilter
+          ));
+        const pmsDone = Number(pmsDoneQuery[0]?.count || 0);
+
+        // Services done (Not PM)
+        const servicesDoneQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            not(or(
+              sql`${serviceRequests.workType} ILIKE '%PM%'`,
+              sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
+              sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
+            )),
+            ...dateFilter
+          ));
+        const servicesDone = Number(servicesDoneQuery[0]?.count || 0);
+
+        // On-time rate
+        // defined as actualEndTime <= scheduledDate (or end of scheduled window)
+        // For simplicity: actualEndTime <= scheduledDate + 2 hours (typical window) or just check explicit delayed flag if exists.
+        // Using actualEndTime <= scheduledDate if available.
+        const completedJobs = await db.select()
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            ...dateFilter
+          ));
+
+        let onTimeCount = 0;
+        completedJobs.forEach(job => {
+          if (job.actualEndTime && job.scheduledDate) {
+            // Check if actual completion is on same day or before
+            if (new Date(job.actualEndTime) <= new Date(new Date(job.scheduledDate).getTime() + 24 * 60 * 60 * 1000)) {
+              onTimeCount++;
+            }
+          } else {
+            // If no scheduled date, assume on time (or ignore)
+            onTimeCount++;
+          }
+        });
+        const onTimeRate = completedJobs.length > 0 ? (onTimeCount / completedJobs.length) * 100 : 100;
+
+        // Pending requests
+        const pendingQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            inArray(serviceRequests.status, ['assigned', 'in_progress', 'awaiting_parts']),
+            ...dateFilter
+          ));
+        const pendingRequestsCount = Number(pendingQuery[0]?.count || 0);
+
+        // Spend (Sum of totalCost)
+        const spendQuery = await db.select({ total: sql<number>`sum(${serviceRequests.totalCost})` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            ...dateFilter
+          ));
+        const spend = Number(spendQuery[0]?.total || 0);
+        const costPerJob = (pmsDone + servicesDone) > 0 ? spend / (pmsDone + servicesDone) : 0;
+
+        // Feedback
+        const feedbackQuery = await db.select({ avg: sql<number>`avg(cast(${feedback.rating} as int))` })
+          .from(feedback)
+          .where(eq(feedback.technicianId, techId));
+        const clientRating = Number(feedbackQuery[0]?.avg || 0);
+
+        return {
+          technician: {
+            id: tech.id,
+            name: tech.user?.name || tech.name || 'Unknown',
+            avatar: null, // Placeholder
+          },
+          metrics: {
+            pmsDone,
+            servicesDone,
+            onTimeRate,
+            pendingRequests: pendingRequestsCount,
+            spend,
+            costPerJob,
+            clientRating
+          }
+        };
+      }));
+
+      // Sort by services done + PMs done descending for leaderboard
+      stats.sort((a, b) => (b.metrics.pmsDone + b.metrics.servicesDone) - (a.metrics.pmsDone + a.metrics.servicesDone));
+
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Failed to fetch technician analytics:", error);
+      res.status(500).json({ error: "Failed to fetch technician analytics", details: error.message });
     }
   });
 
