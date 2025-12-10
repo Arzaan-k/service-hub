@@ -12,8 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Combobox } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,7 +47,9 @@ import {
   Plus,
   Minus,
   Box,
-  Download
+  FileDown,
+  FileStack,
+  ChevronDown
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { generateServiceRequestPDF } from "@/lib/pdfGenerator";
@@ -109,6 +118,25 @@ export default function ServiceRequestDetail() {
     enabled: !!id,
   });
 
+  const generateReport = useMutation({
+    mutationFn: async (stage: string) => {
+      return await apiRequest("POST", `/api/service-requests/${id}/generate-report`, { stage });
+    },
+    onSuccess: () => {
+      refreshReports();
+      toast({
+        title: "Report Generated",
+        description: "Report generated and emailed successfully.",
+      });
+    },
+    onError: (e: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: e.message,
+        variant: "destructive",
+      });
+    }
+  });
 
   const saveRemarksMutation = useMutation({
     mutationFn: async () => {
@@ -489,15 +517,62 @@ export default function ServiceRequestDetail() {
               <ArrowLeft className="w-4 h-4" /> Back to Service Requests
             </Link>
             <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleGeneratePDF}
-                className="flex items-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                Generate PDF
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <FileDown className="w-4 h-4 mr-2" />
+                    Generate PDF
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>Select Report Type</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  
+                  <DropdownMenuItem onClick={() => generateReport.mutate('initial')}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col">
+                      <span>Initial Service Request</span>
+                      <span className="text-xs text-muted-foreground">Basic request details</span>
+                    </div>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem 
+                    onClick={() => generateReport.mutate('pre_service')}
+                    disabled={!technician?.id}
+                  >
+                    <Wrench className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col">
+                      <span>Pre-Service Deployment</span>
+                      <span className="text-xs text-muted-foreground">Technician & wage details</span>
+                    </div>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem 
+                    onClick={() => generateReport.mutate('post_service')}
+                    disabled={req.status !== 'completed'}
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col">
+                      <span>Post-Service Completion</span>
+                      <span className="text-xs text-muted-foreground">Work done & photos</span>
+                    </div>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuSeparator />
+                  
+                  <DropdownMenuItem 
+                    onClick={() => generateReport.mutate('complete')}
+                    disabled={req.status !== 'completed'}
+                  >
+                    <FileStack className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col">
+                      <span>Complete Service Report</span>
+                      <span className="text-xs text-muted-foreground">All stages combined</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Badge className={getStatusColor(req.status)}>{req.status}</Badge>
               <Badge className={getPriorityColor(req.priority)}>{req.priority}</Badge>
             </div>
@@ -1213,18 +1288,18 @@ export default function ServiceRequestDetail() {
             <div className="flex gap-3">
               <div className="flex-1">
                 <Label htmlFor="part-select">Select Part</Label>
-                <Combobox
-                  options={inventory?.map((item: InventoryItem) => ({
-                    value: item.id,
-                    label: `${item.partName} (${item.partNumber}) - Stock: ${item.quantityInStock}`,
-                    searchText: `${item.partName} ${item.partNumber} ${item.category}`.toLowerCase()
-                  })) || []}
-                  value={selectedItemId}
-                  onValueChange={setSelectedItemId}
-                  placeholder="Choose a part..."
-                  searchPlaceholder="Search parts..."
-                  emptyText="No parts found."
-                />
+                <Select value={selectedItemId} onValueChange={setSelectedItemId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a part..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {inventory?.map((item: InventoryItem) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.partName} ({item.partNumber}) - Stock: {item.quantityInStock}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="w-24">
                 <Label htmlFor="quantity">Quantity</Label>
