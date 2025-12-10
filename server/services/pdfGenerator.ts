@@ -756,16 +756,16 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
   const tripTasks = await storage.getTechnicianTripTasks(tripId);
 
   // Get service requests and PM containers
-  const serviceRequests = [];
-  const pmContainers = [];
+  const serviceRequests: any[] = [];
+  const pmContainers: any[] = [];
 
   for (const task of tripTasks) {
-    if (task.taskType === 'alert' || task.taskType === 'service') {
+    if (task.taskType === 'alert') {
       if (task.serviceRequestId) {
         const sr = await storage.getServiceRequest(task.serviceRequestId);
         if (sr) serviceRequests.push(sr);
       }
-    } else if (task.taskType === 'pm') {
+    } else if (task.taskType === 'pm' || task.taskType === 'inspection') {
       const container = await storage.getContainer(task.containerId);
       if (container) pmContainers.push(container);
     }
@@ -777,7 +777,7 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
         size: 'A4',
         margin: 50,
         info: {
-          Title: `Trip Finance Report - ${technician?.name || 'Technician'}`,
+          Title: `Trip Finance Report - ${technician?.employeeCode || 'Technician'}`,
           Author: 'Service Hub',
           Subject: 'Trip Finance Approval Report'
         }
@@ -793,8 +793,9 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
       doc.fontSize(24).font('Helvetica-Bold').fillColor(COLORS.primary)
          .text('TRIP FINANCE APPROVAL REPORT', 50, 50, { align: 'center' });
 
+      const techUser = technician ? await storage.getUser(technician.userId) : null;
       doc.fontSize(18).fillColor(COLORS.text)
-         .text(`${technician?.name || 'Technician'} - ${trip.destinationCity}`, 50, 90, { align: 'center' });
+         .text(`${techUser?.name || technician?.employeeCode || 'Technician'} - ${trip.destinationCity}`, 50, 90, { align: 'center' });
 
       doc.fontSize(10).fillColor(COLORS.textLabel)
          .text(`Report ID: TRIP-${Date.now()}`, 50, 120, { align: 'left' })
@@ -817,11 +818,11 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
       yPos += 20;
 
       doc.fontSize(10).fillColor(COLORS.text)
-         .text(`Name: ${technician?.name}`, leftX, yPos);
+         .text(`Name: ${techUser?.name || 'N/A'}`, leftX, yPos);
       yPos += 15;
       doc.text(`Employee Code: ${technician?.employeeCode}`, leftX, yPos);
       yPos += 15;
-      doc.text(`Base Location: ${typeof technician?.baseLocation === 'string' ? technician.baseLocation : technician?.baseLocation?.city || 'N/A'}`, leftX, yPos);
+      doc.text(`Base Location: ${typeof technician?.baseLocation === 'string' ? technician.baseLocation : (technician?.baseLocation as any)?.city || 'N/A'}`, leftX, yPos);
       yPos += 15;
       doc.text(`Grade: ${technician?.grade || 'N/A'}`, leftX, yPos);
       yPos += 15;
@@ -947,7 +948,7 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
 
       const taskCosts = (serviceTasks * serviceRate) + (pmTasks * pmRate);
       const travelAllowance = estimatedDays * dailyAllowance;
-      const miscellaneous = tripCosts?.miscCost || 0;
+      const miscellaneous = Number(tripCosts?.miscCost || 0);
       const contingency = Math.round(taskCosts * 0.03);
       const totalCost = taskCosts + travelAllowance + miscellaneous + contingency;
 
