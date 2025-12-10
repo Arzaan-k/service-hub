@@ -713,12 +713,15 @@ function drawCoverPage(ctx: any, req: any, customer: any) {
 }
 
 function drawFooter(doc: any, docId: string) {
-    // Get the current page number (PDFKit tracks this internally)
-    const currentPage = (doc as any)._pageBuffer?.length || 1;
+    // Get the actual page range from PDFKit
+    const range = doc.bufferedPageRange();
+    const totalPages = range.count;
     
     // Add footer to each page that was actually created
-    for (let i = 0; i < currentPage; i++) {
-        doc.switchToPage(i);
+    // PDFKit page numbers start from range.start (usually 0)
+    for (let i = 0; i < totalPages; i++) {
+        const pageIndex = range.start + i;
+        doc.switchToPage(pageIndex);
         const bottom = LAYOUT.height - 30;
         
         doc.moveTo(LAYOUT.margin, bottom - 10).lineTo(LAYOUT.width - LAYOUT.margin, bottom - 10)
@@ -726,7 +729,7 @@ function drawFooter(doc: any, docId: string) {
            
         doc.fontSize(8).fillColor(COLORS.textLabel);
         doc.text('Service Hub Management System', LAYOUT.margin, bottom);
-        doc.text(`Page ${i + 1} of ${currentPage}`, 0, bottom, { align: 'center' });
+        doc.text(`Page ${i + 1} of ${totalPages}`, 0, bottom, { align: 'center' });
         doc.text(`Doc ID: ${docId.substring(0, 8).toUpperCase()}`, 0, bottom, { align: 'right' });
         
         doc.text('CONFIDENTIAL - This document contains proprietary information', 0, bottom + 10, { align: 'center' });
