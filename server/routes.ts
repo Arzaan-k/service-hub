@@ -90,6 +90,44 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+
+  // Initialize WebSocket Server
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  const clients = new Set<WebSocket>();
+
+  function broadcast(message: any) {
+    const data = JSON.stringify(message);
+    clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    });
+  }
+
+  wss.on('connection', (ws) => {
+    console.log('[WS] New connection established');
+    clients.add(ws);
+
+    ws.on('close', () => {
+      clients.delete(ws);
+    });
+
+    ws.on('error', (err) => {
+      console.error('[WS] Error:', err);
+    });
+
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'authenticate') {
+          console.log('[WS] Client authenticated:', msg.token);
+        }
+      } catch (e) {
+        // Ignore invalid JSON
+      }
+    });
+  });
+
   await storage.ensureServiceRequestAssignmentColumns();
 
   // Register Finance Routes
@@ -1357,6 +1395,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(history);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch service history" });
+    }
+  });
+
+  app.get("/api/containers/:id/service-history/detailed", authenticateUser, async (req, res) => {
+    try {
+      const history = await storage.getContainerDetailedHistory(req.params.id);
+      if (!history) {
+        return res.status(404).json({ error: "Container not found" });
+      }
+      res.json(history);
+    } catch (error) {
+      console.error("Failed to fetch detailed service history:", error);
+      res.status(500).json({ error: "Failed to fetch detailed service history" });
     }
   });
 
@@ -2856,17 +2907,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== INVENTORY MANAGEMENT SHIPMENT SYNC ====================
   // This endpoint allows the Inventory Management system to create/sync shipments
   // that will automatically appear in Service Hub Courier Tracking section
-  
+
   // Create shipment from Inventory Management (auto-links to service request)
   app.post("/api/inventory/shipments", authenticateUser, async (req: AuthRequest, res) => {
     try {
-      const { 
-        serviceRequestId, 
-        awbNumber, 
-        courierName, 
+      const {
+        serviceRequestId,
+        awbNumber,
+        courierName,
         courierCode,
-        shipmentDescription, 
-        origin, 
+        shipmentDescription,
+        origin,
         destination,
         trackingHistory,
         status,
@@ -2881,7 +2932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if AWB already exists - if so, update it instead of creating duplicate
       const existing = await storage.getCourierShipmentByAwb(awbNumber);
-      
+
       if (existing) {
         // Update existing shipment with new data
         const updated = await storage.updateCourierShipment(existing.id, {
@@ -2898,7 +2949,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actualDeliveryDate: actualDeliveryDate ? new Date(actualDeliveryDate) : existing.actualDeliveryDate,
           lastTrackedAt: new Date(),
         });
-        
+
         console.log(`[INVENTORY SHIPMENT] Updated existing shipment ${awbNumber} for service request ${serviceRequestId}`);
         return res.json({ ...updated, isUpdate: true });
       }
@@ -2921,11 +2972,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         shipmentDescription,
         origin: trackingResult?.origin || origin,
         destination: trackingResult?.destination || destination,
-        estimatedDeliveryDate: trackingResult?.estimatedDeliveryDate 
-          ? new Date(trackingResult.estimatedDeliveryDate) 
+        estimatedDeliveryDate: trackingResult?.estimatedDeliveryDate
+          ? new Date(trackingResult.estimatedDeliveryDate)
           : (estimatedDeliveryDate ? new Date(estimatedDeliveryDate) : undefined),
-        actualDeliveryDate: trackingResult?.actualDeliveryDate 
-          ? new Date(trackingResult.actualDeliveryDate) 
+        actualDeliveryDate: trackingResult?.actualDeliveryDate
+          ? new Date(trackingResult.actualDeliveryDate)
           : (actualDeliveryDate ? new Date(actualDeliveryDate) : undefined),
         status: trackingResult?.status || status || 'pending',
         currentLocation: trackingResult?.currentLocation || currentLocation,
@@ -2959,7 +3010,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/inventory/shipments/sync", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const { shipments } = req.body;
-      
+
       if (!Array.isArray(shipments)) {
         return res.status(400).json({ error: "shipments must be an array" });
       }
@@ -2973,14 +3024,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const shipmentData of shipments) {
         try {
           const { awbNumber, serviceRequestId, courierName, ...rest } = shipmentData;
-          
+
           if (!awbNumber) {
             results.errors.push(`Missing AWB number for shipment`);
             continue;
           }
 
           const existing = await storage.getCourierShipmentByAwb(awbNumber);
-          
+
           if (existing) {
             // Update existing
             await storage.updateCourierShipment(existing.id, {
@@ -7330,8 +7381,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get service requests assigned to this technician
       const allRequests = await storage.getAllServiceRequests();
-      const serviceRequests = allRequests.filter((sr: any) => 
-        sr.assignedTechnicianId === technicianId && 
+      const serviceRequests = allRequests.filter((sr: any) =>
+        sr.assignedTechnicianId === technicianId &&
         ['assigned', 'in_progress', 'scheduled'].includes(sr.status)
       );
 

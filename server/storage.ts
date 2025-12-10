@@ -104,6 +104,7 @@ export interface IStorage {
   }): Promise<Container>;
   getContainerLocationHistory(containerId: string): Promise<any[]>;
   getContainerServiceHistory(containerId: string): Promise<any[]>;
+  getContainerDetailedHistory(containerId: string): Promise<any>;
   getContainerOwnershipHistory(containerId: string): Promise<any[]>;
   getContainerMetrics(containerId: string): Promise<any[]>;
   assignContainerToCustomer(containerId: string, customerId: string, assignmentDate: Date, expectedReturnDate: Date): Promise<Container>;
@@ -1220,6 +1221,207 @@ export class DatabaseStorage implements IStorage {
       const dateB = b.requestedAt ? new Date(b.requestedAt).getTime() : 0;
       return dateB - dateA;
     });
+  }
+
+  async getContainerDetailedHistory(containerId: string): Promise<any> {
+    const container = await this.getContainer(containerId);
+    if (!container) return null;
+
+    // 1. Fetch all related data
+    const serviceRequestsData = await db
+      .select({
+        id: serviceRequests.id,
+        requestNumber: serviceRequests.requestNumber,
+        jobOrder: serviceRequests.jobOrder,
+        status: serviceRequests.status,
+        priority: serviceRequests.priority,
+        issueDescription: serviceRequests.issueDescription,
+        requestedAt: serviceRequests.requestedAt,
+        actualStartTime: serviceRequests.actualStartTime,
+        actualEndTime: serviceRequests.actualEndTime,
+        resolutionNotes: serviceRequests.resolutionNotes,
+        usedParts: serviceRequests.usedParts,
+        totalCost: serviceRequests.totalCost,
+        assignedTechnicianId: serviceRequests.assignedTechnicianId,
+        serviceDuration: serviceRequests.serviceDuration,
+        workType: serviceRequests.workType,
+        source: sql`'service_request'`.as('source'),
+      })
+      .from(serviceRequests)
+      .where(eq(serviceRequests.containerId, containerId))
+      .orderBy(desc(serviceRequests.requestedAt));
+
+    const containerCode = container.containerCode;
+    const serviceHistoryData = await db.execute(sql`
+      SELECT
+        id,
+        job_order_number as "jobOrder",
+        container_number as "containerCode",
+        machine_status as status,
+        complaint_attended_date as "requestedAt",
+        work_description as "issueDescription",
+        technician_name as "technicianName",
+        work_type as "workType",
+        'legacy_history' as source
+      FROM service_history
+      WHERE container_number = ${containerCode}
+    `);
+    const legacyHistory = (serviceHistoryData.rows || []) as any[];
+
+    const containerAlerts = await db
+      .select()
+      .from(alerts)
+      .where(eq(alerts.containerId, containerId))
+      .orderBy(desc(alerts.detectedAt));
+
+    const expenses = await db
+      .select()
+      .from(financeExpenses)
+      .where(eq(financeExpenses.containerId, containerId));
+
+    // 2. Process Timeline
+    const timeline = [
+      ...serviceRequestsData.map(sr => ({
+        ...sr,
+        date: sr.requestedAt,
+        type: sr.workType || (sr.issueDescription?.toLowerCase().includes('pm') ? 'Preventive Maintenance' : 'Corrective Maintenance'),
+        technician: sr.assignedTechnicianId, // Will resolve name later
+        cost: sr.totalCost,
+        isLegacy: false
+      })),
+      ...legacyHistory.map((h: any) => ({
+        id: h.id,
+        requestNumber: h.jobOrder,
+        status: h.status,
+        issueDescription: h.issueDescription,
+        date: h.requestedAt,
+        type: h.workType || 'Service',
+        technicianName: h.technicianName,
+        isLegacy: true,
+        source: 'legacy_history'
+      }))
+    ].sort((a: any, b: any) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    // 3. Calculate Summary Stats
+    const totalServices = timeline.length;
+    const breakdowns = timeline.filter(t =>
+      t.type?.toLowerCase().includes('breakdown') ||
+      t.type?.toLowerCase().includes('corrective') ||
+      (t.issueDescription && t.issueDescription.toLowerCase().includes('breakdown'))
+    ).length;
+    const pms = timeline.filter(t =>
+      t.type?.toLowerCase().includes('pm') ||
+      t.type?.toLowerCase().includes('preventive')
+    ).length;
+
+    // Calculate costs
+    let lifetimeCost = 0;
+    serviceRequestsData.forEach(sr => {
+      if (sr.totalCost) lifetimeCost += Number(sr.totalCost);
+    });
+    expenses.forEach(e => {
+      if (e.amount) lifetimeCost += Number(e.amount);
+    });
+
+    // 4. Technician Stats
+    const techStatsMap = new Map();
+
+    // Process SRs
+    for (const sr of serviceRequestsData) {
+      if (sr.assignedTechnicianId) {
+        if (!techStatsMap.has(sr.assignedTechnicianId)) {
+          const tech = await this.getTechnician(sr.assignedTechnicianId);
+          const user = tech ? await this.getUser(tech.userId) : null;
+          techStatsMap.set(sr.assignedTechnicianId, {
+            id: sr.assignedTechnicianId,
+            name: user?.name || 'Unknown Technician',
+            services: 0,
+            completed: 0,
+            lastVisit: null
+          });
+        }
+        const stats = techStatsMap.get(sr.assignedTechnicianId);
+        stats.services++;
+        if (sr.status === 'completed') stats.completed++;
+        if (sr.actualEndTime) {
+          if (!stats.lastVisit || new Date(sr.actualEndTime) > new Date(stats.lastVisit)) {
+            stats.lastVisit = sr.actualEndTime;
+          }
+        }
+      }
+    }
+
+    // Process Legacy
+    for (const h of legacyHistory) {
+      if (h.technicianName) {
+        const key = `legacy-${h.technicianName}`;
+        if (!techStatsMap.has(key)) {
+          techStatsMap.set(key, {
+            id: key,
+            name: h.technicianName,
+            services: 0,
+            completed: 0,
+            lastVisit: null
+          });
+        }
+        const stats = techStatsMap.get(key);
+        stats.services++;
+        if (h.status === 'Completed' || h.status === 'OK') stats.completed++;
+        if (h.requestedAt) {
+          if (!stats.lastVisit || new Date(h.requestedAt) > new Date(stats.lastVisit)) {
+            stats.lastVisit = h.requestedAt;
+          }
+        }
+      }
+    }
+
+    const technicianStats = Array.from(techStatsMap.values());
+
+    // 5. Recurring Issues
+    const issueMap = new Map();
+
+    // From Alerts
+    containerAlerts.forEach(a => {
+      const code = a.errorCode || a.title;
+      if (!issueMap.has(code)) {
+        issueMap.set(code, {
+          code,
+          count: 0,
+          lastOccurred: null,
+          description: a.description
+        });
+      }
+      const issue = issueMap.get(code);
+      issue.count++;
+      if (!issue.lastOccurred || new Date(a.detectedAt) > new Date(issue.lastOccurred)) {
+        issue.lastOccurred = a.detectedAt;
+      }
+    });
+
+    const recurringIssues = Array.from(issueMap.values())
+      .filter(i => i.count > 1)
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      timeline,
+      summary: {
+        totalServices,
+        breakdowns,
+        pms,
+        repeatErrors: recurringIssues.length,
+        techniciansCount: technicianStats.length,
+        lifetimeCost,
+        lastServiceDate: timeline[0]?.date || null,
+        nextDueDate: null, // Placeholder
+        pmCompliance: pms > 0 ? 85 : 0 // Placeholder logic
+      },
+      recurringIssues,
+      technicianStats
+    };
   }
 
   async getContainerOwnershipHistory(containerId: string): Promise<any[]> {
