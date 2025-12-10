@@ -103,7 +103,6 @@ export async function generateServiceReportPDF(serviceRequestId: string, stage: 
         const doc = new PDFDocument({ 
             margin: LAYOUT.margin, 
             size: 'LETTER',
-            bufferPages: true,
             autoFirstPage: true
         });
         const buffers: Buffer[] = [];
@@ -592,7 +591,7 @@ function drawSectionHeader(ctx: { doc: any, y: number }, title: string) {
        .text(title, LAYOUT.margin + 15, ctx.y + 5);
        
     doc.moveTo(LAYOUT.margin, ctx.y + 20).lineTo(LAYOUT.width - LAYOUT.margin, ctx.y + 20)
-       .lineWidth(0.5).stroke(COLORS.border);
+       .strokeColor(COLORS.border).lineWidth(0.5).stroke();
        
     ctx.y += 30;
     doc.fillColor(COLORS.text).font('Helvetica').fontSize(10);
@@ -714,25 +713,12 @@ function drawCoverPage(ctx: any, req: any, customer: any) {
 }
 
 function drawFooter(doc: any, docId: string) {
-    const range = doc.bufferedPageRange();
+    // Get the current page number (PDFKit tracks this internally)
+    const currentPage = (doc as any)._pageBuffer?.length || 1;
     
-    // Count actual content pages (pages that have content beyond header area)
-    let actualPageCount = 0;
-    const contentPages: number[] = [];
-    
-    for (let i = range.start; i < range.start + range.count; i++) {
+    // Add footer to each page that was actually created
+    for (let i = 0; i < currentPage; i++) {
         doc.switchToPage(i);
-        // A page is considered to have content if y position is beyond header (120px)
-        // We check by seeing if there's any content drawn below header
-        // For simplicity, we'll include all pages but the logic prevents empty trailing pages
-        contentPages.push(i);
-        actualPageCount++;
-    }
-    
-    // Draw footer on all pages with correct page numbering
-    for (let idx = 0; idx < contentPages.length; idx++) {
-        const pageNum = contentPages[idx];
-        doc.switchToPage(pageNum);
         const bottom = LAYOUT.height - 30;
         
         doc.moveTo(LAYOUT.margin, bottom - 10).lineTo(LAYOUT.width - LAYOUT.margin, bottom - 10)
@@ -740,7 +726,7 @@ function drawFooter(doc: any, docId: string) {
            
         doc.fontSize(8).fillColor(COLORS.textLabel);
         doc.text('Service Hub Management System', LAYOUT.margin, bottom);
-        doc.text(`Page ${idx + 1} of ${actualPageCount}`, 0, bottom, { align: 'center' });
+        doc.text(`Page ${i + 1} of ${currentPage}`, 0, bottom, { align: 'center' });
         doc.text(`Doc ID: ${docId.substring(0, 8).toUpperCase()}`, 0, bottom, { align: 'right' });
         
         doc.text('CONFIDENTIAL - This document contains proprietary information', 0, bottom + 10, { align: 'center' });
