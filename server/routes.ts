@@ -50,6 +50,7 @@ import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
 import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
+import { registerFinanceRoutes } from "./routes/finance";
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -90,6 +91,9 @@ const upload = multer({
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   await storage.ensureServiceRequestAssignmentColumns();
+
+  // Register Finance Routes
+  registerFinanceRoutes(app);
 
   // Third-party technicians helper functions (defined early for use throughout routes)
   const thirdPartyDir = path.join(process.cwd(), "server", "data");

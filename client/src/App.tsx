@@ -33,6 +33,9 @@ import ServiceHistory from "@/pages/service-history";
 import Manuals from "@/pages/manuals";
 import ForcePasswordReset from "@/pages/force-password-reset";
 import ResetPassword from "@/pages/reset-password";
+import ContainerSpend from "@/pages/finance/container-spend";
+import FinanceOverview from "@/pages/finance/overview";
+import TechnicianSpend from "@/pages/finance/technician-spend";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -133,6 +136,15 @@ function Router() {
       </Route>
       <Route path="/service-history">
         {() => <ProtectedRoute component={ServiceHistory} />}
+      </Route>
+      <Route path="/finance/overview">
+        {() => <ProtectedRoute component={FinanceOverview} roles={["admin", "super_admin"]} />}
+      </Route>
+      <Route path="/finance/container-spend">
+        {() => <ProtectedRoute component={ContainerSpend} roles={["admin", "super_admin"]} />}
+      </Route>
+      <Route path="/finance/technician-spend">
+        {() => <ProtectedRoute component={TechnicianSpend} roles={["admin", "super_admin"]} />}
       </Route>
     </Switch>
   );

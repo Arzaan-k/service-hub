@@ -43,7 +43,8 @@ import {
   Wrench,
   Building,
   RefreshCw,
-  Activity
+  Activity,
+  DollarSign
 } from "lucide-react";
 
 interface Container {
@@ -316,6 +317,17 @@ export default function ContainerDetail() {
     enabled: !!id,
     staleTime: 30000,
   });
+
+  // Fetch finance summary
+  const { data: financeSummary, isLoading: financeLoading } = useQuery({
+    queryKey: [`/api/finance/container-spend/${id}`],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/finance/container-spend/${id}`);
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
 
   const getStatusBadge = (status: string) => {
     const normalizedStatus = status?.toUpperCase() || "UNKNOWN";
@@ -814,6 +826,66 @@ export default function ContainerDetail() {
                         <p className="text-sm">{container.usageCycles || 'N/A'}</p>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Finance Summary */}
+                <Card className="col-span-1 lg:col-span-2">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <DollarSign className="h-5 w-5" />
+                      Finance Summary
+                    </CardTitle>
+                    <Button variant="outline" size="sm" onClick={() => setLocation(`/finance/container-spend`)}>
+                      View Full Finance Report <ExternalLink className="ml-2 h-4 w-4" />
+                    </Button>
+                  </CardHeader>
+                  <CardContent>
+                    {financeLoading ? (
+                      <div className="flex justify-center p-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                      </div>
+                    ) : financeSummary ? (
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Total Spend</p>
+                          <p className="text-2xl font-bold">₹{financeSummary.total_spend.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Spend This Month</p>
+                          <p className="text-2xl font-bold text-green-600">₹{financeSummary.spend_this_month.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Travel Costs</p>
+                          <p className="text-xl font-semibold">₹{financeSummary.travel_spend.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Misc Expenses</p>
+                          <p className="text-xl font-semibold">₹{financeSummary.misc_spend.toLocaleString()}</p>
+                        </div>
+
+                        <div className="col-span-1 md:col-span-4 mt-4">
+                          <p className="text-sm font-medium mb-2">Last 3 Transactions</p>
+                          <div className="space-y-2">
+                            {financeSummary.transactions.slice(0, 3).map((t: any, i: number) => (
+                              <div key={i} className="flex justify-between items-center text-sm border-b pb-2 last:border-0">
+                                <div>
+                                  <span className="font-medium">{new Date(t.date).toLocaleDateString()}</span>
+                                  <span className="mx-2 text-muted-foreground">•</span>
+                                  <span>{t.description}</span>
+                                </div>
+                                <span className="font-semibold">₹{t.amount.toLocaleString()}</span>
+                              </div>
+                            ))}
+                            {financeSummary.transactions.length === 0 && (
+                              <p className="text-sm text-muted-foreground">No transactions found.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">No finance data available.</p>
+                    )}
                   </CardContent>
                 </Card>
               </div>
