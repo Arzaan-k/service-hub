@@ -7,6 +7,7 @@ import { websocket } from "@/lib/websocket";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import ContainerMap from "@/components/container-map";
+import ServiceHistoryDetailed from "@/components/container/service-history-detailed";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1377,121 +1378,7 @@ export default function ContainerDetail() {
 
             {/* Service History Tab */}
             <TabsContent value="services" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Wrench className="h-5 w-5" />
-                    Service History
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {serviceLoading ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-                      <p className="text-muted-foreground">Loading service history...</p>
-                    </div>
-                  ) : serviceHistory && serviceHistory.length > 0 ? (
-                    <div className="space-y-4">
-                      {serviceHistory.map((service: any) => (
-                        <div key={service.id} className="border rounded-lg p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                {service.jobOrder && (
-                                  <Badge variant="outline" className="font-mono">
-                                    {service.jobOrder}
-                                  </Badge>
-                                )}
-                                <Badge className={
-                                  service.status === 'completed' ? 'bg-green-500/20 text-green-200 border-green-400/30 border' :
-                                    service.status === 'in_progress' ? 'bg-blue-500/20 text-blue-200 border-blue-400/30 border' :
-                                      service.status === 'pending' ? 'bg-yellow-500/20 text-yellow-200 border-yellow-400/30 border' :
-                                        'bg-gray-500/20 text-gray-200 border-gray-400/30 border'
-                                }>
-                                  {service.status || 'N/A'}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {service.requestedAt ? new Date(service.requestedAt).toLocaleDateString() : 'Date unknown'}
-                              </p>
-                            </div>
-                            {service.priority && (
-                              <Badge variant={service.priority === 'urgent' ? 'destructive' : 'secondary'}>
-                                {service.priority}
-                              </Badge>
-                            )}
-                          </div>
-
-                          <div>
-                            <label className="text-sm font-medium text-muted-foreground">Description</label>
-                            <p className="text-sm">{service.issueDescription || 'No description'}</p>
-                          </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                            {service.workType && (
-                              <div>
-                                <label className="text-muted-foreground">Work Type</label>
-                                <p className="font-medium">{service.workType}</p>
-                              </div>
-                            )}
-                            {service.jobType && (
-                              <div>
-                                <label className="text-muted-foreground">Job Type</label>
-                                <p className="font-medium">{service.jobType}</p>
-                              </div>
-                            )}
-                            {service.billingType && (
-                              <div>
-                                <label className="text-muted-foreground">Billing Type</label>
-                                <p className="font-medium">{service.billingType}</p>
-                              </div>
-                            )}
-                            {service.totalCost && (
-                              <div>
-                                <label className="text-muted-foreground">Total Cost</label>
-                                <p className="font-medium">₹{parseFloat(service.totalCost).toLocaleString()}</p>
-                              </div>
-                            )}
-                          </div>
-
-                          {service.resolutionNotes && (
-                            <div className="pt-2 border-t">
-                              <label className="text-sm font-medium text-muted-foreground">Resolution Notes</label>
-                              <p className="text-sm mt-1">{service.resolutionNotes}</p>
-                            </div>
-                          )}
-
-                          {service.assignedTechnician && (
-                            <div className="flex items-center gap-2 pt-2 border-t text-sm">
-                              <Truck className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-muted-foreground">Technician:</span>
-                              <span className="font-medium">{service.assignedTechnician.name || 'Not assigned'}</span>
-                            </div>
-                          )}
-
-                          <div className="flex justify-end">
-                            {service.source !== 'service_history' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setLocation(`/service-requests/${service.id}`)}
-                              >
-                                <ExternalLink className="h-3 w-3 mr-1" />
-                                View Details
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8">
-                      <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">No service history available</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <ServiceHistoryDetailed containerId={id} />
             </TabsContent>
 
             {/* Location & History Tab */}
