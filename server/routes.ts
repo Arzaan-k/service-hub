@@ -5637,47 +5637,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const result = await db.execute(sql`
         WITH pm_data AS (
-          SELECT 
+        SELECT 
             UPPER(TRIM(container_number)) as container_id,
-            MAX(complaint_attended_date) as last_pm_date,
-            COUNT(*)::int as pm_count
+        MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
+        MAX(complaint_attended_date) as last_service_date,
+        COUNT(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN 1 END):: int as pm_count
           FROM service_history
-          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
-            AND container_number IS NOT NULL
+          WHERE container_number IS NOT NULL
             AND container_number != ''
           GROUP BY UPPER(TRIM(container_number))
-        )
-        SELECT 
-          c.id,
-          c.container_id,
-          c.depot,
-          c.grade,
-          cust.company_name as customer_name,
-          pm.last_pm_date,
-          COALESCE(pm.pm_count, 0) as pm_count,
-          CASE 
+      )
+      SELECT
+      c.id,
+        c.container_id,
+        c.depot,
+        c.grade,
+        cust.company_name as customer_name,
+        pm.last_pm_date,
+        pm.last_service_date,
+        COALESCE(pm.pm_count, 0) as pm_count,
+        CASE 
             WHEN pm.last_pm_date IS NULL THEN NULL
-            ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
-          END as days_since_pm,
-          (CASE 
-            WHEN pm.last_pm_date IS NULL THEN 'NEVER'
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+            ELSE EXTRACT(DAY FROM(NOW() - pm.last_pm_date))
+      END as days_since_pm,
+        (CASE 
+            WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
+            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
+            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
             ELSE 'UP_TO_DATE'
-          END)::text as pm_status_text
+          END):: text as pm_status_text
         FROM containers c
         LEFT JOIN customers cust ON c.assigned_client_id = cust.id
         LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
         WHERE c.status = 'active'
           AND c.assigned_client_id = ${customerId}
-        ORDER BY 
-          CASE 
-            WHEN pm.last_pm_date IS NULL THEN 1
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 2
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 3
+        ORDER BY
+  CASE 
+            WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 1
+            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 2
+            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 3
             ELSE 4
-          END,
-          CASE WHEN pm.last_pm_date IS NULL THEN NULL ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) END DESC NULLS FIRST
+  END,
+    CASE WHEN pm.last_pm_date IS NULL THEN NULL ELSE EXTRACT(DAY FROM(NOW() - pm.last_pm_date)) END DESC NULLS FIRST
       `);
 
       const containers = (result.rows as any[]).map(row => ({
@@ -5687,6 +5688,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         grade: row.grade,
         customerName: row.customer_name,
         lastPmDate: row.last_pm_date,
+        lastServiceDate: row.last_service_date,
         pmCount: row.pm_count,
         daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
         pmStatus: row.pm_status_text,
@@ -5696,7 +5698,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerResult = await db.execute(sql`
         SELECT id, company_name, contact_person, phone, email 
         FROM customers WHERE id = ${customerId}
-      `);
+  `);
       const customer = (customerResult.rows as any[])[0] || null;
 
       const pendingContainers = containers.filter(c =>
@@ -5770,7 +5772,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get customer info
       const customerResult = await db.execute(sql`
         SELECT id, company_name FROM customers WHERE id = ${customerId}
-      `);
+  `);
       const customer = (customerResult.rows as any[])[0];
       if (!customer) {
         return res.status(404).json({ error: "Customer not found" });
@@ -5781,15 +5783,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If specific containerIds are provided, use those
       if (containerIds && Array.isArray(containerIds) && containerIds.length > 0) {
         // Get the specified containers - use IN clause with joined IDs
-        const containerIdsList = containerIds.map((id: string) => `'${id.replace(/'/g, "''")}'`).join(',');
+        const containerIdsList = containerIds.map((id: string) => `'${id.replace(/'/g, "''")}'`).join(', ');
         const containerResult = await db.execute(sql.raw(`
           WITH pm_data AS (
             SELECT 
               UPPER(TRIM(container_number)) as container_id,
-              MAX(complaint_attended_date) as last_pm_date
+              MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
+              MAX(complaint_attended_date) as last_service_date
             FROM service_history
-            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
-              AND container_number IS NOT NULL
+            WHERE container_number IS NOT NULL
               AND container_number != ''
             GROUP BY UPPER(TRIM(container_number))
           )
@@ -5802,9 +5804,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
             END as days_since_pm,
             (CASE 
-              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
-              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
-              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
               ELSE 'UP_TO_DATE'
             END)::text as pm_status
           FROM containers c
@@ -5819,10 +5821,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           WITH pm_data AS (
             SELECT 
               UPPER(TRIM(container_number)) as container_id,
-              MAX(complaint_attended_date) as last_pm_date
+              MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
+              MAX(complaint_attended_date) as last_service_date
             FROM service_history
-            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
-              AND container_number IS NOT NULL
+            WHERE container_number IS NOT NULL
               AND container_number != ''
             GROUP BY UPPER(TRIM(container_number))
           )
@@ -5835,9 +5837,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
             END as days_since_pm,
             (CASE 
-              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
-              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
-              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
               ELSE 'UP_TO_DATE'
             END)::text as pm_status
           FROM containers c
@@ -5845,8 +5847,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           WHERE c.status = 'active'
             AND c.assigned_client_id = ${customerId}
             AND (
-              pm.last_pm_date IS NULL 
-              OR EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75
+              (pm.last_pm_date IS NULL AND pm.last_service_date IS NULL)
+              OR EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75
             )
           ORDER BY days_since_pm DESC
         `);
