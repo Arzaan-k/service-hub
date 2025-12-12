@@ -88,8 +88,16 @@ const upload = multer({
   storage: multer.memoryStorage() // Store in memory for processing
 });
 
+interface AuthenticatedWebSocket extends WebSocket {
+  userId?: string;
+  role?: string;
+  isAlive: boolean;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+
+
 
 
 
@@ -294,9 +302,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const clients = new Map<string, AuthenticatedWebSocket>();
 
-  wss.on("connection", (ws: AuthenticatedWebSocket) => {
+  wss.on("connection", async (ws: AuthenticatedWebSocket, req: any) => {
     ws.isAuthenticated = false;
     console.log("WebSocket client connected");
+
+    // Extract token from query string
+    try {
+      const url = new URL(req.url || '', `http://${req.headers.host}`);
+      const token = url.searchParams.get('token');
+
+      if (token) {
+        const user = await storage.getUser(token);
+        if (user) {
+          ws.userId = user.id;
+          ws.userRole = user.role;
+          ws.isAuthenticated = true;
+          clients.set(user.id, ws);
+
+          console.log(`WebSocket authenticated for user via query param: ${user.name} (${user.role})`);
+
+          // Send authentication success
+          ws.send(JSON.stringify({
+            type: 'authenticated',
+            user: { id: user.id, name: user.name, role: user.role }
+          }));
+
+          // Send recent WhatsApp messages for this user
+          const recentMessages = await storage.getRecentWhatsAppMessages(user.id, 50);
+          ws.send(JSON.stringify({
+            type: 'recent_messages',
+            messages: recentMessages
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('WebSocket query auth error:', error);
+    }
 
     ws.on("message", async (data) => {
       try {

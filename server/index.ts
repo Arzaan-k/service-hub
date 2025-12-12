@@ -257,10 +257,7 @@ app.use((req, res, next) => {
     console.log(`[SERVER] NODE_ENV: ${process.env.NODE_ENV}`);
   });
 
-  // Also listen on IPv6
-  server.listen(port, '::', () => {
-    console.log(`[SERVER] Server is also listening on IPv6 port ${port}`);
-  });
+
 
   // Add error handling for the server
   server.on('error', (err) => {
