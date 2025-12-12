@@ -18,6 +18,19 @@ export const servicePriorityEnum = pgEnum("service_priority", ["urgent", "high",
 export const technicianStatusEnum = pgEnum("technician_status", ["available", "on_duty", "busy", "off_duty"]);
 // Removed technicianExperienceEnum - using text instead
 export const invoiceStatusEnum = pgEnum("invoice_status", ["pending", "partially_paid", "paid", "overdue", "cancelled"]);
+
+// Custom type for bytea (binary data) to store file buffers
+export const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+  toDriver(value: Buffer): Buffer {
+    return value;
+  },
+  fromDriver(value: Buffer): Buffer {
+    return value;
+  },
+});
 export const customerTierEnum = pgEnum("customer_tier", ["premium", "standard", "basic"]);
 export const paymentTermsEnum = pgEnum("payment_terms", ["prepaid", "net15", "net30"]);
 export const customerStatusEnum = pgEnum("customer_status", ["active", "inactive", "suspended"]);
@@ -102,8 +115,27 @@ export const technicians = pgTable("technicians", {
   longitude: decimal("longitude", { precision: 10, scale: 7 }), // e.g., 72.8777000
   locationAddress: text("location_address"), // Full formatted address from reverse geocoding
 
+  // Password setup and document submission fields
+  passwordSetupToken: varchar("password_setup_token", { length: 255 }),
+  passwordSetupTokenExpiry: timestamp("password_setup_token_expiry"),
+  documentsSubmitted: boolean("documents_submitted").default(false),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Technician Documents table - Stores documents submitted by technicians
+export const technicianDocuments = pgTable("technician_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  technicianId: varchar("technician_id").references(() => technicians.id, { onDelete: "cascade" }).notNull(),
+  documentType: varchar("document_type", { length: 100 }).notNull(), // 'aadhar', 'health_report', 'cbc_report', 'insurance_report'
+  filename: varchar("filename", { length: 255 }).notNull(),
+  fileUrl: text("file_url"), // Optional now that we store in DB
+  fileData: bytea("file_data"), // Binary file data
+  fileSize: integer("file_size"),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contentType: varchar("content_type", { length: 100 }), // MIME type of the file
 });
 
 // Containers table (enhanced according to PRD)
@@ -287,19 +319,6 @@ export const serviceRequests = pgTable("service_requests", {
   coordinatorRemarks: text("coordinator_remarks"),
   remarksAddedBy: varchar("remarks_added_by"),
   remarksAddedAt: timestamp("remarks_added_at"),
-});
-
-// Custom type for bytea (binary data) to store PDF buffers
-const bytea = customType<{ data: Buffer; driverData: Buffer }>({
-  dataType() {
-    return 'bytea';
-  },
-  toDriver(value: Buffer): Buffer {
-    return value;
-  },
-  fromDriver(value: Buffer): Buffer {
-    return value;
-  },
 });
 
 // Service Report PDFs table (new according to PRD)
@@ -784,6 +803,7 @@ export const technicianTripTasksRelations = relations(technicianTripTasks, ({ on
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertTechnicianSchema = createInsertSchema(technicians).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertTechnicianDocumentSchema = createInsertSchema(technicianDocuments).omit({ id: true, uploadedAt: true, updatedAt: true } as any);
 export const insertContainerSchema = createInsertSchema(containers).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true, createdAt: true } as any);
 export const insertServiceRequestSchema = createInsertSchema(serviceRequests).omit({ id: true, createdAt: true, updatedAt: true } as any);
@@ -846,6 +866,8 @@ export type Customer = typeof customers.$inferSelect;
 export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
 export type Technician = typeof technicians.$inferSelect;
 export type InsertTechnician = z.infer<typeof insertTechnicianSchema>;
+export type TechnicianDocument = typeof technicianDocuments.$inferSelect;
+export type InsertTechnicianDocument = z.infer<typeof insertTechnicianDocumentSchema>;
 export type Container = typeof containers.$inferSelect;
 export type InsertContainer = z.infer<typeof insertContainerSchema>;
 export type Alert = typeof alerts.$inferSelect;

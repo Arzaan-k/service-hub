@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
-import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock, Send, Trash2 } from "lucide-react";
+import { MapPin, Phone, Star, Wrench, ArrowLeft, Edit, Save, X, Clock, Send, Trash2, FileText, Download, CheckCircle, AlertCircle, Loader2, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
 import { websocket } from "@/lib/websocket";
@@ -1154,6 +1154,9 @@ export default function TechnicianProfile() {
               })()}
             </CardContent>
           </Card>
+
+          {/* Documents Section - Admin View */}
+          {technicianId && <AdminTechnicianDocumentsSection technicianId={technicianId} />}
         </div>
       </main>
 
@@ -1289,5 +1292,166 @@ export default function TechnicianProfile() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// Admin Technician Documents Section Component
+function AdminTechnicianDocumentsSection({ technicianId }: { technicianId: string }) {
+  const { toast } = useToast();
+  const [sendingReminder, setSendingReminder] = useState(false);
+
+  const DOCUMENT_TYPES = [
+    { id: 'aadhar', label: 'Aadhar Card', icon: '🪪' },
+    { id: 'health_report', label: 'Health Report', icon: '🏥' },
+    { id: 'cbc_report', label: 'CBC Report', icon: '🩺' },
+    { id: 'insurance_report', label: 'Insurance Report', icon: '🛡️' }
+  ];
+
+  // Fetch documents
+  const { data: documents, isLoading } = useQuery({
+    queryKey: ["/api/technicians", technicianId, "documents"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/technicians/${technicianId}/documents`);
+      const data = await res.json();
+      return data.documents || [];
+    },
+    enabled: !!technicianId,
+  });
+
+  // Fetch document status
+  const { data: status } = useQuery({
+    queryKey: ["/api/technicians", technicianId, "documents-status"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/technicians/${technicianId}/documents-status`);
+      return await res.json();
+    },
+    enabled: !!technicianId,
+  });
+
+  const handleSendReminder = async () => {
+    setSendingReminder(true);
+    try {
+      const res = await apiRequest("POST", `/api/technicians/${technicianId}/send-document-reminder`);
+      const data = await res.json();
+      
+      if (data.success) {
+        toast({
+          title: "Reminder Sent",
+          description: `Document reminder email sent to ${data.email}`,
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: data.message || "Failed to send reminder",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to send reminder email",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
+  const getDocumentForType = (docType: string) => {
+    return documents?.find((doc: any) => doc.documentType === docType);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Documents</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Technician submitted documents
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant={status?.isComplete ? "default" : "secondary"}>
+              {status?.uploadedCount || 0}/4 Uploaded
+            </Badge>
+            {!status?.isComplete && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleSendReminder}
+                disabled={sendingReminder}
+              >
+                {sendingReminder ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Send Reminder
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {DOCUMENT_TYPES.map((docType) => {
+              const doc = getDocumentForType(docType.id);
+              return (
+                <div
+                  key={docType.id}
+                  className={`flex items-center justify-between p-4 border rounded-lg ${
+                    doc ? 'bg-green-50 border-green-200' : 'bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{docType.icon}</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{docType.label}</span>
+                        {doc ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <AlertCircle className="h-4 w-4 text-orange-600" />
+                        )}
+                      </div>
+                      {doc ? (
+                        <p className="text-sm text-muted-foreground">
+                          {doc.filename} • {new Date(doc.uploadedAt).toLocaleDateString()}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-orange-600">Not uploaded</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {doc && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(doc.fileUrl, '_blank')}
+                      >
+                        <Download className="h-4 w-4 mr-1" />
+                        View
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

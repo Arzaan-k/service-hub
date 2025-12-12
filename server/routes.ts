@@ -50,6 +50,7 @@ import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
 import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
+import technicianDocumentRoutes from './routes/technicianDocumentRoutes';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -10286,6 +10287,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // Register technician document routes
+  app.use('/api', technicianDocumentRoutes);
 
   return httpServer;
 }

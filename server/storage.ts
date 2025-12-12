@@ -3,6 +3,7 @@ import {
   users,
   customers,
   technicians,
+  technicianDocuments,
   containers,
   containerMetrics,
   containerOwnershipHistory,
@@ -162,6 +163,13 @@ export interface IStorage {
   updateTechnicianLocation(technicianId: string, location: any): Promise<Technician>;
   createTechnician(technician: any): Promise<Technician>;
   updateTechnician(technicianId: string, technician: any): Promise<Technician>;
+  
+  // Technician document operations
+  getTechnicianDocuments(technicianId: string): Promise<any[]>;
+  getTechnicianDocument(documentId: string): Promise<any | undefined>;
+  createTechnicianDocument(document: any): Promise<any>;
+  updateTechnicianDocument(documentId: string, document: any): Promise<any>;
+  deleteTechnicianDocument(documentId: string): Promise<void>;
 
   // WhatsApp operations
   getWhatsappSession(phoneNumber: string): Promise<WhatsappSession | undefined>;
@@ -934,7 +942,31 @@ export class DatabaseStorage implements IStorage {
   try {
     const rows = await db
       .select({
-        tech: technicians,
+        // Explicitly select only existing columns to avoid migration issues
+        id: technicians.id,
+        userId: technicians.userId,
+        employeeCode: technicians.employeeCode,
+        experienceLevel: technicians.experienceLevel,
+        skills: technicians.skills,
+        baseLocation: technicians.baseLocation,
+        serviceAreas: technicians.serviceAreas,
+        status: technicians.status,
+        averageRating: technicians.averageRating,
+        totalJobsCompleted: technicians.totalJobsCompleted,
+        grade: technicians.grade,
+        designation: technicians.designation,
+        hotelAllowance: technicians.hotelAllowance,
+        localTravelAllowance: technicians.localTravelAllowance,
+        foodAllowance: technicians.foodAllowance,
+        personalAllowance: technicians.personalAllowance,
+        serviceRequestCost: technicians.serviceRequestCost,
+        pmCost: technicians.pmCost,
+        tasksPerDay: technicians.tasksPerDay,
+        latitude: technicians.latitude,
+        longitude: technicians.longitude,
+        locationAddress: technicians.locationAddress,
+        createdAt: technicians.createdAt,
+        updatedAt: technicians.updatedAt,
         userName: users.name,
         userEmail: users.email,
         userPhone: users.phoneNumber,
@@ -943,27 +975,37 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(technicians.userId, users.id));
 
     return rows.map((r: any) => ({
-      ...r.tech,
+      id: r.id,
+      userId: r.userId,
+      employeeCode: r.employeeCode,
+      experienceLevel: r.experienceLevel,
+      skills: r.skills,
+      baseLocation: r.baseLocation,
+      serviceAreas: r.serviceAreas,
+      status: r.status,
+      averageRating: r.averageRating,
+      totalJobsCompleted: r.totalJobsCompleted,
+      grade: r.grade,
+      designation: r.designation,
+      hotelAllowance: r.hotelAllowance,
+      localTravelAllowance: r.localTravelAllowance,
+      foodAllowance: r.foodAllowance,
+      personalAllowance: r.personalAllowance,
+      serviceRequestCost: r.serviceRequestCost,
+      pmCost: r.pmCost,
+      tasksPerDay: r.tasksPerDay,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      locationAddress: r.locationAddress,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
       name: r.userName,
       email: r.userEmail,
       phone: r.userPhone,
     }));
   } catch(error) {
     console.error("Error in getAllTechnicians:", error);
-    // Fallback: return technicians without user data
-    try {
-      const techRows = await db.select().from(technicians);
-      return techRows.map((tech: any) => ({
-        ...tech,
-        name: null,
-        email: null,
-        phone: null,
-      }));
-    } catch (fallbackError) {
-      console.error("Fallback also failed:", fallbackError);
-      // Last resort: return empty array
-      return [];
-    }
+    throw error;
   }
 }
 
@@ -971,7 +1013,31 @@ export class DatabaseStorage implements IStorage {
   try {
     const [row] = await db
       .select({
-        tech: technicians,
+        // Explicitly select only existing columns to avoid migration issues
+        id: technicians.id,
+        userId: technicians.userId,
+        employeeCode: technicians.employeeCode,
+        experienceLevel: technicians.experienceLevel,
+        skills: technicians.skills,
+        baseLocation: technicians.baseLocation,
+        serviceAreas: technicians.serviceAreas,
+        status: technicians.status,
+        averageRating: technicians.averageRating,
+        totalJobsCompleted: technicians.totalJobsCompleted,
+        grade: technicians.grade,
+        designation: technicians.designation,
+        hotelAllowance: technicians.hotelAllowance,
+        localTravelAllowance: technicians.localTravelAllowance,
+        foodAllowance: technicians.foodAllowance,
+        personalAllowance: technicians.personalAllowance,
+        serviceRequestCost: technicians.serviceRequestCost,
+        pmCost: technicians.pmCost,
+        tasksPerDay: technicians.tasksPerDay,
+        latitude: technicians.latitude,
+        longitude: technicians.longitude,
+        locationAddress: technicians.locationAddress,
+        createdAt: technicians.createdAt,
+        updatedAt: technicians.updatedAt,
         userName: users.name,
         userEmail: users.email,
         userPhone: users.phoneNumber,
@@ -980,18 +1046,38 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(technicians.userId, users.id))
       .where(eq(technicians.id, id));
     if(!row) return undefined as any;
-    return { ...row.tech, name: row.userName, email: row.userEmail, phone: row.userPhone } as any;
+    return {
+      id: row.id,
+      userId: row.userId,
+      employeeCode: row.employeeCode,
+      experienceLevel: row.experienceLevel,
+      skills: row.skills,
+      baseLocation: row.baseLocation,
+      serviceAreas: row.serviceAreas,
+      status: row.status,
+      averageRating: row.averageRating,
+      totalJobsCompleted: row.totalJobsCompleted,
+      grade: row.grade,
+      designation: row.designation,
+      hotelAllowance: row.hotelAllowance,
+      localTravelAllowance: row.localTravelAllowance,
+      foodAllowance: row.foodAllowance,
+      personalAllowance: row.personalAllowance,
+      serviceRequestCost: row.serviceRequestCost,
+      pmCost: row.pmCost,
+      tasksPerDay: row.tasksPerDay,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      locationAddress: row.locationAddress,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      name: row.userName,
+      email: row.userEmail,
+      phone: row.userPhone,
+    } as any;
   } catch(error) {
     console.error("Error in getTechnician:", error);
-    // Fallback: return technician without user data
-    try {
-      const [techRow] = await db.select().from(technicians).where(eq(technicians.id, id));
-      if (!techRow) return undefined as any;
-      return { ...techRow, name: null, email: null, phone: null } as any;
-    } catch (fallbackError) {
-      console.error("Technician fallback failed:", fallbackError);
-      return undefined as any;
-    }
+    throw error;
   }
 }
 
@@ -1716,19 +1802,130 @@ return timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.time
 }
 
   async getTechnicianByUserId(userId: string): Promise < Technician | undefined > {
-  const [row] = await db
-    .select({
-      tech: technicians,
-      userName: users.name,
-      userEmail: users.email,
-      userPhone: users.phoneNumber,
-    })
-    .from(technicians)
-    .leftJoin(users, eq(technicians.userId, users.id))
-    .where(eq(technicians.userId, userId));
-  if(!row) return undefined as any;
-  return { ...row.tech, name: row.userName, email: row.userEmail, phone: row.userPhone } as any;
+  try {
+    const [row] = await db
+      .select({
+        // Explicitly select only existing columns to avoid migration issues
+        id: technicians.id,
+        userId: technicians.userId,
+        employeeCode: technicians.employeeCode,
+        experienceLevel: technicians.experienceLevel,
+        skills: technicians.skills,
+        baseLocation: technicians.baseLocation,
+        serviceAreas: technicians.serviceAreas,
+        status: technicians.status,
+        averageRating: technicians.averageRating,
+        totalJobsCompleted: technicians.totalJobsCompleted,
+        grade: technicians.grade,
+        designation: technicians.designation,
+        hotelAllowance: technicians.hotelAllowance,
+        localTravelAllowance: technicians.localTravelAllowance,
+        foodAllowance: technicians.foodAllowance,
+        personalAllowance: technicians.personalAllowance,
+        serviceRequestCost: technicians.serviceRequestCost,
+        pmCost: technicians.pmCost,
+        tasksPerDay: technicians.tasksPerDay,
+        latitude: technicians.latitude,
+        longitude: technicians.longitude,
+        locationAddress: technicians.locationAddress,
+        createdAt: technicians.createdAt,
+        updatedAt: technicians.updatedAt,
+        userName: users.name,
+        userEmail: users.email,
+        userPhone: users.phoneNumber,
+      })
+      .from(technicians)
+      .leftJoin(users, eq(technicians.userId, users.id))
+      .where(eq(technicians.userId, userId));
+    if(!row) return undefined as any;
+    return {
+      id: row.id,
+      userId: row.userId,
+      employeeCode: row.employeeCode,
+      experienceLevel: row.experienceLevel,
+      skills: row.skills,
+      baseLocation: row.baseLocation,
+      serviceAreas: row.serviceAreas,
+      status: row.status,
+      averageRating: row.averageRating,
+      totalJobsCompleted: row.totalJobsCompleted,
+      grade: row.grade,
+      designation: row.designation,
+      hotelAllowance: row.hotelAllowance,
+      localTravelAllowance: row.localTravelAllowance,
+      foodAllowance: row.foodAllowance,
+      personalAllowance: row.personalAllowance,
+      serviceRequestCost: row.serviceRequestCost,
+      pmCost: row.pmCost,
+      tasksPerDay: row.tasksPerDay,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      locationAddress: row.locationAddress,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      name: row.userName,
+      email: row.userEmail,
+      phone: row.userPhone,
+    } as any;
+  } catch(error) {
+    console.error("Error in getTechnicianByUserId:", error);
+    throw error;
+  }
 }
+
+  // Technician document management methods
+  async getTechnicianDocuments(technicianId: string): Promise<any[]> {
+    return await db
+      .select({
+        id: technicianDocuments.id,
+        technicianId: technicianDocuments.technicianId,
+        documentType: technicianDocuments.documentType,
+        filename: technicianDocuments.filename,
+        fileUrl: technicianDocuments.fileUrl,
+        fileSize: technicianDocuments.fileSize,
+        uploadedAt: technicianDocuments.uploadedAt,
+        updatedAt: technicianDocuments.updatedAt,
+        contentType: technicianDocuments.contentType,
+      })
+      .from(technicianDocuments)
+      .where(eq(technicianDocuments.technicianId, technicianId))
+      .orderBy(desc(technicianDocuments.uploadedAt));
+  }
+
+  async getTechnicianDocument(documentId: string): Promise<any | undefined> {
+    const [document] = await db
+      .select()
+      .from(technicianDocuments)
+      .where(eq(technicianDocuments.id, documentId))
+      .limit(1);
+    return document;
+  }
+
+  async createTechnicianDocument(documentData: any): Promise<any> {
+    const [document] = await db
+      .insert(technicianDocuments)
+      .values(documentData)
+      .returning();
+    return document;
+  }
+
+  async updateTechnicianDocument(documentId: string, documentData: any): Promise<any> {
+    const [updated] = await db
+      .update(technicianDocuments)
+      .set({
+        ...documentData,
+        updatedAt: new Date()
+      })
+      .where(eq(technicianDocuments.id, documentId))
+      .returning();
+    return updated;
+  }
+
+  async deleteTechnicianDocument(documentId: string): Promise<void> {
+    await db
+      .delete(technicianDocuments)
+      .where(eq(technicianDocuments.id, documentId));
+  }
 
   // Invoice management methods
   async getAllInvoices(): Promise < any[] > {
