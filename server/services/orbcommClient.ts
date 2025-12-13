@@ -617,7 +617,7 @@ class OrbcommClient {
             lastSeen: timestamp,
             lastUpdate: timestamp,
             location: location || this.devices.get(deviceId)?.location,
-            temperature: temperature !== undefined ? temperature : this.devices.get(deviceId)?.temperature,
+            temperature: temperature !== undefined ? Math.round(temperature) : this.devices.get(deviceId)?.temperature,
             doorStatus: doorStatus || this.devices.get(deviceId)?.doorStatus,
             powerStatus: powerStatus || this.devices.get(deviceId)?.powerStatus,
             batteryLevel: batteryLevel !== undefined ? batteryLevel : this.devices.get(deviceId)?.batteryLevel,

@@ -17,8 +17,22 @@ export function TemperatureGraph({ alerts, containers }: TemperatureGraphProps) 
       // Extract temperature from alert data
       let temperature: number | null = null;
 
-      // Try different possible temperature fields
-      if (alert.rawData?.Event?.ReeferData?.TAmb !== undefined) {
+      // Check metadata field first (how Orbcomm alerts store data)
+      if (alert.metadata?.rawData?.Event?.ReeferData?.TAmb !== undefined) {
+        temperature = alert.metadata.rawData.Event.ReeferData.TAmb;
+      } else if (alert.metadata?.rawData?.Event?.DeviceData?.DeviceTemp !== undefined) {
+        temperature = alert.metadata.rawData.Event.DeviceData.DeviceTemp;
+      } else if (alert.metadata?.rawData?.ReeferData?.TAmb !== undefined) {
+        temperature = alert.metadata.rawData.ReeferData.TAmb;
+      } else if (alert.metadata?.rawData?.DeviceData?.DeviceTemp !== undefined) {
+        temperature = alert.metadata.rawData.DeviceData.DeviceTemp;
+      } else if (alert.metadata?.rawData?.Temperature !== undefined) {
+        temperature = alert.metadata.rawData.Temperature;
+      } else if (alert.metadata?.temperature !== undefined) {
+        temperature = alert.metadata.temperature;
+      }
+      // Try rawData field (legacy format)
+      else if (alert.rawData?.Event?.ReeferData?.TAmb !== undefined) {
         temperature = alert.rawData.Event.ReeferData.TAmb;
       } else if (alert.rawData?.Event?.DeviceData?.DeviceTemp !== undefined) {
         temperature = alert.rawData.Event.DeviceData.DeviceTemp;
@@ -28,11 +42,15 @@ export function TemperatureGraph({ alerts, containers }: TemperatureGraphProps) 
         temperature = alert.rawData.DeviceData.DeviceTemp;
       } else if (alert.rawData?.Temperature !== undefined) {
         temperature = alert.rawData.Temperature;
-      }
-
-      // Also check if alert has temperature field directly
-      if (temperature === null && alert.temperature !== undefined && alert.temperature !== null) {
+      } else if (alert.temperature !== undefined && alert.temperature !== null) {
         temperature = alert.temperature;
+      }
+      // Last resort: parse from description (e.g., "Temperature: 25°C" or "25°C")
+      else if (alert.description) {
+        const tempMatch = alert.description.match(/(-?\d+)\s*°C/);
+        if (tempMatch) {
+          temperature = parseInt(tempMatch[1]);
+        }
       }
 
       // Only include if we found a temperature value
@@ -47,7 +65,7 @@ export function TemperatureGraph({ alerts, containers }: TemperatureGraphProps) 
             hour: '2-digit',
             minute: '2-digit'
           }),
-          temperature: Math.round(temperature * 10) / 10, // Round to 1 decimal
+          temperature: Math.round(temperature), // Round to whole number
           containerCode: container?.containerCode || `Container ${alert.containerId?.slice(0, 8)}`,
           severity: alert.severity,
           date: timestamp
@@ -70,9 +88,9 @@ export function TemperatureGraph({ alerts, containers }: TemperatureGraphProps) 
     const avg = temps.reduce((a, b) => a + b, 0) / temps.length;
 
     return {
-      min: Math.round(min * 10) / 10,
-      max: Math.round(max * 10) / 10,
-      avg: Math.round(avg * 10) / 10,
+      min: Math.round(min),
+      max: Math.round(max),
+      avg: Math.round(avg),
       count: temperatureData.length
     };
   }, [temperatureData]);
