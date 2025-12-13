@@ -4144,6 +4144,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/technicians/analytics/overview", authenticateUser, async (req, res) => {
+    try {
+      const { startDate, endDate } = req.query;
+
+      // Build date constraints
+      const dateFilter = [];
+      if (startDate) {
+        dateFilter.push(sql`${serviceRequests.updatedAt} >= ${new Date(startDate as string).toISOString()}`);
+      }
+      if (endDate) {
+        dateFilter.push(sql`${serviceRequests.updatedAt} <= ${new Date(endDate as string).toISOString()}`);
+      }
+
+      // Fetch all technicians
+      const allTechnicians = await db.query.technicians.findMany({
+        with: {
+          user: true
+        }
+      });
+
+      // Prepare stats object
+      const stats = await Promise.all(allTechnicians.map(async (tech: any) => {
+        const techId = tech.id;
+
+        // Pms done
+        // Assuming PMs have 'PM' in jobOrder or workType or are scheduled/recurring. 
+        // For now, checking if requestNumber starts with PM or jobOrder contains PM (heuristic based on typical usage)
+        // Or strictly strictly speaking checking for container's lastPmDate update context if available, but simple heuristic:
+        // Service requests with 'PM' in description or type.
+        // Adjust logic based on actual data structure usage. 
+        // Returning 0 if no explicit PM field, or relying on 'PM' substring in issue description/job order.
+
+        // Better: use 'job_type' or 'work_type' column if available in schema (it is).
+        const pmsDoneQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            or(
+              sql`${serviceRequests.workType} ILIKE '%PM%'`,
+              sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
+              sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
+            ),
+            ...dateFilter
+          ));
+        const pmsDone = Number(pmsDoneQuery[0]?.count || 0);
+
+        // Services done (Not PM)
+        const servicesDoneQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            not(or(
+              sql`${serviceRequests.workType} ILIKE '%PM%'`,
+              sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
+              sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
+            )),
+            ...dateFilter
+          ));
+        const servicesDone = Number(servicesDoneQuery[0]?.count || 0);
+
+        // On-time rate
+        // defined as actualEndTime <= scheduledDate (or end of scheduled window)
+        // For simplicity: actualEndTime <= scheduledDate + 2 hours (typical window) or just check explicit delayed flag if exists.
+        // Using actualEndTime <= scheduledDate if available.
+        const completedJobs = await db.select()
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            ...dateFilter
+          ));
+
+        let onTimeCount = 0;
+        completedJobs.forEach(job => {
+          if (job.actualEndTime && job.scheduledDate) {
+            // Check if actual completion is on same day or before
+            if (new Date(job.actualEndTime) <= new Date(new Date(job.scheduledDate).getTime() + 24 * 60 * 60 * 1000)) {
+              onTimeCount++;
+            }
+          } else {
+            // If no scheduled date, assume on time (or ignore)
+            onTimeCount++;
+          }
+        });
+        const onTimeRate = completedJobs.length > 0 ? (onTimeCount / completedJobs.length) * 100 : 100;
+
+        // Pending requests
+        const pendingQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            inArray(serviceRequests.status, ['assigned', 'in_progress', 'awaiting_parts']),
+            ...dateFilter
+          ));
+        const pendingRequestsCount = Number(pendingQuery[0]?.count || 0);
+
+        // Spend (Sum of totalCost)
+        const spendQuery = await db.select({ total: sql<number>`sum(${serviceRequests.totalCost})` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            ...dateFilter
+          ));
+        const spend = Number(spendQuery[0]?.total || 0);
+        const costPerJob = (pmsDone + servicesDone) > 0 ? spend / (pmsDone + servicesDone) : 0;
+
+        // Feedback
+        const feedbackQuery = await db.select({ avg: sql<number>`avg(cast(${feedback.rating} as int))` })
+          .from(feedback)
+          .where(eq(feedback.technicianId, techId));
+        const clientRating = Number(feedbackQuery[0]?.avg || 0);
+
+        return {
+          technician: {
+            id: tech.id,
+            name: tech.user?.name || tech.name || 'Unknown',
+            avatar: null, // Placeholder
+          },
+          metrics: {
+            pmsDone,
+            servicesDone,
+            onTimeRate,
+            pendingRequests: pendingRequestsCount,
+            spend,
+            costPerJob,
+            clientRating
+          }
+        };
+      }));
+
+      // Sort by services done + PMs done descending for leaderboard
+      stats.sort((a, b) => (b.metrics.pmsDone + b.metrics.servicesDone) - (a.metrics.pmsDone + a.metrics.servicesDone));
+
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Failed to fetch technician analytics:", error);
+      res.status(500).json({ error: "Failed to fetch technician analytics", details: error.message });
+    }
+  });
+
   app.get("/api/technicians/:id/performance", authenticateUser, async (req, res) => {
     try {
       const performance = await storage.getTechnicianPerformance(req.params.id);
