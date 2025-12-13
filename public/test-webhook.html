@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WhatsApp Webhook Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .result { margin: 10px 0; padding: 10px; background: #f5f5f5; white-space: pre-wrap; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>WhatsApp Webhook Test</h1>
+
+    <div class="test-section">
+        <h3>Test 1: Server Ping</h3>
+        <button onclick="testPing()">Test Server Ping</button>
+        <div id="pingResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 2: Webhook Verification</h3>
+        <button onclick="testVerification()">Test Webhook Verification</button>
+        <div id="verifyResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 3: Message Processing</h3>
+        <input type="text" id="phoneNumber" placeholder="Phone number (e.g., 919876543210)" value="919876543210">
+        <input type="text" id="message" placeholder="Message" value="hi">
+        <button onclick="testMessage()">Test Message Processing</button>
+        <div id="messageResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 4: Ngrok Tunnel Test</h3>
+        <button onclick="testNgrok()">Test Ngrok Connection</button>
+        <div id="ngrokResult" class="result"></div>
+    </div>
+
+    <script>
+        async function makeRequest(url, options = {}) {
+            try {
+                const response = await fetch(url, options);
+                const text = await response.text();
+                return { status: response.status, data: text, ok: response.ok };
+            } catch (error) {
+                return { error: error.message };
+            }
+        }
+
+        async function testPing() {
+            const result = document.getElementById('pingResult');
+            result.textContent = 'Testing...';
+
+            const response = await makeRequest('/api/whatsapp/ping');
+            if (response.error) {
+                result.innerHTML = `<span class="error">❌ Error: ${response.error}</span>`;
+            } else {
+                result.innerHTML = `<span class="success">✅ Status: ${response.status}</span>\n${response.data}`;
+            }
+        }
+
+        async function testVerification() {
+            const result = document.getElementById('verifyResult');
+            result.textContent = 'Testing...';
+
+            const response = await makeRequest('/api/whatsapp/test-verify');
+            if (response.error) {
+                result.innerHTML = `<span class="error">❌ Error: ${response.error}</span>`;
+            } else {
+                result.innerHTML = `<span class="success">✅ Status: ${response.status}</span>\n${response.data}`;
+            }
+        }
+
+        async function testMessage() {
+            const result = document.getElementById('messageResult');
+            const phoneNumber = document.getElementById('phoneNumber').value;
+            const message = document.getElementById('message').value;
+
+            result.textContent = 'Testing...';
+
+            const response = await makeRequest('/api/whatsapp/test-webhook', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message, from: phoneNumber })
+            });
+
+            if (response.error) {
+                result.innerHTML = `<span class="error">❌ Error: ${response.error}</span>`;
+            } else {
+                result.innerHTML = `<span class="success">✅ Status: ${response.status}</span>\n${response.data}`;
+            }
+        }
+
+        async function testNgrok() {
+            const result = document.getElementById('ngrokResult');
+            result.textContent = 'Testing ngrok...';
+
+            // Test ngrok ping
+            const pingResponse = await makeRequest('https://098c864d25f4.ngrok-free.app/api/whatsapp/ping');
+            if (pingResponse.error) {
+                result.innerHTML = `<span class="error">❌ Ngrok Error: ${pingResponse.error}</span>`;
+                return;
+            }
+
+            // Test ngrok verification
+            const verifyResponse = await makeRequest('https://098c864d25f4.ngrok-free.app/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=ab703f82d47668f0ef89a7a139d227ef&hub.challenge=test123');
+
+            let resultText = `<span class="success">✅ Ngrok Ping: ${pingResponse.status}</span>\n${pingResponse.data}\n\n`;
+
+            if (verifyResponse.error) {
+                resultText += `<span class="error">❌ Ngrok Verification Error: ${verifyResponse.error}</span>`;
+            } else {
+                resultText += `<span class="success">✅ Ngrok Verification: ${verifyResponse.status}</span>\n${verifyResponse.data}`;
+            }
+
+            result.innerHTML = resultText;
+        }
+    </script>
+</body>
+</html>
+
+
+

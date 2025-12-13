@@ -575,12 +575,53 @@ export default function Technicians() {
             </div>
           </div>
 
-          {/* Internal Technicians */}
-          <div className="mb-3">
-            <h3 className="text-lg font-semibold text-foreground mb-3">Internal Technicians</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {technicians && (technicians as any[]).length > 0 ? (
-                (technicians as any[]).map((tech: Technician) => (
+          {/* Internal Technicians - Grouped by Experience Level */}
+          <div className="space-y-8">
+            {['expert', 'senior', 'mid', 'junior'].map((level) => {
+              const levelConfig = {
+                expert: {
+                  label: '🏆 Expert Technicians',
+                  color: 'from-purple-500/10 to-purple-600/10 border-purple-500/30',
+                  badgeClass: 'bg-purple-500 text-white'
+                },
+                senior: {
+                  label: '⭐ Senior Technicians',
+                  color: 'from-blue-500/10 to-blue-600/10 border-blue-500/30',
+                  badgeClass: 'bg-blue-500 text-white'
+                },
+                mid: {
+                  label: '📋 Mid-Level Technicians',
+                  color: 'from-green-500/10 to-green-600/10 border-green-500/30',
+                  badgeClass: 'bg-green-500 text-white'
+                },
+                junior: {
+                  label: '🌱 Junior Technicians',
+                  color: 'from-orange-500/10 to-orange-600/10 border-orange-500/30',
+                  badgeClass: 'bg-orange-500 text-white'
+                }
+              }[level]!;
+
+              const levelTechs = technicians ? (technicians as any[]).filter((tech: Technician) => {
+                const techLevel = (tech as any).experienceLevel?.toLowerCase?.() || 'mid';
+                // Debug: log the comparison
+                console.log(`Tech: ${tech.name}, Level: "${techLevel}", Comparing with: "${level}", Match: ${techLevel === level}`);
+                return techLevel === level;
+              }) : [];
+
+              console.log(`Level "${level}" has ${levelTechs.length} technicians`);
+
+              if (levelTechs.length === 0) return null;
+
+              return (
+                <div key={level} className="mb-8">
+                  <div className={`flex items-center justify-between p-4 rounded-lg border bg-gradient-to-r ${levelConfig.color} mb-4`}>
+                    <h3 className="text-lg font-bold text-foreground">{levelConfig.label}</h3>
+                    <Badge className={`${levelConfig.badgeClass} h-7 px-3`}>
+                      {levelTechs.length} {levelTechs.length === 1 ? 'technician' : 'technicians'}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                    {levelTechs.map((tech: Technician) => (
                   <Card key={tech.id} className="shadow-sm hover:shadow-md transition-all bg-card border-border">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
@@ -697,13 +738,16 @@ export default function Technicians() {
                       </div>
                     </CardContent>
                   </Card>
-                ))
-              ) : (
-                <div className="col-span-full text-center py-6 text-sm text-muted-foreground">
-                  No internal technicians found.
+                    ))}
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })}
+            {technicians && (technicians as any[]).length === 0 && (
+              <div className="text-center py-12 text-sm text-muted-foreground">
+                No internal technicians found.
+              </div>
+            )}
           </div>
 
           {/* Divider */}

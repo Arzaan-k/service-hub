@@ -3,7 +3,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Thermometer, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ContainerAnalytics } from "@/components/container/container-analytics";
+import { Thermometer, AlertTriangle, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 
 interface PerContainerTemperatureProps {
   alerts: any[];
@@ -32,6 +35,8 @@ interface ContainerTemperatureData {
 
 export function PerContainerTemperature({ alerts, containers }: PerContainerTemperatureProps) {
   const [selectedContainer, setSelectedContainer] = useState<string>("all");
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsContainerId, setAnalyticsContainerId] = useState<string | null>(null);
 
   // Extract and organize temperature data by container
   const containerTemperatureData = useMemo(() => {
@@ -299,6 +304,18 @@ export function PerContainerTemperature({ alerts, containers }: PerContainerTemp
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={() => {
+                      setAnalyticsContainerId(container.containerId);
+                      setAnalyticsOpen(true);
+                    }}
+                  >
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    View Analytics
+                  </Button>
                 </CardContent>
               </Card>
             ))}
@@ -314,18 +331,31 @@ export function PerContainerTemperature({ alerts, containers }: PerContainerTemp
                     {container.alertCount} temperature readings
                   </p>
                 </div>
-                <div className="flex gap-4 text-sm">
-                  <div className="text-center">
-                    <p className="text-muted-foreground text-xs">Min</p>
-                    <p className="font-bold text-blue-600 dark:text-blue-400">{container.minTemp}°C</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-muted-foreground text-xs">Avg</p>
-                    <p className="font-bold text-orange-600 dark:text-orange-400">{container.avgTemp}°C</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-muted-foreground text-xs">Max</p>
-                    <p className="font-bold text-red-600 dark:text-red-400">{container.maxTemp}°C</p>
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setAnalyticsContainerId(container.containerId);
+                      setAnalyticsOpen(true);
+                    }}
+                  >
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    View Analytics
+                  </Button>
+                  <div className="flex gap-4 text-sm">
+                    <div className="text-center">
+                      <p className="text-muted-foreground text-xs">Min</p>
+                      <p className="font-bold text-blue-600 dark:text-blue-400">{container.minTemp}°C</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-muted-foreground text-xs">Avg</p>
+                      <p className="font-bold text-orange-600 dark:text-orange-400">{container.avgTemp}°C</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-muted-foreground text-xs">Max</p>
+                      <p className="font-bold text-red-600 dark:text-red-400">{container.maxTemp}°C</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -377,6 +407,29 @@ export function PerContainerTemperature({ alerts, containers }: PerContainerTemp
           ))
         )}
       </CardContent>
+
+      {/* Analytics Dialog */}
+      <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Container Analytics</DialogTitle>
+            <DialogDescription>
+              Detailed performance analytics for {
+                analyticsContainerId
+                  ? containers.find(c => c.id === analyticsContainerId)?.containerNumber || 'Container'
+                  : 'Container'
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          {analyticsContainerId && (
+            <ContainerAnalytics
+              container={containers.find(c => c.id === analyticsContainerId) || {}}
+              alerts={alerts}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
