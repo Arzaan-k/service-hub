@@ -7,6 +7,7 @@ import { websocket } from "@/lib/websocket";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import ContainerMap from "@/components/container-map";
+import ServiceHistoryDetailed from "@/components/container/service-history-detailed";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,7 +44,8 @@ import {
   Wrench,
   Building,
   RefreshCw,
-  Activity
+  Activity,
+  DollarSign
 } from "lucide-react";
 
 interface Container {
@@ -317,15 +319,26 @@ export default function ContainerDetail() {
     staleTime: 30000,
   });
 
+  // Fetch finance summary
+  const { data: financeSummary, isLoading: financeLoading } = useQuery({
+    queryKey: [`/api/finance/container-spend/${id}`],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/finance/container-spend/${id}`);
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
+
   const getStatusBadge = (status: string) => {
     const normalizedStatus = status?.toUpperCase() || "UNKNOWN";
 
     const statusMap: Record<string, { color: string; label: string; icon: any }> = {
       "DEPLOYED": { color: "bg-green-500/20 text-green-200 border-green-400/30", label: "Deployed", icon: CheckCircle },
       "ACTIVE": { color: "bg-green-500/20 text-green-200 border-green-400/30", label: "Active", icon: Activity },
-      "SALE": { color: "bg-blue-500/20 text-blue-200 border-blue-400/30", label: "For Sale", icon: Package },
+      "SALE": { color: "bg-blue-500/20 text-blue-200 border-blue-400/30", label: "Stock", icon: Package },
       "MAINTENANCE": { color: "bg-yellow-500/20 text-yellow-200 border-yellow-400/30", label: "Maintenance", icon: Settings },
-      "STOCK": { color: "bg-gray-500/20 text-gray-200 border-gray-400/30", label: "In Stock", icon: Package },
+      "STOCK": { color: "bg-gray-500/20 text-gray-200 border-gray-400/30", label: "Stock", icon: Package },
     };
 
     const statusInfo = statusMap[normalizedStatus] || {
@@ -727,7 +740,7 @@ export default function ContainerDetail() {
                               <p className="text-sm font-medium">{customer.companyName}</p>
                               <Button
                                 variant="outline"
-                                size="xs"
+                                size="sm"
                                 className="h-6 px-2"
                                 onClick={() => setLocation(`/clients/${customer.id}`)}
                               >
@@ -814,6 +827,66 @@ export default function ContainerDetail() {
                         <p className="text-sm">{container.usageCycles || 'N/A'}</p>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Finance Summary */}
+                <Card className="col-span-1 lg:col-span-2">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <DollarSign className="h-5 w-5" />
+                      Finance Summary
+                    </CardTitle>
+                    <Button variant="outline" size="sm" onClick={() => setLocation(`/finance/container-spend`)}>
+                      View Full Finance Report <ExternalLink className="ml-2 h-4 w-4" />
+                    </Button>
+                  </CardHeader>
+                  <CardContent>
+                    {financeLoading ? (
+                      <div className="flex justify-center p-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                      </div>
+                    ) : financeSummary ? (
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Total Spend</p>
+                          <p className="text-2xl font-bold">₹{financeSummary.total_spend.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Spend This Month</p>
+                          <p className="text-2xl font-bold text-green-600">₹{financeSummary.spend_this_month.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Travel Costs</p>
+                          <p className="text-xl font-semibold">₹{financeSummary.travel_spend.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Misc Expenses</p>
+                          <p className="text-xl font-semibold">₹{financeSummary.misc_spend.toLocaleString()}</p>
+                        </div>
+
+                        <div className="col-span-1 md:col-span-4 mt-4">
+                          <p className="text-sm font-medium mb-2">Last 3 Transactions</p>
+                          <div className="space-y-2">
+                            {financeSummary.transactions.slice(0, 3).map((t: any, i: number) => (
+                              <div key={i} className="flex justify-between items-center text-sm border-b pb-2 last:border-0">
+                                <div>
+                                  <span className="font-medium">{new Date(t.date).toLocaleDateString()}</span>
+                                  <span className="mx-2 text-muted-foreground">•</span>
+                                  <span>{t.description}</span>
+                                </div>
+                                <span className="font-semibold">₹{t.amount.toLocaleString()}</span>
+                              </div>
+                            ))}
+                            {financeSummary.transactions.length === 0 && (
+                              <p className="text-sm text-muted-foreground">No transactions found.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">No finance data available.</p>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -1305,121 +1378,7 @@ export default function ContainerDetail() {
 
             {/* Service History Tab */}
             <TabsContent value="services" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Wrench className="h-5 w-5" />
-                    Service History
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {serviceLoading ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-                      <p className="text-muted-foreground">Loading service history...</p>
-                    </div>
-                  ) : serviceHistory && serviceHistory.length > 0 ? (
-                    <div className="space-y-4">
-                      {serviceHistory.map((service: any) => (
-                        <div key={service.id} className="border rounded-lg p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                {service.jobOrder && (
-                                  <Badge variant="outline" className="font-mono">
-                                    {service.jobOrder}
-                                  </Badge>
-                                )}
-                                <Badge className={
-                                  service.status === 'completed' ? 'bg-green-500/20 text-green-200 border-green-400/30 border' :
-                                    service.status === 'in_progress' ? 'bg-blue-500/20 text-blue-200 border-blue-400/30 border' :
-                                      service.status === 'pending' ? 'bg-yellow-500/20 text-yellow-200 border-yellow-400/30 border' :
-                                        'bg-gray-500/20 text-gray-200 border-gray-400/30 border'
-                                }>
-                                  {service.status || 'N/A'}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {service.requestedAt ? new Date(service.requestedAt).toLocaleDateString() : 'Date unknown'}
-                              </p>
-                            </div>
-                            {service.priority && (
-                              <Badge variant={service.priority === 'urgent' ? 'destructive' : 'secondary'}>
-                                {service.priority}
-                              </Badge>
-                            )}
-                          </div>
-
-                          <div>
-                            <label className="text-sm font-medium text-muted-foreground">Description</label>
-                            <p className="text-sm">{service.issueDescription || 'No description'}</p>
-                          </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                            {service.workType && (
-                              <div>
-                                <label className="text-muted-foreground">Work Type</label>
-                                <p className="font-medium">{service.workType}</p>
-                              </div>
-                            )}
-                            {service.jobType && (
-                              <div>
-                                <label className="text-muted-foreground">Job Type</label>
-                                <p className="font-medium">{service.jobType}</p>
-                              </div>
-                            )}
-                            {service.billingType && (
-                              <div>
-                                <label className="text-muted-foreground">Billing Type</label>
-                                <p className="font-medium">{service.billingType}</p>
-                              </div>
-                            )}
-                            {service.totalCost && (
-                              <div>
-                                <label className="text-muted-foreground">Total Cost</label>
-                                <p className="font-medium">₹{parseFloat(service.totalCost).toLocaleString()}</p>
-                              </div>
-                            )}
-                          </div>
-
-                          {service.resolutionNotes && (
-                            <div className="pt-2 border-t">
-                              <label className="text-sm font-medium text-muted-foreground">Resolution Notes</label>
-                              <p className="text-sm mt-1">{service.resolutionNotes}</p>
-                            </div>
-                          )}
-
-                          {service.assignedTechnician && (
-                            <div className="flex items-center gap-2 pt-2 border-t text-sm">
-                              <Truck className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-muted-foreground">Technician:</span>
-                              <span className="font-medium">{service.assignedTechnician.name || 'Not assigned'}</span>
-                            </div>
-                          )}
-
-                          <div className="flex justify-end">
-                            {service.source !== 'service_history' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setLocation(`/service-requests/${service.id}`)}
-                              >
-                                <ExternalLink className="h-3 w-3 mr-1" />
-                                View Details
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8">
-                      <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">No service history available</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <ServiceHistoryDetailed containerId={id} />
             </TabsContent>
 
             {/* Location & History Tab */}
@@ -1592,7 +1551,7 @@ export default function ContainerDetail() {
                   <SelectContent>
                     <SelectItem value="ACTIVE">Active</SelectItem>
                     <SelectItem value="DEPLOYED">Deployed</SelectItem>
-                    <SelectItem value="SALE">For Sale</SelectItem>
+                    <SelectItem value="SALE">Stock</SelectItem>
                     <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
                     <SelectItem value="STORAGE">Storage</SelectItem>
                   </SelectContent>

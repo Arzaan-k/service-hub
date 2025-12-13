@@ -1489,6 +1489,7 @@ export default function Scheduling() {
                                   <TableHead>Container ID</TableHead>
                                   <TableHead>Location</TableHead>
                                   <TableHead>Last PM Date</TableHead>
+                                  <TableHead>Last Service Date</TableHead>
                                   <TableHead>Days Since PM</TableHead>
                                   <TableHead>PM Count</TableHead>
                                   <TableHead>Status</TableHead>
@@ -1533,6 +1534,15 @@ export default function Scheduling() {
                                             year: 'numeric'
                                           })
                                           : <span className="text-red-400 font-medium">Never</span>}
+                                      </TableCell>
+                                      <TableCell>
+                                        {container.lastServiceDate
+                                          ? new Date(container.lastServiceDate).toLocaleDateString('en-IN', {
+                                            day: '2-digit',
+                                            month: 'short',
+                                            year: 'numeric'
+                                          })
+                                          : <span className="text-muted-foreground">-</span>}
                                       </TableCell>
                                       <TableCell>
                                         {container.daysSincePm !== null

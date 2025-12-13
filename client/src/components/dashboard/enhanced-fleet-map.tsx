@@ -159,8 +159,11 @@ export default function EnhancedFleetMap({ containers }: EnhancedFleetMapProps) 
     // Filter markers based on status
     const filteredMarkers = containerMarkers.filter(marker => {
       if (filterStatus === "all") return true;
-      const status = marker.container.excelMetadata?.status || marker.container.status;
-      return status?.toLowerCase() === filterStatus.toLowerCase();
+      const status = (marker.container.excelMetadata?.status || marker.container.status || '').toUpperCase();
+      if (filterStatus.toLowerCase() === 'stock') {
+        return status === 'STOCK' || status === 'SALE';
+      }
+      return status.toLowerCase() === filterStatus.toLowerCase();
     });
 
     // Add markers to map
@@ -176,9 +179,9 @@ export default function EnhancedFleetMap({ containers }: EnhancedFleetMapProps) 
       if (status?.toUpperCase() === "DEPLOYED") {
         color = healthScore >= 80 ? "#73C8D2" : healthScore >= 60 ? "#FF9013" : "#ef4444";
         statusText = "Deployed";
-      } else if (status?.toUpperCase() === "SALE") {
+      } else if (status?.toUpperCase() === "SALE" || status?.toUpperCase() === "STOCK") {
         color = "#0046FF";
-        statusText = "For Sale";
+        statusText = "Stock";
       } else if (status?.toUpperCase() === "MAINTENANCE") {
         color = "#FF9013";
         statusText = "Maintenance";
@@ -263,7 +266,7 @@ export default function EnhancedFleetMap({ containers }: EnhancedFleetMapProps) 
           >
             <option value="all">All Containers ({containerMarkers.length})</option>
             <option value="deployed">Deployed ({statusCounts.DEPLOYED || 0})</option>
-            <option value="sale">For Sale ({statusCounts.SALE || 0})</option>
+            <option value="stock">Stock ({(statusCounts.STOCK || 0) + (statusCounts.SALE || 0)})</option>
             <option value="maintenance">Maintenance ({statusCounts.MAINTENANCE || 0})</option>
             <option value="storage">Storage ({statusCounts.STORAGE || 0})</option>
           </select>
@@ -298,7 +301,7 @@ export default function EnhancedFleetMap({ containers }: EnhancedFleetMapProps) 
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-            <span className="text-muted-foreground">For Sale ({statusCounts.SALE || 0})</span>
+            <span className="text-muted-foreground">Stock ({(statusCounts.STOCK || 0) + (statusCounts.SALE || 0)})</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>

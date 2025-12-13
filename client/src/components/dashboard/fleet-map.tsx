@@ -85,11 +85,48 @@ export default function FleetMap({ containers }: FleetMapProps) {
     if (typeof window === "undefined" || !window.L || !mapRef.current || !containers) return;
 
     if (!mapInstanceRef.current) {
-      mapInstanceRef.current = window.L.map(mapRef.current).setView([34.0522, -118.2437], 10);
+      // Initialize map centered on India
+      mapInstanceRef.current = window.L.map(mapRef.current).setView([20.5937, 78.9629], 5);
 
       window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap contributors",
       }).addTo(mapInstanceRef.current);
+
+      // Add custom India recenter button above zoom controls
+      const IndiaControl = window.L.Control.extend({
+        options: {
+          position: 'topright'
+        },
+        onAdd: function (map: any) {
+          const container = window.L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-india');
+          const button = window.L.DomUtil.create('a', 'leaflet-control-india-button', container);
+
+          button.href = '#';
+          button.title = 'Recenter on India';
+          button.setAttribute('role', 'button');
+          button.setAttribute('aria-label', 'Recenter map on India');
+          button.setAttribute('tabindex', '0');
+          button.innerHTML = '<i class="fas fa-map-marker-alt"></i>';
+
+          // Click handler
+          window.L.DomEvent.on(button, 'click', function (e: any) {
+            window.L.DomEvent.preventDefault(e);
+            map.setView([20.5937, 78.9629], 5, { animate: true, duration: 0.5 });
+          });
+
+          // Keyboard handler for accessibility
+          window.L.DomEvent.on(button, 'keydown', function (e: any) {
+            if (e.key === 'Enter' || e.key === ' ') {
+              window.L.DomEvent.preventDefault(e);
+              map.setView([20.5937, 78.9629], 5, { animate: true, duration: 0.5 });
+            }
+          });
+
+          return container;
+        }
+      });
+
+      new IndiaControl().addTo(mapInstanceRef.current);
     }
 
     // Clear existing markers
@@ -254,23 +291,30 @@ export default function FleetMap({ containers }: FleetMapProps) {
       }
     });
 
-    // Fit map to show all markers if there are any
+    // Removed auto-zoom to container bounds to maintain India view
+    // Users can manually zoom/pan to see containers, or use the India button to recenter
+    // const validContainers = containers.filter(container => {
+    //   const lat = container.currentLocation?.lat || (container.locationLat ? parseFloat(container.locationLat) : null);
+    //   const lng = container.currentLocation?.lng || (container.locationLng ? parseFloat(container.locationLng) : null);
+    //   return lat && lng && lat !== 0 && lng !== 0;
+    // });
+
+    // if (validContainers.length > 0) {
+    //   const bounds = window.L.latLngBounds(
+    //     validContainers.map(container => {
+    //       const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
+    //       const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
+    //       return [lat, lng];
+    //     })
+    //   );
+    //   mapInstanceRef.current.fitBounds(bounds, { padding: [20, 20] });
+    // }
+
     const validContainers = containers.filter(container => {
       const lat = container.currentLocation?.lat || (container.locationLat ? parseFloat(container.locationLat) : null);
       const lng = container.currentLocation?.lng || (container.locationLng ? parseFloat(container.locationLng) : null);
       return lat && lng && lat !== 0 && lng !== 0;
     });
-
-    if (validContainers.length > 0) {
-      const bounds = window.L.latLngBounds(
-        validContainers.map(container => {
-          const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
-          const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
-          return [lat, lng];
-        })
-      );
-      mapInstanceRef.current.fitBounds(bounds, { padding: [20, 20] });
-    }
 
     console.log(`🗺️ Map updated: ${validContainers.length} containers with GPS coordinates displayed`);
   }, [containers]);

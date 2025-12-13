@@ -3,7 +3,9 @@ import { storage } from '../storage';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
-import { serviceRequests, technicians } from '@shared/schema';
+import { db } from '../db';
+import { serviceRequests, technicians, whatsappMessages } from '@shared/schema';
+import { eq, and, asc } from 'drizzle-orm';
 
 // Constants for styling
 const COLORS = {

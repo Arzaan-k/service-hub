@@ -2,6 +2,8 @@ import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import AnalyticsDashboard from "@/components/analytics/AnalyticsDashboard";
+import FrequentlyRepairedContainers from "@/components/analytics/FrequentlyRepairedContainers";
 import {
   BarChart,
   Bar,
@@ -55,31 +57,31 @@ export default function Analytics() {
 
   const alertDistribution = alerts
     ? Object.entries(
-        alerts.reduce((acc: any, alert: any) => {
-          acc[alert.severity] = (acc[alert.severity] || 0) + 1;
-          return acc;
-        }, {})
-      ).map(([name, value]) => ({ name, value }))
+      alerts.reduce((acc: any, alert: any) => {
+        acc[alert.severity] = (acc[alert.severity] || 0) + 1;
+        return acc;
+      }, {})
+    ).map(([name, value]) => ({ name, value }))
     : [
-        { name: "Critical", value: 5 },
-        { name: "High", value: 12 },
-        { name: "Medium", value: 25 },
-        { name: "Low", value: 18 },
-      ];
+      { name: "Critical", value: 5 },
+      { name: "High", value: 12 },
+      { name: "Medium", value: 25 },
+      { name: "Low", value: 18 },
+    ];
 
   const serviceStatusData = serviceRequests
     ? Object.entries(
-        serviceRequests.reduce((acc: any, sr: any) => {
-          acc[sr.status] = (acc[sr.status] || 0) + 1;
-          return acc;
-        }, {})
-      ).map(([name, value]) => ({ name, value }))
+      serviceRequests.reduce((acc: any, sr: any) => {
+        acc[sr.status] = (acc[sr.status] || 0) + 1;
+        return acc;
+      }, {})
+    ).map(([name, value]) => ({ name, value }))
     : [
-        { name: "Pending", value: 8 },
-        { name: "Scheduled", value: 15 },
-        { name: "In Progress", value: 5 },
-        { name: "Completed", value: 45 },
-      ];
+      { name: "Pending", value: 8 },
+      { name: "Scheduled", value: 15 },
+      { name: "In Progress", value: 5 },
+      { name: "Completed", value: 45 },
+    ];
 
   const performanceData = [
     { metric: "Response Time", current: 4.2, target: 6.0, unit: "hours" },
@@ -145,9 +147,8 @@ export default function Analytics() {
                         <IconComponent className={`h-6 w-6 ${kpi.color}`} />
                       </div>
                       <div
-                        className={`flex items-center gap-1 text-xs font-medium ${
-                          kpi.trend === "up" ? "text-green-600" : "text-red-600"
-                        }`}
+                        className={`flex items-center gap-1 text-xs font-medium ${kpi.trend === "up" ? "text-green-600" : "text-red-600"
+                          }`}
                       >
                         {kpi.trend === "up" ? (
                           <TrendingUp className="h-3 w-3" />
@@ -250,9 +251,8 @@ export default function Analytics() {
                     </div>
                     <div className="relative w-full h-2 bg-muted rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${
-                          metric.current >= metric.target ? "bg-green-500" : "bg-orange-500"
-                        }`}
+                        className={`h-full ${metric.current >= metric.target ? "bg-green-500" : "bg-orange-500"
+                          }`}
                         style={{
                           width: `${Math.min((metric.current / metric.target) * 100, 100)}%`,
                         }}
@@ -302,6 +302,12 @@ export default function Analytics() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Frequently Repaired Containers */}
+          <FrequentlyRepairedContainers />
+
+          {/* Client & Technician Performance Analytics Dashboard */}
+          <AnalyticsDashboard />
         </div>
       </main>
     </div>

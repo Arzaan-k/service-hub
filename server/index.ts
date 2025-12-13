@@ -28,6 +28,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { initializeOrbcommConnection, populateOrbcommDevices } from "./services/orbcomm";
 import { startOrbcommIntegration } from "./services/orbcommIntegration";
 import { startDataUpdateScheduler } from "./services/dataUpdateScheduler";
+import { startPasswordReminderScheduler } from "./services/passwordReminderScheduler";
 import { vectorStore } from "./services/vectorStore";
 import { db, closeDatabase } from "./db";
 import cron from "node-cron";
@@ -223,6 +224,11 @@ app.use((req, res, next) => {
     console.log('⏭️ Skipping Orbcomm initialization in development mode');
   }
 
+  // Start password reminder scheduler (runs every hour in both dev and production)
+  console.log('[SERVER] Starting password reminder scheduler...');
+  startPasswordReminderScheduler();
+  console.log('✅ Password reminder scheduler started successfully');
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
@@ -257,10 +263,7 @@ app.use((req, res, next) => {
     console.log(`[SERVER] NODE_ENV: ${process.env.NODE_ENV}`);
   });
 
-  // Also listen on IPv6
-  server.listen(port, '::', () => {
-    console.log(`[SERVER] Server is also listening on IPv6 port ${port}`);
-  });
+
 
   // Add error handling for the server
   server.on('error', (err) => {

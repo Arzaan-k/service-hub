@@ -12,6 +12,7 @@ import {
   addActiveService,
   removeActiveService,
   getActiveServices,
+  getValidatedActiveServices,
   getServiceIdByIndex
 } from './whatsapp-technician-core';
 
@@ -22,6 +23,43 @@ import {
   sendTemplateMessage,
   downloadWhatsAppMediaAsBase64
 } from './whatsapp';
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Extract location from service request - tries multiple sources
+ * Priority: container.currentLocation > excelData.siteAddress > issueDescription parsing
+ */
+function extractLocation(service: any, container: any): string {
+  let location = 'Unknown';
+  
+  // 1. Try container's currentLocation
+  if (container?.currentLocation?.address) {
+    location = container.currentLocation.address;
+  } else if (container?.currentLocation?.city) {
+    location = container.currentLocation.city;
+  }
+  // 2. Try excelData.siteAddress
+  else if (service?.excelData?.siteAddress) {
+    location = service.excelData.siteAddress;
+  }
+  // 3. Try parsing from issueDescription (Site Address: ...)
+  else if (service?.issueDescription) {
+    const siteAddressMatch = service.issueDescription.match(/Site Address:\s*([^\n]+)/i);
+    if (siteAddressMatch && siteAddressMatch[1]) {
+      location = siteAddressMatch[1].trim();
+    }
+  }
+  
+  // Truncate if too long
+  if (location.length > 40) {
+    location = location.substring(0, 37) + '...';
+  }
+  
+  return location;
+}
 
 // ============================================================================
 // MAIN MENU & WELCOME
@@ -47,9 +85,11 @@ export async function sendTechnicianMainMenu(from: string, user: any, storage: a
 
 /**
  * Show active services menu with timers
+ * Uses validated active services to sync with database state
  */
 export async function showActiveServicesMenu(from: string, user: any, session: any, storage: any): Promise<void> {
-  const activeServices = getActiveServices(session);
+  // Use validated active services to remove any that were completed via dashboard
+  const activeServices = await getValidatedActiveServices(session, storage);
   
   if (activeServices.length === 0) {
     await sendTechnicianMainMenu(from, user, storage);
@@ -59,28 +99,51 @@ export async function showActiveServicesMenu(from: string, user: any, session: a
   let message = `🔧 Welcome back, ${user.name}!\n\nActive Services: ${activeServices.length}\n\n`;
   
   // Fetch service details for each active service
+  const serviceDetailsList = [];
   for (const service of activeServices) {
     const elapsed = calculateElapsedTime(service.startTime);
     const serviceDetails = await storage.getServiceRequest(service.serviceId);
     
-    if (serviceDetails) {
+    // Double-check status (should already be validated, but be safe)
+    if (serviceDetails && serviceDetails.status === 'in_progress') {
       message += `⏱️ ${serviceDetails.requestNumber}\n`;
       message += `   Running for ${elapsed}\n\n`;
+      serviceDetailsList.push({ ...serviceDetails, elapsed, serviceId: service.serviceId });
     }
   }
   
-  const buttons = [
-    { id: 'view_schedule', title: '📅 View Schedule' },
-    { id: 'upload_location', title: '📍 Upload Location' }
-  ];
-  
-  // Add end service buttons for each active service (max 1 more button due to WhatsApp 3-button limit)
+  // For single active service - show direct buttons
   if (activeServices.length === 1) {
-    buttons.push({ id: 'end_service', title: '🛑 End Service' });
+    const buttons = [
+      { id: 'view_schedule', title: '📅 View Schedule' },
+      { id: 'upload_location', title: '📍 Upload Location' },
+      { id: 'end_service', title: '🛑 End Service' }
+    ];
+    await sendInteractiveButtons(from, message, buttons);
+  } else {
+    // For multiple active services - use list to select which to end
+    message += `\n📝 Select a service below to end it, or use the buttons for other actions.`;
+    
+    // Send message with basic buttons first
+    await sendInteractiveButtons(from, message, [
+      { id: 'view_schedule', title: '📅 View Schedule' },
+      { id: 'upload_location', title: '📍 Upload Location' }
+    ]);
+    
+    // Then send list to select service to end
+    const rows = serviceDetailsList.map((s, index) => ({
+      id: `end_service_direct_${s.id}`,
+      title: `🛑 End ${s.requestNumber}`,
+      description: `Running for ${s.elapsed}`
+    }));
+    
+    await sendInteractiveList(
+      from,
+      "Select a service to end:",
+      "End Service",
+      [{ title: "Active Services", rows }]
+    );
   }
-  // Note: If more than 1 active service, user needs to use View Schedule to end specific services
-  
-  await sendInteractiveButtons(from, message, buttons);
 }
 
 // ============================================================================
@@ -144,16 +207,33 @@ export async function showScheduleForToday(from: string, technician: any, sessio
   for (const service of todayServices) {
     const container = service.container || {};
     const customer = service.customer || {};
-    const location = container.currentLocation?.address || container.currentLocation?.city || 'Unknown';
+    
+    // Get location - try multiple sources
+    let location = extractLocation(service, container);
+    
+    // Extract error code if present in issue description
+    let errorCode = '';
+    if (service.issueDescription) {
+      const errorMatch = service.issueDescription.match(/Error Code:\s*([A-Z0-9]+)/i);
+      if (errorMatch) {
+        errorCode = errorMatch[1];
+      }
+    }
+    
+    // Get clean issue description (first line, without metadata)
+    let issueText = service.issueDescription || 'No description';
+    // Remove metadata lines (Error Code, Site Address, etc.)
+    issueText = issueText.split('\n')[0].substring(0, 35);
+    if (issueText.length >= 35) issueText += '...';
     
     // Add to message text
     message += `🔧 ${service.requestNumber} - [${service.status}]\n`;
     message += `├─ Container: ${container.containerCode || 'Unknown'}\n`;
     message += `├─ Customer: ${customer.companyName || 'Unknown'}\n`;
     message += `├─ Location: ${location}\n`;
-    message += `├─ Priority: ${service.priority || 'Normal'}\n`;
+    message += `├─ Priority: ${service.priority || 'normal'}\n`;
     message += `├─ Scheduled: ${formatTime(service.scheduledDate)}\n`;
-    message += `└─ Issue: ${service.issueDescription?.substring(0, 30) || 'No description'}...\n\n`;
+    message += `└─ Issue: ${issueText}${errorCode ? ` [${errorCode}]` : ''}\n\n`;
     
     // Add interactive row
     rows.push({
@@ -163,10 +243,16 @@ export async function showScheduleForToday(from: string, technician: any, sessio
     });
   }
   
+  // Check for validated active services and append to message
+  const activeServices = await getValidatedActiveServices(session, storage);
+  if (activeServices.length > 0) {
+    message += `\n⚡ Active Services: ${activeServices.length}`;
+  }
+  
   // Send summary message first
   await sendTextMessage(from, message);
   
-  // Then send list to select details
+  // Then send list to select details (single interactive message)
   await sendInteractiveList(
     from,
     "Select a service to view details:",
@@ -178,12 +264,6 @@ export async function showScheduleForToday(from: string, technician: any, sessio
       }
     ]
   );
-  
-  // Bottom section active services count
-  const activeServices = getActiveServices(session);
-  if (activeServices.length > 0) {
-    await sendTextMessage(from, `Active Services: ${activeServices.length}`);
-  }
 }
 
 /**
@@ -306,9 +386,19 @@ export async function showServiceDetails(from: string, serviceId: string, storag
     return;
   }
   
-  const container = service.container || {};
-  const customer = service.customer || {};
-  const location = container.currentLocation?.address || container.currentLocation?.city || 'Unknown';
+  // Fetch container and customer details separately since getServiceRequest doesn't join them
+  let container: any = {};
+  let customer: any = {};
+  
+  if (service.containerId) {
+    container = await storage.getContainer(service.containerId) || {};
+  }
+  if (service.customerId) {
+    customer = await storage.getCustomer(service.customerId) || {};
+  }
+  
+  // Get location using helper function
+  const location = extractLocation(service, container);
   
   let message = `📋 Service Request Details\n\n`;
   message += `🆔 Request ID: ${service.requestNumber}\n`;
@@ -380,10 +470,15 @@ export async function startServiceRequest(from: string, serviceId: string, sessi
     });
   }
   
-  // Confirm to Technician
-  await sendTextMessage(
+  // Confirm to Technician with action buttons
+  await sendInteractiveButtons(
     from, 
-    `✅ Service Started Successfully!\n\n⏱️ Timer is now running...\nStarted at: ${new Date().toLocaleTimeString()}\n\n${service.requestNumber} is now IN PROGRESS\n\nTo return to menu, send "Hi"`
+    `✅ Service Started Successfully!\n\n⏱️ Timer is now running...\nStarted at: ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}\n\n${service.requestNumber} is now IN PROGRESS`,
+    [
+      { id: `end_service_direct_${serviceId}`, title: '🛑 End Service' },
+      { id: 'view_schedule', title: '📅 View Schedule' },
+      { id: 'upload_location', title: '📍 Upload Location' }
+    ]
   );
 }
 
@@ -396,6 +491,32 @@ export async function startServiceRequest(from: string, serviceId: string, sessi
  */
 export async function initiateServiceCompletion(from: string, serviceId: string, session: any, storage: any): Promise<void> {
   const service = await storage.getServiceRequest(serviceId);
+  
+  // Check if service exists and is still in_progress
+  if (!service) {
+    await sendInteractiveButtons(from, '❌ Service not found.', [
+      { id: 'view_schedule', title: '📅 View Schedule' },
+      { id: 'back_to_menu', title: '🏠 Main Menu' }
+    ]);
+    return;
+  }
+  
+  // Check if already completed (e.g., via dashboard)
+  if (service.status === 'completed' || service.status === 'cancelled') {
+    // Remove from session active services
+    await removeActiveService(session, serviceId, storage);
+    
+    await sendInteractiveButtons(
+      from, 
+      `ℹ️ Service ${service.requestNumber} has already been ${service.status}.\n\nThis may have been done via the dashboard.`,
+      [
+        { id: 'view_schedule', title: '📅 View Schedule' },
+        { id: 'back_to_menu', title: '🏠 Main Menu' }
+      ]
+    );
+    return;
+  }
+  
   const activeService = getActiveServices(session).find((s: any) => s.serviceId === serviceId);
   
   let durationText = "Unknown";

@@ -50,6 +50,9 @@ export default function Sidebar() {
     // User Management - Admin only
     { path: "/admin/user-management", label: "User Management", icon: "fas fa-users-cog", roles: ["admin"] },
 
+    // Finance - Admin only
+    { path: "/finance/overview", label: "Finance", icon: "fas fa-coins", roles: ["admin", "super_admin"] },
+
     // Analytics - Admin only
     { path: "/analytics", label: "Analytics", icon: "fas fa-chart-line", roles: ["admin"] },
 

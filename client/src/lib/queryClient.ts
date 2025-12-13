@@ -29,7 +29,7 @@ export async function apiRequest(
 
   // Allow test tokens in development - server will handle fallback
   // Removed aggressive token clearing that was causing issues
-  
+
   const headers: Record<string, string> = {};
 
   if (data) {
@@ -52,23 +52,23 @@ export async function apiRequest(
     if (process.env.NODE_ENV === 'development') {
       return ''; // Use relative path to leverage Vite proxy
     }
-    
+
     // In production, use the same origin as the frontend
     if (typeof window !== 'undefined' && window.location.origin) {
       return window.location.origin;
     }
-    
+
     // Fallback to environment variables
     if (process.env.FRONTEND_URL) {
       return process.env.FRONTEND_URL;
     }
-    
+
     // Default fallback
     return '';
   };
 
   const baseUrl = getBaseUrl();
-  
+
   // Construct full URL
   let fullUrl: string;
   if (url.startsWith('http')) {
@@ -83,17 +83,17 @@ export async function apiRequest(
   console.log(`[API] ${method} ${fullUrl}`);
 
   let res: Response;
-try {
-  res = await fetch(fullUrl, {
-    method,
-    headers,
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
-  });
-} catch (fetchError) {
-  console.error(`[API] Network error ${method} ${fullUrl}:`, fetchError);
-  throw new Error(`Network error: Unable to ${method} ${fullUrl}. Please check your connection and ensure the server is running.`);
-}
+  try {
+    res = await fetch(fullUrl, {
+      method,
+      headers,
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include",
+    });
+  } catch (fetchError) {
+    console.error(`[API] Network error ${method} ${fullUrl}:`, fetchError);
+    throw new Error(`Network error: Unable to ${method} ${fullUrl}. Please check your connection and ensure the server is running.`);
+  }
 
   console.log(`[API Response] ${method} ${fullUrl}`, { status: res.status, statusText: res.statusText });
 
@@ -106,83 +106,84 @@ export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
-    const token = getAuthToken() || localStorage.getItem('auth_token') || localStorage.getItem('authToken');
-    
-    // Allow test tokens in development - server will handle fallback
-    // Removed aggressive token clearing that was causing issues
-    
-    const headers: Record<string, string> = {};
+    async ({ queryKey }) => {
+      const token = getAuthToken() || localStorage.getItem('auth_token') || localStorage.getItem('authToken');
 
-    if (token) {
-      headers["x-user-id"] = token;
-    }
+      // Allow test tokens in development - server will handle fallback
+      // Removed aggressive token clearing that was causing issues
 
-    const getBaseUrl = () => {
-  // Try to get from window first
-  if (typeof window !== 'undefined' && window.location.origin) {
-    return window.location.origin;
-  }
-  
-  // Fallback to environment variables
-  if (process.env.FRONTEND_URL) {
-    return process.env.FRONTEND_URL;
-  }
-  
-  // Default fallbacks
-  return '';
-};
+      const headers: Record<string, string> = {};
 
-console.log('[DEBUG] Query key:', queryKey);
-const baseUrl = getBaseUrl();
-console.log('[DEBUG] Base URL:', baseUrl);
+      if (token) {
+        headers["x-user-id"] = token;
+      }
 
-// Handle different types of query keys
-let endpoint: string;
-if (Array.isArray(queryKey)) {
-  // Convert array to path, but handle special cases
-  if (queryKey.length === 1 && queryKey[0].startsWith('/api/')) {
-    endpoint = queryKey[0];
-  } else {
-    endpoint = `/${queryKey.join("/")}`;
-  }
-} else {
-  endpoint = queryKey as unknown as string;
-}
+      const getBaseUrl = () => {
+        // Try to get from window first
+        if (typeof window !== 'undefined' && window.location.origin) {
+          return window.location.origin;
+        }
 
-console.log('[DEBUG] Endpoint:', endpoint);
+        // Fallback to environment variables
+        if (process.env.FRONTEND_URL) {
+          return process.env.FRONTEND_URL;
+        }
 
-// Construct full URL
-let fullQueryUrl: string;
-if (endpoint.startsWith('http')) {
-  fullQueryUrl = endpoint;
-} else {
-  // Ensure we have proper base URL and endpoint format
-  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  fullQueryUrl = `${normalizedBaseUrl}${normalizedEndpoint}`;
-}
+        // Default fallbacks
+        return '';
+      };
 
-console.log('[API Request]', { url: fullQueryUrl, headers: { ...headers, 'x-user-id': '[HIDDEN]' } });
+      console.log('[DEBUG] Query key:', queryKey);
+      const baseUrl = getBaseUrl();
+      console.log('[DEBUG] Base URL:', baseUrl);
 
-let res: Response;
-try {
-  res = await fetch(fullQueryUrl, {
-    headers,
-    credentials: "include",
-  });
-} catch (fetchError) {
-  console.error(`[API] Network error fetching ${fullQueryUrl}:`, fetchError);
-  throw new Error(`Network error: Unable to connect to ${fullQueryUrl}. Please check your connection and ensure the server is running.`);
-}
+      // Handle different types of query keys
+      let endpoint: string;
+      if (Array.isArray(queryKey)) {
+        // Convert array to path, but handle special cases
+        if (queryKey.length === 1 && queryKey[0].startsWith('/api/')) {
+          endpoint = queryKey[0];
+        } else {
+          const joined = queryKey.join("/");
+          endpoint = joined.startsWith('/') ? joined : `/${joined}`;
+        }
+      } else {
+        endpoint = queryKey as unknown as string;
+      }
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
+      console.log('[DEBUG] Endpoint:', endpoint);
 
-    await throwIfResNotOk(res);
-    return await res.json();
-  };
+      // Construct full URL
+      let fullQueryUrl: string;
+      if (endpoint.startsWith('http')) {
+        fullQueryUrl = endpoint;
+      } else {
+        // Ensure we have proper base URL and endpoint format
+        const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+        const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+        fullQueryUrl = `${normalizedBaseUrl}${normalizedEndpoint}`;
+      }
+
+      console.log('[API Request]', { url: fullQueryUrl, headers: { ...headers, 'x-user-id': '[HIDDEN]' } });
+
+      let res: Response;
+      try {
+        res = await fetch(fullQueryUrl, {
+          headers,
+          credentials: "include",
+        });
+      } catch (fetchError) {
+        console.error(`[API] Network error fetching ${fullQueryUrl}:`, fetchError);
+        throw new Error(`Network error: Unable to connect to ${fullQueryUrl}. Please check your connection and ensure the server is running.`);
+      }
+
+      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+        return null;
+      }
+
+      await throwIfResNotOk(res);
+      return await res.json();
+    };
 
 export const queryClient = new QueryClient({
   defaultOptions: {
