@@ -119,7 +119,7 @@ export class VectorStoreService {
   private async initializeTextSplitter() {
     try {
       // Try to import langchain dynamically
-      const langchainModule = await import('langchain/text_splitters');
+      const langchainModule = await import('langchain/text_splitter');
       const RecursiveCharacterTextSplitter = langchainModule.RecursiveCharacterTextSplitter;
 
       this.textSplitter = new RecursiveCharacterTextSplitter({
@@ -191,13 +191,13 @@ export class VectorStoreService {
     }
   }
 
-  
-  
-  
+
+
+
   async search(query: string, limit: number = 5, filter?: Partial<ChunkMetadata>): Promise<SearchResult[]> {
     try {
       const queryEmbedding = await this.generateQueryEmbedding(query);
-      
+
       let whereConditions = [];
       if (filter?.manualId) {
         whereConditions.push(eq(manualChunks.manualId, filter.manualId));

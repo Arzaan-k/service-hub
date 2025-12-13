@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+﻿import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import axios from "axios";
@@ -45,11 +45,12 @@ import {
   recalculateTripCosts
 } from "./services/travel-planning";
 import { db } from './db';
-import { sql, eq, desc } from 'drizzle-orm';
+import { sql, eq, desc, isNotNull, isNull, and } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
-import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings } from '@shared/schema';
+import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
+import { registerFinanceRoutes } from "./routes/finance";
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -87,9 +88,23 @@ const upload = multer({
   storage: multer.memoryStorage() // Store in memory for processing
 });
 
+interface AuthenticatedWebSocket extends WebSocket {
+  userId?: string;
+  role?: string;
+  isAlive: boolean;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+
+
+
+
+
   await storage.ensureServiceRequestAssignmentColumns();
+
+  // Register Finance Routes
+  registerFinanceRoutes(app);
 
   // Third-party technicians helper functions (defined early for use throughout routes)
   const thirdPartyDir = path.join(process.cwd(), "server", "data");
@@ -136,11 +151,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================================================================
   app.get("/api/health", async (req, res) => {
     const startTime = Date.now();
-    
+
     try {
       // Check database connection
       await db.execute(sql`SELECT 1`);
-      
+
       const healthStatus = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -150,11 +165,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         environment: process.env.NODE_ENV || 'development',
         version: process.env.npm_package_version || '1.0.0'
       };
-      
+
       res.status(200).json(healthStatus);
     } catch (error: any) {
       console.error('[HEALTH] Check failed:', error);
-      
+
       res.status(503).json({
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
@@ -287,9 +302,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const clients = new Map<string, AuthenticatedWebSocket>();
 
-  wss.on("connection", (ws: AuthenticatedWebSocket) => {
+  wss.on("connection", async (ws: AuthenticatedWebSocket, req: any) => {
     ws.isAuthenticated = false;
     console.log("WebSocket client connected");
+
+    // Extract token from query string
+    try {
+      const url = new URL(req.url || '', `http://${req.headers.host}`);
+      const token = url.searchParams.get('token');
+
+      if (token) {
+        const user = await storage.getUser(token);
+        if (user) {
+          ws.userId = user.id;
+          ws.userRole = user.role;
+          ws.isAuthenticated = true;
+          clients.set(user.id, ws);
+
+          console.log(`WebSocket authenticated for user via query param: ${user.name} (${user.role})`);
+
+          // Send authentication success
+          ws.send(JSON.stringify({
+            type: 'authenticated',
+            user: { id: user.id, name: user.name, role: user.role }
+          }));
+
+          // Send recent WhatsApp messages for this user
+          const recentMessages = await storage.getRecentWhatsAppMessages(user.id, 50);
+          ws.send(JSON.stringify({
+            type: 'recent_messages',
+            messages: recentMessages
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('WebSocket query auth error:', error);
+    }
 
     ws.on("message", async (data) => {
       try {
@@ -672,10 +720,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Verify the update worked by comparing passwords
       const { comparePasswords } = await import('./services/auth');
       const verifyHash = await comparePasswords(newPassword, updatedUser.password || '');
-      console.log(`[PASSWORD RESET] Password verification check: ${verifyHash ? 'PASS ✅' : 'FAIL ❌'}`);
+      console.log(`[PASSWORD RESET] Password verification check: ${verifyHash ? 'PASS âœ…' : 'FAIL âŒ'}`);
 
       if (!verifyHash) {
-        console.error(`[PASSWORD RESET] ⚠️ WARNING: Password update may have failed! Hash mismatch detected.`);
+        console.error(`[PASSWORD RESET] âš ï¸ WARNING: Password update may have failed! Hash mismatch detected.`);
       }
 
       // Mark token as used
@@ -1080,6 +1128,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Analytics routes - Client & Technician Performance Analytics
+  app.get("/api/analytics/clients", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const role = (req.user?.role || '').toLowerCase();
+      const range = parseInt(req.query.range as string) || 90;
+
+      console.log(`Client analytics requested by ${role} user: ${req.user?.id}, range: ${range} days`);
+
+      // Fetch real data from storage
+      let data = await storage.getClientAnalytics(range);
+
+      // Apply role-based filtering
+      if (role === 'client') {
+        const customer = await storage.getCustomerByUserId(req.user!.id);
+        if (customer) {
+          data = data.filter(c => c.client_id === customer.id);
+        } else {
+          data = [];
+        }
+      }
+
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching client analytics:', error);
+      res.status(500).json({ error: "Failed to fetch client analytics" });
+    }
+  });
+
+  app.get("/api/analytics/technicians", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const role = (req.user?.role || '').toLowerCase();
+      const range = parseInt(req.query.range as string) || 90;
+
+      console.log(`Technician analytics requested by ${role} user: ${req.user?.id}, range: ${range} days`);
+
+      // Fetch real data from storage
+      let data = await storage.getTechnicianAnalytics(range);
+
+      // Apply role-based filtering
+      if (role === 'technician') {
+        const technician = await storage.getTechnicianByUserId(req.user!.id);
+        if (technician) {
+          data = data.filter(t => t.technician_id === technician.id);
+        } else {
+          data = [];
+        }
+      }
+
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching technician analytics:', error);
+      console.error('Error stack:', error.stack);
+      res.status(500).json({
+        error: "Failed to fetch technician analytics",
+        details: error.message,
+        stack: error.stack
+      });
+    }
+  });
+
   // Container routes
   // Zod: pagination schema
   const paginationSchema = z.object({
@@ -1093,7 +1201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     type: z.enum(["refrigerated", "dry", "special", "iot_enabled", "manual"]).optional(),
     hasIot: z.boolean().optional(),
     orbcommDeviceId: z.string().optional(),
-    status: z.enum(["active", "in_service", "maintenance", "retired", "in_transit", "for_sale", "sold"]).optional(),
+    status: z.enum(["active", "in_service", "maintenance", "retired", "in_transit", "stock", "sold"]).optional(),
     currentCustomerId: z.string().uuid().optional().nullable(),
     currentLocation: z.any().optional(),
   }).passthrough();
@@ -1296,6 +1404,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/containers/:id/service-history/detailed", authenticateUser, async (req, res) => {
+    try {
+      const history = await storage.getContainerDetailedHistory(req.params.id);
+      if (!history) {
+        return res.status(404).json({ error: "Container not found" });
+      }
+      res.json(history);
+    } catch (error) {
+      console.error("Failed to fetch detailed service history:", error);
+      res.status(500).json({ error: "Failed to fetch detailed service history" });
+    }
+  });
+
   app.get("/api/containers/:id/ownership-history", authenticateUser, async (req, res) => {
     try {
       const history = await storage.getContainerOwnershipHistory(req.params.id);
@@ -1360,13 +1481,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const role = (req.user?.role || '').toLowerCase();
       const isPrivileged = ["admin", "coordinator", "super_admin"].includes(role);
+      const requested = String(req.params.status || '').toLowerCase();
+      const normalizedStatus = requested === 'sale' ? 'stock' : req.params.status;
       if (!isPrivileged) {
         const customer = await storage.getCustomerByUserId(req.user.id);
         if (!customer) return res.json([]);
-        const all = await storage.getContainersByStatus(req.params.status);
+        const all = await storage.getContainersByStatus(normalizedStatus);
         return res.json(all.filter((c) => c.currentCustomerId === customer.id));
       }
-      const all = await storage.getContainersByStatus(req.params.status);
+      const all = await storage.getContainersByStatus(normalizedStatus);
       res.json(all);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch containers by status" });
@@ -1639,7 +1762,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Method 1: Extract from "Multiple Containers:" line (handles both with and without emoji)
         // This line contains ALL containers, so use it as primary source
-        let multipleMatch = description.match(/📦\s*Multiple Containers:\s*([^\n]+)/i);
+        let multipleMatch = description.match(/ðŸ“¦\s*Multiple Containers:\s*([^\n]+)/i);
         if (!multipleMatch) {
           multipleMatch = description.match(/Multiple Containers:\s*([^\n]+)/i);
         }
@@ -1648,7 +1771,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`[API] Found codes from "Multiple Containers:" line:`, codes);
           // Clear and use these codes as the source of truth
           containerCodes.length = 0;
-          codes.forEach(code => {
+          codes.forEach((code: string) => {
             if (code && code.length > 0) {
               containerCodes.push(code);
               console.log(`[API] Added container code: ${code}`);
@@ -1672,7 +1795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (additionalMatch && additionalMatch[1]) {
             const codes = additionalMatch[1].split(',').map((code: string) => code.trim()).filter(Boolean);
             console.log(`[API] Found codes from "Additional Containers:" line:`, codes);
-            codes.forEach(code => {
+            codes.forEach((code: string) => {
               if (code && code.length > 0 && !containerCodes.includes(code)) {
                 containerCodes.push(code);
                 console.log(`[API] Added container code from Additional: ${code}`);
@@ -1701,7 +1824,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const allMatches = description.match(pattern);
             if (allMatches && allMatches.length > 0) {
               console.log(`[API] Fallback: Found container codes via pattern ${pattern}:`, allMatches);
-              allMatches.forEach(code => {
+              allMatches.forEach((code: string) => {
                 if (!containerCodes.includes(code)) {
                   containerCodes.push(code);
                 }
@@ -1725,7 +1848,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const match = description.match(pattern);
             if (match && match[1]) {
               const potentialCodes = match[1].split(/[,\s]+/).map((code: string) => code.trim()).filter((code: string) => code.length >= 6);
-              potentialCodes.forEach(code => {
+              potentialCodes.forEach((code: string) => {
                 if (code && code.length > 0 && !containerCodes.includes(code)) {
                   containerCodes.push(code);
                 }
@@ -1939,14 +2062,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(list);
       }
       const requests = await storage.getAllServiceRequests();
+
+      // Apply filters if provided
+      let filteredRequests = requests;
+      const customerId = req.query.customerId as string;
+      const technicianId = req.query.technicianId as string;
+
+      if (customerId) {
+        filteredRequests = filteredRequests.filter(r => r.customerId === customerId);
+      }
+
+      if (technicianId) {
+        filteredRequests = filteredRequests.filter(r => r.assignedTechnicianId === technicianId);
+      }
+
       const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
       const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
       if (hasLimit || hasOffset) {
         const { limit, offset } = paginationSchema.parse(req.query);
-        res.setHeader('x-total-count', String(requests.length));
-        return res.json(requests.slice(offset, offset + limit));
+        res.setHeader('x-total-count', String(filteredRequests.length));
+        return res.json(filteredRequests.slice(offset, offset + limit));
       }
-      res.json(requests);
+      res.json(filteredRequests);
     } catch (error) {
       console.error("Error fetching service requests:", error);
       res.status(500).json({ error: "Failed to fetch service requests", details: error instanceof Error ? error.message : String(error) });
@@ -2622,7 +2759,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         success: true,
-        message: "Indent Requested Successfully — Order Created in Inventory System",
+        message: "Indent Requested Successfully â€” Order Created in Inventory System",
         orderId: result.orderId,
         orderNumber: result.orderNumber
       });
@@ -2772,6 +2909,180 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to fetch supported couriers" });
     }
   });
+
+  // ==================== INVENTORY MANAGEMENT SHIPMENT SYNC ====================
+  // This endpoint allows the Inventory Management system to create/sync shipments
+  // that will automatically appear in Service Hub Courier Tracking section
+
+  // Create shipment from Inventory Management (auto-links to service request)
+  app.post("/api/inventory/shipments", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const {
+        serviceRequestId,
+        awbNumber,
+        courierName,
+        courierCode,
+        shipmentDescription,
+        origin,
+        destination,
+        trackingHistory,
+        status,
+        currentLocation,
+        estimatedDeliveryDate,
+        actualDeliveryDate
+      } = req.body;
+
+      if (!awbNumber || !courierName) {
+        return res.status(400).json({ error: "AWB number and courier name are required" });
+      }
+
+      // Check if AWB already exists - if so, update it instead of creating duplicate
+      const existing = await storage.getCourierShipmentByAwb(awbNumber);
+
+      if (existing) {
+        // Update existing shipment with new data
+        const updated = await storage.updateCourierShipment(existing.id, {
+          serviceRequestId: serviceRequestId || existing.serviceRequestId,
+          courierName: courierName || existing.courierName,
+          courierCode: courierCode || existing.courierCode,
+          shipmentDescription: shipmentDescription || existing.shipmentDescription,
+          origin: origin || existing.origin,
+          destination: destination || existing.destination,
+          status: status || existing.status,
+          currentLocation: currentLocation || existing.currentLocation,
+          trackingHistory: trackingHistory || existing.trackingHistory,
+          estimatedDeliveryDate: estimatedDeliveryDate ? new Date(estimatedDeliveryDate) : existing.estimatedDeliveryDate,
+          actualDeliveryDate: actualDeliveryDate ? new Date(actualDeliveryDate) : existing.actualDeliveryDate,
+          lastTrackedAt: new Date(),
+        });
+
+        console.log(`[INVENTORY SHIPMENT] Updated existing shipment ${awbNumber} for service request ${serviceRequestId}`);
+        return res.json({ ...updated, isUpdate: true });
+      }
+
+      // Track the shipment to get latest data if API key is configured
+      let trackingResult: any = null;
+      try {
+        const { trackShipment } = await import('./services/courierTracking');
+        trackingResult = await trackShipment(awbNumber, courierCode);
+      } catch (trackError) {
+        console.warn(`[INVENTORY SHIPMENT] Could not track shipment ${awbNumber}:`, trackError);
+      }
+
+      // Create new courier shipment record
+      const shipment = await storage.createCourierShipment({
+        serviceRequestId: serviceRequestId || null,
+        awbNumber,
+        courierName: trackingResult?.courierName || courierName,
+        courierCode: trackingResult?.courierCode || courierCode,
+        shipmentDescription,
+        origin: trackingResult?.origin || origin,
+        destination: trackingResult?.destination || destination,
+        estimatedDeliveryDate: trackingResult?.estimatedDeliveryDate
+          ? new Date(trackingResult.estimatedDeliveryDate)
+          : (estimatedDeliveryDate ? new Date(estimatedDeliveryDate) : undefined),
+        actualDeliveryDate: trackingResult?.actualDeliveryDate
+          ? new Date(trackingResult.actualDeliveryDate)
+          : (actualDeliveryDate ? new Date(actualDeliveryDate) : undefined),
+        status: trackingResult?.status || status || 'pending',
+        currentLocation: trackingResult?.currentLocation || currentLocation,
+        trackingHistory: trackingResult?.trackingHistory || trackingHistory || [],
+        lastTrackedAt: new Date(),
+        rawApiResponse: trackingResult?.rawResponse,
+        addedBy: req.user!.id,
+      });
+
+      console.log(`[INVENTORY SHIPMENT] Created shipment ${awbNumber} for service request ${serviceRequestId}`);
+      res.json(shipment);
+    } catch (error: any) {
+      console.error("[INVENTORY SHIPMENT] Error creating shipment:", error);
+      res.status(500).json({ error: error.message || "Failed to create shipment from inventory" });
+    }
+  });
+
+  // Get all shipments for a service request (used by both Service Hub and Inventory)
+  app.get("/api/inventory/shipments/by-service-request/:serviceRequestId", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { serviceRequestId } = req.params;
+      const shipments = await storage.getCourierShipmentsByServiceRequest(serviceRequestId);
+      res.json(shipments);
+    } catch (error: any) {
+      console.error("[INVENTORY SHIPMENT] Error fetching shipments:", error);
+      res.status(500).json({ error: "Failed to fetch shipments" });
+    }
+  });
+
+  // Bulk sync shipments from Inventory Management
+  app.post("/api/inventory/shipments/sync", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { shipments } = req.body;
+
+      if (!Array.isArray(shipments)) {
+        return res.status(400).json({ error: "shipments must be an array" });
+      }
+
+      const results = {
+        created: 0,
+        updated: 0,
+        errors: [] as string[]
+      };
+
+      for (const shipmentData of shipments) {
+        try {
+          const { awbNumber, serviceRequestId, courierName, ...rest } = shipmentData;
+
+          if (!awbNumber) {
+            results.errors.push(`Missing AWB number for shipment`);
+            continue;
+          }
+
+          const existing = await storage.getCourierShipmentByAwb(awbNumber);
+
+          if (existing) {
+            // Update existing
+            await storage.updateCourierShipment(existing.id, {
+              serviceRequestId: serviceRequestId || existing.serviceRequestId,
+              courierName: courierName || existing.courierName,
+              ...rest,
+              lastTrackedAt: new Date(),
+            });
+            results.updated++;
+          } else {
+            // Create new
+            await storage.createCourierShipment({
+              awbNumber,
+              serviceRequestId,
+              courierName: courierName || 'Unknown',
+              addedBy: req.user!.id,
+              ...rest,
+            });
+            results.created++;
+          }
+        } catch (err: any) {
+          results.errors.push(`Error processing ${shipmentData.awbNumber}: ${err.message}`);
+        }
+      }
+
+      console.log(`[INVENTORY SHIPMENT SYNC] Created: ${results.created}, Updated: ${results.updated}, Errors: ${results.errors.length}`);
+      res.json(results);
+    } catch (error: any) {
+      console.error("[INVENTORY SHIPMENT SYNC] Error:", error);
+      res.status(500).json({ error: "Failed to sync shipments" });
+    }
+  });
+
+  // Get all shipments (admin view)
+  app.get("/api/inventory/shipments", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const shipments = await storage.getAllCourierShipments();
+      res.json(shipments);
+    } catch (error: any) {
+      console.error("[INVENTORY SHIPMENT] Error fetching all shipments:", error);
+      res.status(500).json({ error: "Failed to fetch shipments" });
+    }
+  });
+
+  // ==================== END INVENTORY SHIPMENT SYNC ====================
 
   // ==================== END COURIER TRACKING ROUTES ====================
 
@@ -3107,7 +3418,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Fallback to base location
           currentLocationCity = typeof tech.baseLocation === 'string'
             ? tech.baseLocation
-            : tech.baseLocation?.city || tech.baseLocation?.address || 'Unknown';
+            : (tech.baseLocation as any)?.city || (tech.baseLocation as any)?.address || 'Unknown';
         }
 
         // Find next scheduled service
@@ -3161,9 +3472,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (cityPms.length > 0) {
             // Sort PMs by priority: OVERDUE > NEVER > DUE_SOON > UP_TO_DATE
             const sortedPms = cityPms.sort((a: any, b: any) => {
-              const priorityOrder = { 'OVERDUE': 4, 'NEVER': 3, 'DUE_SOON': 2, 'UP_TO_DATE': 1 };
-              const aPriority = priorityOrder[a.pmStatus] || 0;
-              const bPriority = priorityOrder[b.pmStatus] || 0;
+              const priorityOrder: Record<string, number> = { 'OVERDUE': 4, 'NEVER': 3, 'DUE_SOON': 2, 'UP_TO_DATE': 1 };
+              const aPriority = priorityOrder[a.pmStatus as string] || 0;
+              const bPriority = priorityOrder[b.pmStatus as string] || 0;
               return bPriority - aPriority; // Higher priority first
             });
 
@@ -3200,14 +3511,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         technicianLocations.push({
           id: tech.id,
-          name: tech.name || tech.employeeCode,
+          name: (tech as any).name || tech.employeeCode,
           employeeCode: tech.employeeCode,
           baseLocation: typeof tech.baseLocation === 'string'
             ? tech.baseLocation
-            : tech.baseLocation?.city || tech.baseLocation?.address || 'Unknown',
+            : (tech.baseLocation as any)?.city || (tech.baseLocation as any)?.address || 'Unknown',
           currentCity: currentLocationCity, // Use actual current location from GPS
           status: tech.status,
-          phone: tech.phone,
+          phone: (tech as any).phone,
           grade: tech.grade,
           designation: tech.designation,
           // Include all cost fields from database
@@ -3563,7 +3874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // PATCH: /api/service-requests/:id/assign — assign ONLY the selected service
+  // PATCH: /api/service-requests/:id/assign â€” assign ONLY the selected service
   app.patch("/api/service-requests/:id/assign", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
       const serviceId = req.params.id;
@@ -3672,12 +3983,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ success: true, message: "Service assigned successfully", service: assigned });
       }
     } catch (error: any) {
-      console.error("❌ Error assigning technician:", error);
+      console.error("âŒ Error assigning technician:", error);
       res.status(500).json({ message: error?.message || "Internal server error" });
     }
   });
 
-  // PATCH: /api/service-requests/:id/unassign — clear assignment safely
+  // PATCH: /api/service-requests/:id/unassign â€” clear assignment safely
   app.patch("/api/service-requests/:id/unassign", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
       const serviceId = req.params.id;
@@ -3728,7 +4039,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("Unassigned service:", serviceId);
       return res.json({ success: true, message: "Service unassigned successfully" });
     } catch (error: any) {
-      console.error("❌ Error unassigning technician:", error);
+      console.error("âŒ Error unassigning technician:", error);
       res.status(500).json({ message: error?.message || "Internal server error" });
     }
   });
@@ -3830,6 +4141,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(technician);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch technician" });
+    }
+  });
+
+  app.get("/api/technicians/analytics/overview", authenticateUser, async (req, res) => {
+    try {
+      const { startDate, endDate } = req.query;
+
+      // Build date constraints
+      const dateFilter = [];
+      if (startDate) {
+        dateFilter.push(sql`${serviceRequests.updatedAt} >= ${new Date(startDate as string).toISOString()}`);
+      }
+      if (endDate) {
+        dateFilter.push(sql`${serviceRequests.updatedAt} <= ${new Date(endDate as string).toISOString()}`);
+      }
+
+      // Fetch all technicians
+      const allTechnicians = await db.query.technicians.findMany({
+        with: {
+          user: true
+        }
+      });
+
+      // Prepare stats object
+      const stats = await Promise.all(allTechnicians.map(async (tech: any) => {
+        const techId = tech.id;
+
+        // Pms done
+        // Assuming PMs have 'PM' in jobOrder or workType or are scheduled/recurring. 
+        // For now, checking if requestNumber starts with PM or jobOrder contains PM (heuristic based on typical usage)
+        // Or strictly strictly speaking checking for container's lastPmDate update context if available, but simple heuristic:
+        // Service requests with 'PM' in description or type.
+        // Adjust logic based on actual data structure usage. 
+        // Returning 0 if no explicit PM field, or relying on 'PM' substring in issue description/job order.
+
+        // Better: use 'job_type' or 'work_type' column if available in schema (it is).
+        const pmsDoneQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            or(
+              sql`${serviceRequests.workType} ILIKE '%PM%'`,
+              sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
+              sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
+            ),
+            ...dateFilter
+          ));
+        const pmsDone = Number(pmsDoneQuery[0]?.count || 0);
+
+        // Services done (Not PM)
+        const servicesDoneQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            not(or(
+              sql`${serviceRequests.workType} ILIKE '%PM%'`,
+              sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
+              sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
+            )),
+            ...dateFilter
+          ));
+        const servicesDone = Number(servicesDoneQuery[0]?.count || 0);
+
+        // On-time rate
+        // defined as actualEndTime <= scheduledDate (or end of scheduled window)
+        // For simplicity: actualEndTime <= scheduledDate + 2 hours (typical window) or just check explicit delayed flag if exists.
+        // Using actualEndTime <= scheduledDate if available.
+        const completedJobs = await db.select()
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            eq(serviceRequests.status, 'completed'),
+            ...dateFilter
+          ));
+
+        let onTimeCount = 0;
+        completedJobs.forEach(job => {
+          if (job.actualEndTime && job.scheduledDate) {
+            // Check if actual completion is on same day or before
+            if (new Date(job.actualEndTime) <= new Date(new Date(job.scheduledDate).getTime() + 24 * 60 * 60 * 1000)) {
+              onTimeCount++;
+            }
+          } else {
+            // If no scheduled date, assume on time (or ignore)
+            onTimeCount++;
+          }
+        });
+        const onTimeRate = completedJobs.length > 0 ? (onTimeCount / completedJobs.length) * 100 : 100;
+
+        // Pending requests
+        const pendingQuery = await db.select({ count: sql<number>`count(*)` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            inArray(serviceRequests.status, ['assigned', 'in_progress', 'awaiting_parts']),
+            ...dateFilter
+          ));
+        const pendingRequestsCount = Number(pendingQuery[0]?.count || 0);
+
+        // Spend (Sum of totalCost)
+        const spendQuery = await db.select({ total: sql<number>`sum(${serviceRequests.totalCost})` })
+          .from(serviceRequests)
+          .where(and(
+            eq(serviceRequests.assignedTechnicianId, techId),
+            ...dateFilter
+          ));
+        const spend = Number(spendQuery[0]?.total || 0);
+        const costPerJob = (pmsDone + servicesDone) > 0 ? spend / (pmsDone + servicesDone) : 0;
+
+        // Feedback
+        const feedbackQuery = await db.select({ avg: sql<number>`avg(cast(${feedback.rating} as int))` })
+          .from(feedback)
+          .where(eq(feedback.technicianId, techId));
+        const clientRating = Number(feedbackQuery[0]?.avg || 0);
+
+        return {
+          technician: {
+            id: tech.id,
+            name: tech.user?.name || tech.name || 'Unknown',
+            avatar: null, // Placeholder
+          },
+          metrics: {
+            pmsDone,
+            servicesDone,
+            onTimeRate,
+            pendingRequests: pendingRequestsCount,
+            spend,
+            costPerJob,
+            clientRating
+          }
+        };
+      }));
+
+      // Sort by services done + PMs done descending for leaderboard
+      stats.sort((a, b) => (b.metrics.pmsDone + b.metrics.servicesDone) - (a.metrics.pmsDone + a.metrics.servicesDone));
+
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Failed to fetch technician analytics:", error);
+      res.status(500).json({ error: "Failed to fetch technician analytics", details: error.message });
     }
   });
 
@@ -4010,7 +4463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
 
             await db.execute(sql);
-            console.log(`✅ Added column: ${column}`);
+            console.log(`âœ… Added column: ${column}`);
           }
 
           analysis.issues.wageColumns = { status: 'fixed', added: missingColumns };
@@ -4157,9 +4610,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return res.json(updatedTechnician);
           }
 
-          // ❌ SECURITY: Phone number already exists for a different user (client/other role)
+          // âŒ SECURITY: Phone number already exists for a different user (client/other role)
           // Do NOT reuse accounts - maintain separate authentication for technicians and clients
-          console.error(`[CREATE TECHNICIAN] ❌ Phone number ${phoneNumber} already in use by user ${existingUserByPhone.id} with role: ${existingUserByPhone.role}`);
+          console.error(`[CREATE TECHNICIAN] âŒ Phone number ${phoneNumber} already in use by user ${existingUserByPhone.id} with role: ${existingUserByPhone.role}`);
           return res.status(400).json({
             error: "Phone number already registered",
             details: `This phone number is already registered ${existingUserByPhone.role === 'client' ? 'as a client' : 'in the system'}. Technicians must have unique phone numbers. Please use a different phone number.`
@@ -4196,9 +4649,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return res.json(updatedTechnician);
           }
 
-          // ❌ SECURITY: Email already exists for a different user (client/other role)
+          // âŒ SECURITY: Email already exists for a different user (client/other role)
           // Do NOT reuse accounts - maintain separate authentication for technicians and clients
-          console.error(`[CREATE TECHNICIAN] ❌ Email ${email} already in use by user ${existingUserByEmail.id} with role: ${existingUserByEmail.role}`);
+          console.error(`[CREATE TECHNICIAN] âŒ Email ${email} already in use by user ${existingUserByEmail.id} with role: ${existingUserByEmail.role}`);
           return res.status(400).json({
             error: "Email already registered",
             details: `This email is already registered ${existingUserByEmail.role === 'client' ? 'as a client' : 'in the system'}. Technicians must have unique email addresses. Please use a different email.`
@@ -4206,7 +4659,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // ✅ No existing user found - create a NEW technician account
+      // âœ… No existing user found - create a NEW technician account
       console.log("[TECHNICIAN CREATION] Creating new user for technician...");
 
       // Determine role: senior_technician or technician
@@ -4218,13 +4671,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: technicianData.name,
         email: email,
         password: null, // No password yet - will be set via reset link
-        role: technicianRole, // ✅ CRITICAL: Set role as technician or senior_technician
+        role: technicianRole, // âœ… CRITICAL: Set role as technician or senior_technician
         isActive: true,
         whatsappVerified: true, // Admin-created, trusted
         emailVerified: false, // Will be verified when they set password
         requiresPasswordReset: false, // Not applicable - they haven't set a password yet
       });
-      console.log(`[TECHNICIAN CREATION] ✅ Created new technician user ${user.id} with role: ${user.role}`);
+      console.log(`[TECHNICIAN CREATION] âœ… Created new technician user ${user.id} with role: ${user.role}`);
       isExistingUser = false; // Mark as new user for email sending
 
       // Generate employee code
@@ -4247,7 +4700,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const technician = await storage.createTechnician(techData);
       console.log("Technician created:", technician);
-      console.log(`[CREATE TECHNICIAN] ✅ Technician created for user ${user.id}. User can be both client and technician.`);
+      console.log(`[CREATE TECHNICIAN] âœ… Technician created for user ${user.id}. User can be both client and technician.`);
 
       // Generate password reset token and send welcome email for NEW users with email
       let resetLinkSent = false;
@@ -4285,11 +4738,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (emailResult.success) {
             resetLinkSent = true;
-            console.log(`[TECHNICIAN CREATION] ✅ Welcome email sent to ${user.email}`);
+            console.log(`[TECHNICIAN CREATION] âœ… Welcome email sent to ${user.email}`);
           } else {
             emailError = emailResult.error || 'Email delivery failed';
-            console.log(`[TECHNICIAN CREATION] ⚠️ Email failed: ${emailError}`);
-            console.log(`[TECHNICIAN CREATION] 🔗 Password setup link: ${resetLink}`);
+            console.log(`[TECHNICIAN CREATION] âš ï¸ Email failed: ${emailError}`);
+            console.log(`[TECHNICIAN CREATION] ðŸ”— Password setup link: ${resetLink}`);
           }
 
           // Log security event
@@ -4430,13 +4883,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(serviceRequests.assignedTechnicianId, technicianId));
 
       // Filter out completed and cancelled statuses
-      const trulyActive = allServiceRequests.filter(
-        sr => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
+      const trulyActive = allServiceRequests.filter((sr: any) => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
       );
 
       if (trulyActive.length > 0) {
         console.log(`[DELETE TECHNICIAN] Cannot delete: ${trulyActive.length} active service requests found`);
-        const requestNumbers = trulyActive.map(sr => sr.requestNumber).slice(0, 5).join(', ');
+        const requestNumbers = trulyActive.map((sr: any) => sr.requestNumber).slice(0, 5).join(', ');
         const moreText = trulyActive.length > 5 ? ` and ${trulyActive.length - 5} more` : '';
         return res.status(400).json({
           error: "Cannot delete technician",
@@ -4714,13 +5166,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(serviceRequests.customerId, clientId));
 
       // Check for active service requests
-      const trulyActive = allServiceRequests.filter(
-        sr => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
+      const trulyActive = allServiceRequests.filter((sr: any) => sr.status && sr.status !== 'completed' && sr.status !== 'cancelled'
       );
 
       if (trulyActive.length > 0) {
         console.log(`[DELETE CLIENT] Cannot delete: ${trulyActive.length} active service requests found`);
-        const requestNumbers = trulyActive.map(sr => sr.requestNumber).slice(0, 5).join(', ');
+        const requestNumbers = trulyActive.map((sr: any) => sr.requestNumber).slice(0, 5).join(', ');
         const moreText = trulyActive.length > 5 ? ` and ${trulyActive.length - 5} more` : '';
         return res.status(400).json({
           error: "Cannot delete client",
@@ -5328,47 +5779,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const result = await db.execute(sql`
         WITH pm_data AS (
-          SELECT 
+        SELECT 
             UPPER(TRIM(container_number)) as container_id,
-            MAX(complaint_attended_date) as last_pm_date,
-            COUNT(*)::int as pm_count
+        MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
+        MAX(complaint_attended_date) as last_service_date,
+        COUNT(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN 1 END):: int as pm_count
           FROM service_history
-          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
-            AND container_number IS NOT NULL
+          WHERE container_number IS NOT NULL
             AND container_number != ''
           GROUP BY UPPER(TRIM(container_number))
-        )
-        SELECT 
-          c.id,
-          c.container_id,
-          c.depot,
-          c.grade,
-          cust.company_name as customer_name,
-          pm.last_pm_date,
-          COALESCE(pm.pm_count, 0) as pm_count,
-          CASE 
+      )
+      SELECT
+      c.id,
+        c.container_id,
+        c.depot,
+        c.grade,
+        cust.company_name as customer_name,
+        pm.last_pm_date,
+        pm.last_service_date,
+        COALESCE(pm.pm_count, 0) as pm_count,
+        CASE 
             WHEN pm.last_pm_date IS NULL THEN NULL
-            ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
-          END as days_since_pm,
-          (CASE 
-            WHEN pm.last_pm_date IS NULL THEN 'NEVER'
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+            ELSE EXTRACT(DAY FROM(NOW() - pm.last_pm_date))
+      END as days_since_pm,
+        (CASE 
+            WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
+            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
+            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
             ELSE 'UP_TO_DATE'
-          END)::text as pm_status_text
+          END):: text as pm_status_text
         FROM containers c
         LEFT JOIN customers cust ON c.assigned_client_id = cust.id
         LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
         WHERE c.status = 'active'
           AND c.assigned_client_id = ${customerId}
-        ORDER BY 
-          CASE 
-            WHEN pm.last_pm_date IS NULL THEN 1
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 2
-            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 3
+        ORDER BY
+  CASE 
+            WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 1
+            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 2
+            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 3
             ELSE 4
-          END,
-          CASE WHEN pm.last_pm_date IS NULL THEN NULL ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) END DESC NULLS FIRST
+  END,
+    CASE WHEN pm.last_pm_date IS NULL THEN NULL ELSE EXTRACT(DAY FROM(NOW() - pm.last_pm_date)) END DESC NULLS FIRST
       `);
 
       const containers = (result.rows as any[]).map(row => ({
@@ -5378,6 +5830,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         grade: row.grade,
         customerName: row.customer_name,
         lastPmDate: row.last_pm_date,
+        lastServiceDate: row.last_service_date,
         pmCount: row.pm_count,
         daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
         pmStatus: row.pm_status_text,
@@ -5387,7 +5840,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerResult = await db.execute(sql`
         SELECT id, company_name, contact_person, phone, email 
         FROM customers WHERE id = ${customerId}
-      `);
+  `);
       const customer = (customerResult.rows as any[])[0] || null;
 
       const pendingContainers = containers.filter(c =>
@@ -5461,7 +5914,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get customer info
       const customerResult = await db.execute(sql`
         SELECT id, company_name FROM customers WHERE id = ${customerId}
-      `);
+  `);
       const customer = (customerResult.rows as any[])[0];
       if (!customer) {
         return res.status(404).json({ error: "Customer not found" });
@@ -5472,15 +5925,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If specific containerIds are provided, use those
       if (containerIds && Array.isArray(containerIds) && containerIds.length > 0) {
         // Get the specified containers - use IN clause with joined IDs
-        const containerIdsList = containerIds.map((id: string) => `'${id.replace(/'/g, "''")}'`).join(',');
+        const containerIdsList = containerIds.map((id: string) => `'${id.replace(/'/g, "''")}'`).join(', ');
         const containerResult = await db.execute(sql.raw(`
           WITH pm_data AS (
             SELECT 
               UPPER(TRIM(container_number)) as container_id,
-              MAX(complaint_attended_date) as last_pm_date
+              MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
+              MAX(complaint_attended_date) as last_service_date
             FROM service_history
-            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
-              AND container_number IS NOT NULL
+            WHERE container_number IS NOT NULL
               AND container_number != ''
             GROUP BY UPPER(TRIM(container_number))
           )
@@ -5493,9 +5946,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
             END as days_since_pm,
             (CASE 
-              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
-              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
-              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
               ELSE 'UP_TO_DATE'
             END)::text as pm_status
           FROM containers c
@@ -5510,10 +5963,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           WITH pm_data AS (
             SELECT 
               UPPER(TRIM(container_number)) as container_id,
-              MAX(complaint_attended_date) as last_pm_date
+              MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
+              MAX(complaint_attended_date) as last_service_date
             FROM service_history
-            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
-              AND container_number IS NOT NULL
+            WHERE container_number IS NOT NULL
               AND container_number != ''
             GROUP BY UPPER(TRIM(container_number))
           )
@@ -5526,9 +5979,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
             END as days_since_pm,
             (CASE 
-              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
-              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
-              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
+              WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
               ELSE 'UP_TO_DATE'
             END)::text as pm_status
           FROM containers c
@@ -5536,8 +5989,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           WHERE c.status = 'active'
             AND c.assigned_client_id = ${customerId}
             AND (
-              pm.last_pm_date IS NULL 
-              OR EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75
+              (pm.last_pm_date IS NULL AND pm.last_service_date IS NULL)
+              OR EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75
             )
           ORDER BY days_since_pm DESC
         `);
@@ -5894,7 +6347,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get technician base location for origin
       const baseLocation = typeof technician.baseLocation === 'string'
         ? technician.baseLocation
-        : technician.baseLocation?.city || technician.baseLocation?.address || 'Unknown';
+        : (technician.baseLocation as any)?.city || (technician.baseLocation as any)?.address || 'Unknown';
 
       // Create trip record using travel planning system
       const { savePlannedTrip } = await import('./services/travel-planning');
@@ -5943,11 +6396,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate and store PDF
       try {
         const { generateTripFinancePDF } = await import('./services/pdfGenerator');
-        const pdfBuffer = await generateTripFinancePDF(trip.id);
+        const pdfBuffer = await generateTripFinancePDF(((trip as any).trip?.id ?? (trip as any).id));
 
         // Store PDF in service_report_pdfs table
         await db.insert(serviceReportPdfs).values({
-          serviceRequestId: null, // Trip PDFs don't have a specific service request
+          serviceRequestId: '' as unknown as string, // Trip PDFs don't have a specific service request
           reportStage: 'trip_finance',
           pdfData: pdfBuffer,
           fileSize: pdfBuffer.length,
@@ -5955,7 +6408,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: 'generated'
         });
 
-        console.log(`[API] Trip finance PDF generated and stored for trip ${trip.id}`);
+        console.log(`[API] Trip finance PDF generated and stored for trip ${((trip as any).trip?.id ?? (trip as any).id)}`);
       } catch (error) {
         console.error('[API] Failed to generate trip PDF:', error);
         // Don't fail the entire request if PDF generation fails
@@ -5964,13 +6417,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send WhatsApp notification to technician
       try {
         const { sendTextMessage } = await import('./services/whatsapp');
-        const technicianPhone = technician.phone || technician.whatsappNumber;
+        const technicianPhone = (technician as any).phone || (technician as any).whatsappNumber;
 
         if (technicianPhone) {
           const message = `Trip created for ${destinationCity}. Includes ${serviceRequests.length} assigned services + ${pmServiceRequests.length} PM tasks.`;
 
           await sendTextMessage(technicianPhone, message);
-          console.log(`[API] WhatsApp notification sent to technician ${technician.name}`);
+          console.log(`[API] WhatsApp notification sent to technician ${(technician as any).name}`);
         }
       } catch (error) {
         console.error('[API] Failed to send WhatsApp notification:', error);
@@ -5978,8 +6431,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get full trip details with costs and tasks
-      const tripCosts = await storage.getTechnicianTripCosts(trip.id);
-      const tripTasks = await storage.getTechnicianTripTasks(trip.id);
+      const tripCosts = await storage.getTechnicianTripCosts(((trip as any).trip?.id ?? (trip as any).id));
+      const tripTasks = await storage.getTechnicianTripTasks(((trip as any).trip?.id ?? (trip as any).id));
 
       res.json({
         success: true,
@@ -5989,7 +6442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           tasks: tripTasks,
         },
         summary: {
-          technician: technician.name,
+          technician: (technician as any).name,
           destination: destinationCity,
           totalTasks: allTasks.length,
           serviceTasks: serviceRequests.length,
@@ -5998,7 +6451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           estimatedDays,
           startDate,
           endDate,
-          whatsappSent: technician.phone || technician.whatsappNumber ? true : false,
+          whatsappSent: (technician as any).phone || (technician as any).whatsappNumber ? true : false,
           tasksPerDay: tasksPerDay
         }
       });
@@ -6030,13 +6483,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const enrichedTrips = await Promise.all(
         trips.map(async (trip: any) => {
           const tech = await storage.getTechnician(trip.technicianId).catch(() => null);
-          const costs = await storage.getTechnicianTripCosts(trip.id).catch(() => null);
-          const tasks = await storage.getTechnicianTripTasks(trip.id).catch(() => []);
+          const costs = await storage.getTechnicianTripCosts(((trip as any).trip?.id ?? (trip as any).id)).catch(() => null);
+          const tasks = await storage.getTechnicianTripTasks(((trip as any).trip?.id ?? (trip as any).id)).catch(() => []);
 
           return {
             ...trip,
             technician: tech ? {
-              name: tech.name,
+              name: (tech as any).name,
               employeeCode: tech.employeeCode,
               baseLocation: tech.baseLocation
             } : null,
@@ -6065,8 +6518,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const tech = await storage.getTechnician(trip.technicianId).catch(() => null);
-      const costs = await storage.getTechnicianTripCosts(trip.id).catch(() => null);
-      const tasks = await storage.getTechnicianTripTasks(trip.id).catch(() => []);
+      const costs = await storage.getTechnicianTripCosts(((trip as any).trip?.id ?? (trip as any).id)).catch(() => null);
+      const tasks = await storage.getTechnicianTripTasks(((trip as any).trip?.id ?? (trip as any).id)).catch(() => []);
 
       res.json({
         success: true,
@@ -6393,7 +6846,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
 
-    console.log('📱 WhatsApp webhook verification:', {
+    console.log('ðŸ“± WhatsApp webhook verification:', {
       mode,
       hasToken: !!token,
       challenge: challenge ? '[PROVIDED]' : '[NONE]',
@@ -6405,140 +6858,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const verified = mode === 'subscribe' && token === expectedToken;
 
     if (verified) {
-      console.log('✅ WhatsApp webhook verified successfully');
+      console.log('âœ… WhatsApp webhook verified successfully');
       res.status(200).send(challenge);
     } else {
-      console.log('❌ WhatsApp webhook verification failed');
+      console.log('âŒ WhatsApp webhook verification failed');
       console.log('Expected token:', expectedToken ? 'is set' : 'is not set');
       console.log('Received token:', token ? 'provided' : 'not provided');
       res.status(403).send('Forbidden');
     }
   });
 
-  // Test webhook verification endpoint
-  app.get("/api/whatsapp/test-verify", (req, res) => {
-    console.log('🧪 [TEST] Testing webhook verification manually');
-
-    const mode = 'subscribe';
-    const token = 'ab703f82d47668f0ef89a7a139d227ef';
-    const challenge = 'test_challenge_123';
-
-    const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || process.env.WEBHOOK_VERIFICATION_TOKEN;
-    const verified = mode === 'subscribe' && token === expectedToken;
-
-    res.json({
-      test: 'webhook_verification',
-      mode,
-      token,
-      challenge,
-      expectedToken: expectedToken ? '[SET]' : '[NOT SET]',
-      verified,
-      status: verified ? 'success' : 'failed'
-    });
-  });
-
-  // Simple ping endpoint to check if server is responsive
-  app.get("/api/whatsapp/ping", (req, res) => {
-    console.log('🏓 [PING] WhatsApp webhook ping received');
-    res.json({
-      status: 'pong',
-      timestamp: new Date().toISOString(),
-      webhook_url: 'https://098c864d25f4.ngrok-free.app/api/whatsapp/webhook',
-      server_status: 'running'
-    });
-  });
-
-  // Serve test HTML page
-  app.get("/test-webhook", (req, res) => {
-    const fs = require('fs');
-    const path = require('path');
-
-    const filePath = path.join(process.cwd(), 'public', 'test-webhook.html');
-    if (fs.existsSync(filePath)) {
-      res.sendFile(filePath);
-    } else {
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>WhatsApp Webhook Test</title></head>
-        <body>
-          <h1>WhatsApp Webhook Test</h1>
-          <p>Test endpoints:</p>
-          <ul>
-            <li><a href="/api/whatsapp/ping">Ping Test</a></li>
-            <li><a href="/api/whatsapp/test-verify">Verification Test</a></li>
-            <li><a href="https://098c864d25f4.ngrok-free.app/api/whatsapp/ping">Ngrok Ping</a></li>
-          </ul>
-        </body>
-        </html>
-      `);
-    }
-  });
-
   // WhatsApp webhook for incoming messages (matches ngrok URL path)
   app.post("/api/whatsapp/webhook", async (req, res) => {
-    console.log('🔔 [WEBHOOK] POST request received at /api/whatsapp/webhook');
-    console.log('📦 [WEBHOOK] Request body:', JSON.stringify(req.body, null, 2));
-    console.log('🌐 [WEBHOOK] Request headers:', JSON.stringify(req.headers, null, 2));
+    console.log('ðŸ”” [WEBHOOK] POST request received at /api/whatsapp/webhook');
+    console.log('ðŸ“¦ [WEBHOOK] Request body:', JSON.stringify(req.body, null, 2));
 
     try {
       const { whatsappService } = await import('./services/whatsapp');
       const result = await whatsappService.handleWebhook(req.body);
-      console.log('✅ [WEBHOOK] Processed successfully:', result);
+      console.log('âœ… [WEBHOOK] Processed successfully:', result);
       res.json({ status: 'ok', result });
     } catch (error) {
-      console.error('❌ [WEBHOOK] Error processing webhook:', error);
-      console.error('❌ [WEBHOOK] Error details:', error.message, error.stack);
-      res.status(500).json({ error: 'Webhook processing failed', details: error.message });
-    }
-  });
-
-  // Test endpoint to manually trigger webhook processing
-  app.post("/api/whatsapp/test-webhook", async (req, res) => {
-    console.log('🧪 [TEST] Manual webhook test triggered');
-
-    // Create a test message payload
-    const testPayload = {
-      entry: [{
-        changes: [{
-          value: {
-            messages: [{
-              from: req.body.from || "919876543210",
-              text: {
-                body: req.body.message || "hi"
-              },
-              timestamp: Date.now().toString()
-            }],
-            contacts: [{
-              profile: {
-                name: "Test User"
-              },
-              wa_id: req.body.from || "919876543210"
-            }]
-          }
-        }]
-      }]
-    };
-
-    console.log('📦 [TEST] Using test payload:', JSON.stringify(testPayload, null, 2));
-
-    try {
-      const { whatsappService } = await import('./services/whatsapp');
-      const result = await whatsappService.handleWebhook(testPayload);
-      console.log('✅ [TEST] Processed successfully:', result);
-      res.json({
-        status: 'ok',
-        message: 'Test webhook processed successfully',
-        result,
-        testPayload
-      });
-    } catch (error) {
-      console.error('❌ [TEST] Error processing test webhook:', error);
-      res.status(500).json({
-        error: 'Test webhook processing failed',
-        details: error.message,
-        testPayload
-      });
+      console.error('âŒ [WEBHOOK] Error processing webhook:', error);
+      res.status(500).json({ error: 'Webhook processing failed' });
     }
   });
 
@@ -6723,7 +7065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           destination: tripData.city,
           startDate: new Date(tripData.range.start).toLocaleDateString(),
           endDate: new Date(tripData.range.end).toLocaleDateString(),
-          duration: `${Math.ceil((new Date(tripData.range.end) - new Date(tripData.range.start)) / (1000 * 60 * 60 * 24)) + 1} days`,
+          duration: `${Math.ceil((new Date(tripData.range.end).getTime() - new Date(tripData.range.start).getTime()) / (1000 * 60 * 60 * 24)) + 1} days`,
           totalTasks: wageBreakdown.summary.totalTasks,
           serviceRequests: wageBreakdown.taskBreakdown.serviceRequests.count,
           pmTasks: wageBreakdown.taskBreakdown.pmTasks.count
@@ -6801,15 +7143,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     };
   }
 
-  // Start Preventive Maintenance checker (runs daily at midnight)
-  (async () => {
-    try {
-      const { startPMChecker } = await import('./services/preventive-maintenance');
-      startPMChecker();
-    } catch (error) {
-      console.error('[Routes] Failed to start PM checker:', error);
-    }
-  })();
+  // Start Preventive Maintenance checker (runs daily at midnight) - DISABLED
+  // (async () => {
+  //   try {
+  //     const { startPMChecker } = await import('./services/preventive-maintenance');
+  //     startPMChecker();
+  //   } catch (error) {
+  //     console.error('[Routes] Failed to start PM checker:', error);
+  //   }
+  // })();
 
   // Customer routes
   app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
@@ -7188,13 +7530,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { technicianId } = req.params;
 
       // Get service requests assigned to this technician
-      const serviceRequests = await storage.getServiceRequests({
-        technicianId,
-        status: ['assigned', 'in_progress', 'scheduled']
-      });
+      const allRequests = await storage.getAllServiceRequests();
+      const serviceRequests = allRequests.filter((sr: any) =>
+        sr.assignedTechnicianId === technicianId &&
+        ['assigned', 'in_progress', 'scheduled'].includes(sr.status)
+      );
 
       // Get service requests that are scheduled for future dates
-      const scheduledRequests = serviceRequests.filter(sr =>
+      const scheduledRequests = serviceRequests.filter((sr: any) =>
         sr.scheduledDate && new Date(sr.scheduledDate) >= new Date()
       );
 
@@ -7238,10 +7581,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { technicianId } = req.params;
 
       // Get containers that need PM and are assigned to this technician
-      const pmContainers = await storage.getContainersNeedingPM();
+      const pmContainers = (await storage.getAllContainers()).filter((c: any) => c.pmStatus && c.pmStatus !== "UP_TO_DATE");
 
       // Filter containers that might be assigned to this technician via trips or direct assignment
-      const technicianPmTasks = pmContainers.filter(container => {
+      const technicianPmTasks = pmContainers.filter((container: any) => {
         // This would need to be enhanced based on how PM assignments work
         // For now, return all PM containers as they might be assigned
         return true;
@@ -7513,7 +7856,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update trip booking status to 'all_confirmed' after tasks are assigned
       if (result.trip?.id) {
         try {
-          await storage.updateTechnicianTrip(result.trip.id, {
+          await storage.updateTechnicianTrip(((result as any).trip?.id ?? (result as any).id), {
             bookingStatus: 'all_confirmed',
           });
         } catch (tripUpdateError: any) {
@@ -7524,8 +7867,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send WhatsApp notification
       let notification = null;
       try {
-        const { sendTravelPlanToTechnician } = await import('./services/whatsapp');
-        notification = await sendTravelPlanToTechnician(result.trip.id, req.user?.id);
+        // const { sendTravelPlanToTechnician } = await import('./services/whatsapp');
+        // notification = // await sendTravelPlanToTechnician(((result as any).trip?.id ?? (result as any).id), req.user?.id);
       } catch (notifError: any) {
         console.error("Error sending WhatsApp:", notifError);
       }
@@ -7545,9 +7888,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           timestamp: new Date().toISOString(),
           data: {
             technicianId: tripPayload.technicianId,
-            tripId: result.trip.id,
+            tripId: ((result as any).trip?.id ?? (result as any).id),
             pmTasksCount: pmCount,
-            message: `✈️ Travel Trip Assigned for PM in ${tripPayload.destinationCity}. Dates: ${startDateStr} - ${endDateStr}. Assigned Tasks: ${pmCount}.`,
+            message: `âœˆï¸ Travel Trip Assigned for PM in ${tripPayload.destinationCity}. Dates: ${startDateStr} - ${endDateStr}. Assigned Tasks: ${pmCount}.`,
           },
         }, technicianUserId || undefined);
       }
@@ -7565,7 +7908,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get the saved trip with costs
-      const savedCosts = await storage.getTechnicianTripCosts(result.trip.id).catch(() => null);
+      const savedCosts = await storage.getTechnicianTripCosts(((result as any).trip?.id ?? (result as any).id)).catch(() => null);
 
       res.status(201).json({
         success: true,
@@ -7648,7 +7991,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Send travel plan to technician
           let notification = null;
           try {
-            notification = await sendTravelPlanToTechnician(result.trip.id, req.user?.id);
+            // notification = // await sendTravelPlanToTechnician(((result as any).trip?.id ?? (result as any).id), req.user?.id);
           } catch (notifError: any) {
             console.error("Error sending travel plan to technician:", notifError);
             // Don't fail the whole request if notification fails
@@ -7697,7 +8040,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send WhatsApp notification
       let notification = null;
       try {
-        notification = await sendTravelPlanToTechnician(result.trip.id, req.user?.id);
+        // notification = // await sendTravelPlanToTechnician(((result as any).trip?.id ?? (result as any).id), req.user?.id);
       } catch (notifError: any) {
         console.error("Error sending travel plan to technician:", notifError);
         // Don't fail the whole request if notification fails
@@ -7714,7 +8057,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           timestamp: new Date().toISOString(),
           data: {
             technicianId: result.trip.technicianId,
-            tripId: result.trip.id,
+            tripId: ((result as any).trip?.id ?? (result as any).id),
             pmTasksCount: result.scheduledPMRequests?.length || 0,
           },
         }, technicianUserId || undefined);
@@ -7826,7 +8169,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const calculatedDailyAllowance = (dailyAllowance !== undefined ? parseFloat(dailyAllowance) : numberOfDays * daRate).toFixed(2);
       const calculatedLocalTravelCost = (localTravelCost !== undefined ? parseFloat(localTravelCost) : numberOfDays * localTravelRate).toFixed(2);
 
-      await storage.updateTechnicianTripCosts(trip.id, {
+      await storage.updateTechnicianTripCosts(((trip as any).trip?.id ?? (trip as any).id), {
         travelFare: travelFare || 0,
         stayCost: calculatedStayCost,
         dailyAllowance: calculatedDailyAllowance,
@@ -7836,8 +8179,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Fetch complete trip with costs
-      const tripWithCosts = await storage.getTechnicianTrip(trip.id);
-      const costs = await storage.getTechnicianTripCosts(trip.id);
+      const tripWithCosts = await storage.getTechnicianTrip(((trip as any).trip?.id ?? (trip as any).id));
+      const costs = await storage.getTechnicianTripCosts(((trip as any).trip?.id ?? (trip as any).id));
 
       res.status(201).json({
         ...tripWithCosts,
@@ -7911,8 +8254,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       throw err;
     }
 
-    const costs = await storage.getTechnicianTripCosts(trip.id);
-    const rawTasks = await storage.getTechnicianTripTasks(trip.id);
+    const costs = await storage.getTechnicianTripCosts(((trip as any).trip?.id ?? (trip as any).id));
+    const rawTasks = await storage.getTechnicianTripTasks(((trip as any).trip?.id ?? (trip as any).id));
     const enrichedTasks = await enrichTripTasks(rawTasks);
 
     // Count PM tasks
@@ -7936,12 +8279,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const loginUrl = process.env.FRONTEND_URL || 'https://your-domain.com';
       const techName = (technician as any).name || technicianUser?.name || "Technician";
 
-      message = `✈️ Trip Assigned: ${trip.destinationCity} ${startDateStr} → ${endDateStr}. ${taskCount} PM tasks. Total Estimate: ₹${totalCostValue}\n\n` +
-        `👨‍🔧 Technician: ${techName}\n` +
-        `📍 City: ${trip.destinationCity}\n` +
-        `📅 Dates: ${startDateStr} → ${endDateStr}\n` +
-        `🔧 Total PM Tasks: ${pmCount}\n\n` +
-        `🧾 Assigned Tasks:\n`;
+      message = `âœˆï¸ Trip Assigned: ${trip.destinationCity} ${startDateStr} â†’ ${endDateStr}. ${taskCount} PM tasks. Total Estimate: â‚¹${totalCostValue}\n\n` +
+        `ðŸ‘¨â€ðŸ”§ Technician: ${techName}\n` +
+        `ðŸ“ City: ${trip.destinationCity}\n` +
+        `ðŸ“… Dates: ${startDateStr} â†’ ${endDateStr}\n` +
+        `ðŸ”§ Total PM Tasks: ${pmCount}\n\n` +
+        `ðŸ§¾ Assigned Tasks:\n`;
 
       // Add PM task details
       const pmTaskDetails: string[] = [];
@@ -7949,7 +8292,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const container = task.container;
         const containerCode = container?.containerCode || task.containerId?.substring(0, 8) || 'N/A';
         const srNumber = task.serviceRequest?.requestNumber || 'PM Job';
-        pmTaskDetails.push(`${srNumber} – ${containerCode} – PM`);
+        pmTaskDetails.push(`${srNumber} â€“ ${containerCode} â€“ PM`);
       }
 
       message += pmTaskDetails.join('\n');
@@ -7957,8 +8300,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message += `\n...and ${enrichedTasks.length - 10} more tasks`;
       }
 
-      message += `\n\n💰 Total Estimate: ₹${totalCostValue}\n\n` +
-        `🔗 View Tasks:\n${loginUrl}/technician/my-tasks`;
+      message += `\n\nðŸ’° Total Estimate: â‚¹${totalCostValue}\n\n` +
+        `ðŸ”— View Tasks:\n${loginUrl}/technician/my-tasks`;
     } else {
       // Use standard message for non-PM trips
       message = formatTravelPlanMessage({
@@ -7979,7 +8322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       userId,
       action: "send_travel_plan",
       entityType: "technician_trip",
-      entityId: trip.id,
+      entityId: ((trip as any).trip?.id ?? (trip as any).id),
       changes: { to: technicianPhone },
       source: "dashboard",
     });
@@ -8019,8 +8362,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Enrich trips with costs and technician info
       const tripsWithCosts = await Promise.all(
         trips.map(async (trip) => {
-          const costs = await storage.getTechnicianTripCosts(trip.id);
-          const tasks = await storage.getTechnicianTripTasks(trip.id);
+          const costs = await storage.getTechnicianTripCosts(((trip as any).trip?.id ?? (trip as any).id));
+          const tasks = await storage.getTechnicianTripTasks(((trip as any).trip?.id ?? (trip as any).id));
           const technician =
             trip.technicianId && !technicianProfile
               ? await storage.getTechnician(trip.technicianId)
@@ -8075,8 +8418,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const costs = await storage.getTechnicianTripCosts(trip.id);
-      const rawTasks = await storage.getTechnicianTripTasks(trip.id);
+      const costs = await storage.getTechnicianTripCosts(((trip as any).trip?.id ?? (trip as any).id));
+      const rawTasks = await storage.getTechnicianTripTasks(((trip as any).trip?.id ?? (trip as any).id));
       const technician = trip.technicianId ? await storage.getTechnician(trip.technicianId) : null;
 
       const enrichedTasks = await enrichTripTasks(rawTasks);
@@ -8292,7 +8635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               bookingStatus: 'confirmed',
               techBookingSource: 'auto_pm_travel',
               purpose: 'PM',
-              travelTripId: trip.id,
+              travelTripId: ((trip as any).trip?.id ?? (trip as any).id),
             };
 
             await db
@@ -8345,7 +8688,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     bookingStatus: 'confirmed',
                     techBookingSource: 'auto_pm_travel',
                     purpose: 'PM',
-                    travelTripId: trip.id,
+                    travelTripId: ((trip as any).trip?.id ?? (trip as any).id),
                   },
                 });
 
@@ -8381,16 +8724,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const startDateStr = new Date(trip.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
           const endDateStr = new Date(trip.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
-          const whatsappMessage = `✈️ New Trip Assigned\n\n` +
+          const whatsappMessage = `âœˆï¸ New Trip Assigned\n\n` +
             `City: ${trip.destinationCity}\n` +
-            `Dates: ${startDateStr} – ${endDateStr}\n` +
+            `Dates: ${startDateStr} â€“ ${endDateStr}\n` +
             `Total tasks: ${pmCount} (PM) + ${otherCount} (other).\n` +
             `Please check your app for details.`;
 
           const { sendTextMessage } = await import('./services/whatsapp');
           await sendTextMessage(technicianPhone, whatsappMessage);
 
-          console.log(`[API] WhatsApp sent to ${technicianPhone} for trip ${trip.id}`);
+          console.log(`[API] WhatsApp sent to ${technicianPhone} for trip ${((trip as any).trip?.id ?? (trip as any).id)}`);
         } catch (whatsappError: any) {
           console.error(`[API] Error sending WhatsApp:`, whatsappError);
           // Don't fail the whole request if WhatsApp fails
@@ -8410,9 +8753,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           timestamp: new Date().toISOString(),
           data: {
             technicianId: trip.technicianId,
-            tripId: trip.id,
+            tripId: ((trip as any).trip?.id ?? (trip as any).id),
             pmTasksCount: pmCount,
-            message: `✈️ Travel Trip Assigned for PM in ${trip.destinationCity}. Dates: ${startDateStr} - ${endDateStr}. Assigned Tasks: ${pmCount}.`,
+            message: `âœˆï¸ Travel Trip Assigned for PM in ${trip.destinationCity}. Dates: ${startDateStr} - ${endDateStr}. Assigned Tasks: ${pmCount}.`,
           },
         }, technicianUserId || undefined);
       }
@@ -8806,7 +9149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         if (axRes.headers['content-type']?.includes('application/json')) {
-          debugInfo += `✓ Server accepts header auth and returns JSON\n`;
+          debugInfo += `âœ“ Server accepts header auth and returns JSON\n`;
           const sampleData = Array.isArray(axRes.data) ? axRes.data.slice(0, 3) : axRes.data;
           return res.json({
             success: true,
@@ -8854,7 +9197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         if (axRes2.headers['content-type']?.includes('application/json')) {
-          debugInfo += `✓ Server accepts query param auth and returns JSON\n`;
+          debugInfo += `âœ“ Server accepts query param auth and returns JSON\n`;
           const sampleData = Array.isArray(axRes2.data) ? axRes2.data.slice(0, 3) : axRes2.data;
           return res.json({
             success: true,
@@ -9018,6 +9361,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // WhatsApp webhook for receiving messages
+  app.post("/api/whatsapp/webhook", async (req, res) => {
+    try {
+      const { whatsappService } = await import('./services/whatsapp');
+      const result = await whatsappService.handleWebhook(req.body);
+      res.json({ status: 'ok', result });
+    } catch (error) {
+      console.error('WhatsApp webhook error:', error);
+      res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
+
   // WhatsApp template management routes
   app.post("/api/whatsapp/templates/register-all", async (req, res) => {
     try {
@@ -9072,10 +9427,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
 
-      console.log('📱 Status endpoint - calling getAllDevices...');
+      console.log('ðŸ“± Status endpoint - calling getAllDevices...');
       const devices = await orbcommClient.getAllDevices();
-      console.log('📱 Status endpoint - devices count:', devices.length);
-      console.log('📱 Status endpoint - devices:', devices);
+      console.log('ðŸ“± Status endpoint - devices count:', devices.length);
+      console.log('ðŸ“± Status endpoint - devices:', devices);
       res.json({
         connected: orbcommClient.isConnected,
         devicesCount: devices.length,
@@ -9096,7 +9451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
 
-      console.log('📱 Manual trigger - sending GetEvents request...');
+      console.log('ðŸ“± Manual trigger - sending GetEvents request...');
       orbcommClient.sendPeriodicRequest();
 
       // Wait for response
@@ -9162,21 +9517,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ORBCOMM data endpoints
   app.get('/api/orbcomm/devices', async (req, res) => {
     try {
-      console.log('📱 ORBCOMM devices endpoint called');
+      console.log('ðŸ“± ORBCOMM devices endpoint called');
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
 
-      console.log('🔍 ORBCOMM client connected:', orbcommClient.isConnected);
-      console.log('📱 Calling getAllDevices...');
+      console.log('ðŸ” ORBCOMM client connected:', orbcommClient.isConnected);
+      console.log('ðŸ“± Calling getAllDevices...');
 
       const devices = await orbcommClient.getAllDevices();
-      console.log('📱 Retrieved real ORBCOMM devices:', devices.length);
-      console.log('📱 Devices:', JSON.stringify(devices, null, 2));
+      console.log('ðŸ“± Retrieved real ORBCOMM devices:', devices.length);
+      console.log('ðŸ“± Devices:', JSON.stringify(devices, null, 2));
 
       res.json(devices);
     } catch (error) {
-      console.error('❌ ORBCOMM devices error:', error);
-      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack');
+      console.error('âŒ ORBCOMM devices error:', error);
+      console.error('âŒ Error stack:', error instanceof Error ? error.stack : 'No stack');
       res.status(500).json({
         error: 'Failed to fetch ORBCOMM devices',
         details: error instanceof Error ? error.message : 'Unknown error',
@@ -9190,7 +9545,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { deviceId } = req.params;
       const { getOrbcommClient } = await import('./services/orbcomm-real');
       const orbcommClient = getOrbcommClient();
-      console.log('📱 Fetching real device data for:', deviceId);
+      console.log('ðŸ“± Fetching real device data for:', deviceId);
       const deviceData = await orbcommClient.getDeviceData(deviceId);
 
       if (!deviceData) {
@@ -9206,7 +9561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Live ORBCOMM data with container matching - Reefer Units and Device Status tables
   app.get('/api/orbcomm/live-data', authenticateUser, async (req, res) => {
     try {
-      console.log('🚀 Fetching live ORBCOMM data with container matching');
+      console.log('ðŸš€ Fetching live ORBCOMM data with container matching');
 
       const { getOrbcommClient } = await import('./services/orbcommClient');
       const orbcommClient = getOrbcommClient();
@@ -9220,11 +9575,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get all ORBCOMM devices
       const orbcommDevices = await orbcommClient.getAllDevices();
-      console.log(`📡 Retrieved ${orbcommDevices.length} ORBCOMM devices`);
+      console.log(`ðŸ“¡ Retrieved ${orbcommDevices.length} ORBCOMM devices`);
 
       // Get all containers from database
       const allContainers = await storage.getAllContainers();
-      console.log(`📦 Retrieved ${allContainers.length} containers from database`);
+      console.log(`ðŸ“¦ Retrieved ${allContainers.length} containers from database`);
 
       const reeferUnits = [];
       const deviceStatus = [];
@@ -9234,7 +9589,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const deviceData = await orbcommClient.getDeviceData(orbcommDevice.deviceId);
 
         if (!deviceData) {
-          console.log(`⚠️ No data available for device ${orbcommDevice.deviceId}`);
+          console.log(`âš ï¸ No data available for device ${orbcommDevice.deviceId}`);
           continue;
         }
 
@@ -9245,11 +9600,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
 
         if (!matchingContainer) {
-          console.log(`⚠️ No matching container found for Reefer ID: ${(deviceData as any).lastAssetId || orbcommDevice.deviceId}`);
+          console.log(`âš ï¸ No matching container found for Reefer ID: ${(deviceData as any).lastAssetId || orbcommDevice.deviceId}`);
           continue;
         }
 
-        console.log(`✅ Matched Reefer ID ${(deviceData as any).lastAssetId || orbcommDevice.deviceId} to Container ${matchingContainer.containerCode}`);
+        console.log(`âœ… Matched Reefer ID ${(deviceData as any).lastAssetId || orbcommDevice.deviceId} to Container ${matchingContainer.containerCode}`);
 
         // Extract status indicators
         const temperature = deviceData.temperature;
@@ -9258,10 +9613,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const errorCodes = deviceData.errorCodes || [];
 
         // Determine state indicators
-        const cc = orbcommDevice.status === 'active' ? '🟢' : '🔴'; // Communication status
-        const alm = errorCodes.length > 0 ? '🔔' : '✅'; // Alarm status
-        const run = powerStatus === 'on' ? '▶️' : '⏸️'; // Running status
-        const pwr = powerStatus === 'on' ? '🔌' : '🔋'; // Power status
+        const cc = orbcommDevice.status === 'active' ? 'ðŸŸ¢' : 'ðŸ”´'; // Communication status
+        const alm = errorCodes.length > 0 ? 'ðŸ””' : 'âœ…'; // Alarm status
+        const run = powerStatus === 'on' ? 'â–¶ï¸' : 'â¸ï¸'; // Running status
+        const pwr = powerStatus === 'on' ? 'ðŸ”Œ' : 'ðŸ”‹'; // Power status
 
         // Extract OEM from device data or use default
         const oem = (deviceData as any).oem || (deviceData as any).OEM || 'ORBCOMM';
@@ -9317,7 +9672,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log(`✅ Processed ${reeferUnits.length} reefer units and ${deviceStatus.length} device statuses`);
+      console.log(`âœ… Processed ${reeferUnits.length} reefer units and ${deviceStatus.length} device statuses`);
 
       res.json({
         success: true,
@@ -9335,7 +9690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
     } catch (error) {
-      console.error('❌ ORBCOMM live data error:', error);
+      console.error('âŒ ORBCOMM live data error:', error);
       res.status(500).json({
         error: 'Failed to fetch live ORBCOMM data',
         details: error instanceof Error ? error.message : 'Unknown error'
@@ -9862,10 +10217,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         emailProvider = emailResult.provider || null;
 
         if (emailSent) {
-          console.log(`✅ Service report email sent to ${recipient} via ${emailProvider}`);
+          console.log(`âœ… Service report email sent to ${recipient} via ${emailProvider}`);
         } else {
           emailError = 'Email service not configured';
-          console.warn(`⚠️ Service report email not sent: ${emailError}`);
+          console.warn(`âš ï¸ Service report email not sent: ${emailError}`);
         }
       } catch (error: any) {
         emailError = error.message;
@@ -10137,17 +10492,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         defaultStatus: req.body.defaultStatus || 'completed',
       };
 
-      console.log('📊 Starting Excel import with options:', options);
+      console.log('ðŸ“Š Starting Excel import with options:', options);
 
       const data = parseExcelFile(req.file.buffer);
-      console.log(`📊 Parsed ${data.length} rows from Excel`);
+      console.log(`ðŸ“Š Parsed ${data.length} rows from Excel`);
 
       const result = await importServiceHistory(data, options);
 
-      console.log('📊 Import complete:', result);
+      console.log('ðŸ“Š Import complete:', result);
 
       res.json({
-        success: result.success,
         message: `Imported ${result.imported} service requests, updated ${result.updated}, skipped ${result.skipped}`,
         ...result,
       });
@@ -10234,3 +10588,6 @@ interface DeviceData {
   cellularType?: string;
   signalStrength?: number;
 }
+
+
+
