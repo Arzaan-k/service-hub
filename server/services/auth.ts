@@ -496,6 +496,92 @@ export async function sendWelcomeEmailWithResetLink(
 }
 
 /**
+ * Sends password reminder email for technicians who haven't set their password after 24 hours
+ * This is sent as a follow-up to the welcome email with a fresh reset token
+ *
+ * @param user - User object with email and name
+ * @param resetToken - Plain reset token (not hashed)
+ * @returns Success status and error if any
+ */
+export async function sendPasswordReminderEmail(
+  user: any,
+  resetToken: string
+): Promise<{ success: boolean; error?: string }> {
+  const appName = 'Service Hub';
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+  const html = `
+  <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;max-width:600px;margin:0 auto;">
+    <div style="background:#f8f9fa;padding:20px;border-radius:8px;margin-bottom:20px;">
+      <h2 style="color:#2d3748;margin:0;">🔔 ${appName} - Password Reminder</h2>
+    </div>
+
+    <div style="background:white;padding:30px;border-radius:8px;border:1px solid #e2e8f0;">
+      <p style="margin-top:0;">Hello ${user.name || 'User'},</p>
+
+      <p>This is a friendly reminder that you haven't set your password yet for your ${appName} account.</p>
+
+      <p>We sent you a welcome email 24 hours ago with a password setup link. If you missed it or the link expired, no worries! Click the button below to set your password now:</p>
+
+      <div style="margin:30px 0;text-align:center;">
+        <a href="${resetLink}"
+           style="background:#4299e1;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
+          Set Your Password Now
+        </a>
+      </div>
+
+      <p style="color:#718096;font-size:12px;">
+        Or copy and paste this link into your browser:<br>
+        <a href="${resetLink}" style="color:#4299e1;word-break:break-all;">${resetLink}</a>
+      </p>
+
+      <div style="background:#fff3cd;padding:15px;border-radius:6px;margin:20px 0;border-left:4px solid #ffc107;">
+        <p style="margin:0;color:#856404;">
+          <strong>⚠️ Important:</strong><br>
+          • This link expires in 1 hour<br>
+          • The link can only be used once<br>
+          • Your login email is: <strong>${user.email}</strong>
+        </p>
+      </div>
+
+      <p style="color:#718096;font-size:12px;margin-top:30px;">
+        If you're having trouble accessing your account, please contact your administrator.
+      </p>
+    </div>
+
+    <div style="text-align:center;margin-top:20px;color:#718096;font-size:12px;">
+      <p>This is an automated reminder from ${appName}. Please do not reply to this email.</p>
+    </div>
+  </div>`;
+
+  try {
+    // Use centralized email service with Mailgun fallback
+    const result = await sendEmail({
+      to: user.email,
+      subject: `${appName} - Reminder: Set Your Password`,
+      body: `Reminder: You haven't set your password yet.\n\nSet your password: ${resetLink}\n\nThis link expires in 1 hour.`,
+      html,
+      from: process.env.MAILGUN_FROM || process.env.EMAIL_FROM
+    });
+
+    if (result.skipped || result.error) {
+      console.warn('⚠️  Password reminder email not sent.');
+      console.warn('📧 User:', user.email);
+      console.warn('🔗 Password setup link:', resetLink);
+      return { success: false, error: 'Email not configured. Check server logs for password setup link.' };
+    }
+
+    console.log('✅ Password reminder email sent to', user.email, 'via', result.provider || 'email');
+    return { success: true };
+  } catch (error: any) {
+    console.error('❌ Password reminder email sending failed:', error.message);
+    console.warn('🔗 Password setup link (not sent):', resetLink);
+    return { success: false, error: 'Email sending failed. Check server logs for password setup link.' };
+  }
+}
+
+/**
  * Logs security events to audit log
  *
  * @param userId - User ID affected by the action
