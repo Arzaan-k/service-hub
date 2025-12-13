@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useLocation, useSearch } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,9 +15,9 @@ interface TechnicianInfo {
 }
 
 export default function SetupPasswordPage() {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const token = searchParams.get('token');
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const token = new URLSearchParams(searchString).get('token');
   
   const [passwords, setPasswords] = useState({
     password: '',
@@ -106,7 +106,7 @@ export default function SetupPasswordPage() {
         
         // Redirect to document submission
         setTimeout(() => {
-          navigate('/technician/submit-documents');
+          setLocation('/technician/submit-documents');
         }, 1000);
       } else {
         setError(data.message || 'Failed to create password');

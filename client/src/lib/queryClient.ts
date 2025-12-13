@@ -32,7 +32,9 @@ export async function apiRequest(
   
   const headers: Record<string, string> = {};
 
-  if (data) {
+  // Only set Content-Type for non-FormData requests
+  // FormData will set its own Content-Type with boundary
+  if (data && !(data instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
 
@@ -87,7 +89,7 @@ try {
   res = await fetch(fullUrl, {
     method,
     headers,
-    body: data ? JSON.stringify(data) : undefined,
+    body: data ? (data instanceof FormData ? data : JSON.stringify(data)) : undefined,
     credentials: "include",
   });
 } catch (fetchError) {
