@@ -45,13 +45,12 @@ import {
   recalculateTripCosts
 } from "./services/travel-planning";
 import { db } from './db';
-import { sql, eq, desc, isNotNull, isNull, and } from 'drizzle-orm';
+import { sql, eq, desc } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
-import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers } from '@shared/schema';
+import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
 import technicianDocumentRoutes from './routes/technicianDocumentRoutes';
-import { registerFinanceRoutes } from "./routes/finance";
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -89,23 +88,9 @@ const upload = multer({
   storage: multer.memoryStorage() // Store in memory for processing
 });
 
-interface AuthenticatedWebSocket extends WebSocket {
-  userId?: string;
-  role?: string;
-  isAlive: boolean;
-}
-
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
-
-
-
-
-
   await storage.ensureServiceRequestAssignmentColumns();
-
-  // Register Finance Routes
-  registerFinanceRoutes(app);
 
   // Third-party technicians helper functions (defined early for use throughout routes)
   const thirdPartyDir = path.join(process.cwd(), "server", "data");
@@ -152,11 +137,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================================================================
   app.get("/api/health", async (req, res) => {
     const startTime = Date.now();
-
+    
     try {
       // Check database connection
       await db.execute(sql`SELECT 1`);
-
+      
       const healthStatus = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -166,11 +151,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         environment: process.env.NODE_ENV || 'development',
         version: process.env.npm_package_version || '1.0.0'
       };
-
+      
       res.status(200).json(healthStatus);
     } catch (error: any) {
       console.error('[HEALTH] Check failed:', error);
-
+      
       res.status(503).json({
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
@@ -303,42 +288,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const clients = new Map<string, AuthenticatedWebSocket>();
 
-  wss.on("connection", async (ws: AuthenticatedWebSocket, req: any) => {
+  wss.on("connection", (ws: AuthenticatedWebSocket) => {
     ws.isAuthenticated = false;
     console.log("WebSocket client connected");
-
-    // Extract token from query string
-    try {
-      const url = new URL(req.url || '', `http://${req.headers.host}`);
-      const token = url.searchParams.get('token');
-
-      if (token) {
-        const user = await storage.getUser(token);
-        if (user) {
-          ws.userId = user.id;
-          ws.userRole = user.role;
-          ws.isAuthenticated = true;
-          clients.set(user.id, ws);
-
-          console.log(`WebSocket authenticated for user via query param: ${user.name} (${user.role})`);
-
-          // Send authentication success
-          ws.send(JSON.stringify({
-            type: 'authenticated',
-            user: { id: user.id, name: user.name, role: user.role }
-          }));
-
-          // Send recent WhatsApp messages for this user
-          const recentMessages = await storage.getRecentWhatsAppMessages(user.id, 50);
-          ws.send(JSON.stringify({
-            type: 'recent_messages',
-            messages: recentMessages
-          }));
-        }
-      }
-    } catch (error) {
-      console.error('WebSocket query auth error:', error);
-    }
 
     ws.on("message", async (data) => {
       try {
@@ -1129,66 +1081,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Analytics routes - Client & Technician Performance Analytics
-  app.get("/api/analytics/clients", authenticateUser, async (req: AuthRequest, res) => {
-    try {
-      const role = (req.user?.role || '').toLowerCase();
-      const range = parseInt(req.query.range as string) || 90;
-
-      console.log(`Client analytics requested by ${role} user: ${req.user?.id}, range: ${range} days`);
-
-      // Fetch real data from storage
-      let data = await storage.getClientAnalytics(range);
-
-      // Apply role-based filtering
-      if (role === 'client') {
-        const customer = await storage.getCustomerByUserId(req.user!.id);
-        if (customer) {
-          data = data.filter(c => c.client_id === customer.id);
-        } else {
-          data = [];
-        }
-      }
-
-      res.json(data);
-    } catch (error) {
-      console.error('Error fetching client analytics:', error);
-      res.status(500).json({ error: "Failed to fetch client analytics" });
-    }
-  });
-
-  app.get("/api/analytics/technicians", authenticateUser, async (req: AuthRequest, res) => {
-    try {
-      const role = (req.user?.role || '').toLowerCase();
-      const range = parseInt(req.query.range as string) || 90;
-
-      console.log(`Technician analytics requested by ${role} user: ${req.user?.id}, range: ${range} days`);
-
-      // Fetch real data from storage
-      let data = await storage.getTechnicianAnalytics(range);
-
-      // Apply role-based filtering
-      if (role === 'technician') {
-        const technician = await storage.getTechnicianByUserId(req.user!.id);
-        if (technician) {
-          data = data.filter(t => t.technician_id === technician.id);
-        } else {
-          data = [];
-        }
-      }
-
-      res.json(data);
-    } catch (error) {
-      console.error('Error fetching technician analytics:', error);
-      console.error('Error stack:', error.stack);
-      res.status(500).json({
-        error: "Failed to fetch technician analytics",
-        details: error.message,
-        stack: error.stack
-      });
-    }
-  });
-
   // Container routes
   // Zod: pagination schema
   const paginationSchema = z.object({
@@ -1402,19 +1294,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(history);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch service history" });
-    }
-  });
-
-  app.get("/api/containers/:id/service-history/detailed", authenticateUser, async (req, res) => {
-    try {
-      const history = await storage.getContainerDetailedHistory(req.params.id);
-      if (!history) {
-        return res.status(404).json({ error: "Container not found" });
-      }
-      res.json(history);
-    } catch (error) {
-      console.error("Failed to fetch detailed service history:", error);
-      res.status(500).json({ error: "Failed to fetch detailed service history" });
     }
   });
 
@@ -2063,28 +1942,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(list);
       }
       const requests = await storage.getAllServiceRequests();
-
-      // Apply filters if provided
-      let filteredRequests = requests;
-      const customerId = req.query.customerId as string;
-      const technicianId = req.query.technicianId as string;
-
-      if (customerId) {
-        filteredRequests = filteredRequests.filter(r => r.customerId === customerId);
-      }
-
-      if (technicianId) {
-        filteredRequests = filteredRequests.filter(r => r.assignedTechnicianId === technicianId);
-      }
-
       const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
       const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
       if (hasLimit || hasOffset) {
         const { limit, offset } = paginationSchema.parse(req.query);
-        res.setHeader('x-total-count', String(filteredRequests.length));
-        return res.json(filteredRequests.slice(offset, offset + limit));
+        res.setHeader('x-total-count', String(requests.length));
+        return res.json(requests.slice(offset, offset + limit));
       }
-      res.json(filteredRequests);
+      res.json(requests);
     } catch (error) {
       console.error("Error fetching service requests:", error);
       res.status(500).json({ error: "Failed to fetch service requests", details: error instanceof Error ? error.message : String(error) });
@@ -2914,17 +2779,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== INVENTORY MANAGEMENT SHIPMENT SYNC ====================
   // This endpoint allows the Inventory Management system to create/sync shipments
   // that will automatically appear in Service Hub Courier Tracking section
-
+  
   // Create shipment from Inventory Management (auto-links to service request)
   app.post("/api/inventory/shipments", authenticateUser, async (req: AuthRequest, res) => {
     try {
-      const {
-        serviceRequestId,
-        awbNumber,
-        courierName,
+      const { 
+        serviceRequestId, 
+        awbNumber, 
+        courierName, 
         courierCode,
-        shipmentDescription,
-        origin,
+        shipmentDescription, 
+        origin, 
         destination,
         trackingHistory,
         status,
@@ -2939,7 +2804,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if AWB already exists - if so, update it instead of creating duplicate
       const existing = await storage.getCourierShipmentByAwb(awbNumber);
-
+      
       if (existing) {
         // Update existing shipment with new data
         const updated = await storage.updateCourierShipment(existing.id, {
@@ -2956,7 +2821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actualDeliveryDate: actualDeliveryDate ? new Date(actualDeliveryDate) : existing.actualDeliveryDate,
           lastTrackedAt: new Date(),
         });
-
+        
         console.log(`[INVENTORY SHIPMENT] Updated existing shipment ${awbNumber} for service request ${serviceRequestId}`);
         return res.json({ ...updated, isUpdate: true });
       }
@@ -2979,11 +2844,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         shipmentDescription,
         origin: trackingResult?.origin || origin,
         destination: trackingResult?.destination || destination,
-        estimatedDeliveryDate: trackingResult?.estimatedDeliveryDate
-          ? new Date(trackingResult.estimatedDeliveryDate)
+        estimatedDeliveryDate: trackingResult?.estimatedDeliveryDate 
+          ? new Date(trackingResult.estimatedDeliveryDate) 
           : (estimatedDeliveryDate ? new Date(estimatedDeliveryDate) : undefined),
-        actualDeliveryDate: trackingResult?.actualDeliveryDate
-          ? new Date(trackingResult.actualDeliveryDate)
+        actualDeliveryDate: trackingResult?.actualDeliveryDate 
+          ? new Date(trackingResult.actualDeliveryDate) 
           : (actualDeliveryDate ? new Date(actualDeliveryDate) : undefined),
         status: trackingResult?.status || status || 'pending',
         currentLocation: trackingResult?.currentLocation || currentLocation,
@@ -3017,7 +2882,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/inventory/shipments/sync", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const { shipments } = req.body;
-
+      
       if (!Array.isArray(shipments)) {
         return res.status(400).json({ error: "shipments must be an array" });
       }
@@ -3031,14 +2896,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const shipmentData of shipments) {
         try {
           const { awbNumber, serviceRequestId, courierName, ...rest } = shipmentData;
-
+          
           if (!awbNumber) {
             results.errors.push(`Missing AWB number for shipment`);
             continue;
           }
 
           const existing = await storage.getCourierShipmentByAwb(awbNumber);
-
+          
           if (existing) {
             // Update existing
             await storage.updateCourierShipment(existing.id, {
@@ -4142,148 +4007,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(technician);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch technician" });
-    }
-  });
-
-  app.get("/api/technicians/analytics/overview", authenticateUser, async (req, res) => {
-    try {
-      const { startDate, endDate } = req.query;
-
-      // Build date constraints
-      const dateFilter = [];
-      if (startDate) {
-        dateFilter.push(sql`${serviceRequests.updatedAt} >= ${new Date(startDate as string).toISOString()}`);
-      }
-      if (endDate) {
-        dateFilter.push(sql`${serviceRequests.updatedAt} <= ${new Date(endDate as string).toISOString()}`);
-      }
-
-      // Fetch all technicians
-      const allTechnicians = await db.query.technicians.findMany({
-        with: {
-          user: true
-        }
-      });
-
-      // Prepare stats object
-      const stats = await Promise.all(allTechnicians.map(async (tech: any) => {
-        const techId = tech.id;
-
-        // Pms done
-        // Assuming PMs have 'PM' in jobOrder or workType or are scheduled/recurring. 
-        // For now, checking if requestNumber starts with PM or jobOrder contains PM (heuristic based on typical usage)
-        // Or strictly strictly speaking checking for container's lastPmDate update context if available, but simple heuristic:
-        // Service requests with 'PM' in description or type.
-        // Adjust logic based on actual data structure usage. 
-        // Returning 0 if no explicit PM field, or relying on 'PM' substring in issue description/job order.
-
-        // Better: use 'job_type' or 'work_type' column if available in schema (it is).
-        const pmsDoneQuery = await db.select({ count: sql<number>`count(*)` })
-          .from(serviceRequests)
-          .where(and(
-            eq(serviceRequests.assignedTechnicianId, techId),
-            eq(serviceRequests.status, 'completed'),
-            or(
-              sql`${serviceRequests.workType} ILIKE '%PM%'`,
-              sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
-              sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
-            ),
-            ...dateFilter
-          ));
-        const pmsDone = Number(pmsDoneQuery[0]?.count || 0);
-
-        // Services done (Not PM)
-        const servicesDoneQuery = await db.select({ count: sql<number>`count(*)` })
-          .from(serviceRequests)
-          .where(and(
-            eq(serviceRequests.assignedTechnicianId, techId),
-            eq(serviceRequests.status, 'completed'),
-            not(or(
-              sql`${serviceRequests.workType} ILIKE '%PM%'`,
-              sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
-              sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
-            )),
-            ...dateFilter
-          ));
-        const servicesDone = Number(servicesDoneQuery[0]?.count || 0);
-
-        // On-time rate
-        // defined as actualEndTime <= scheduledDate (or end of scheduled window)
-        // For simplicity: actualEndTime <= scheduledDate + 2 hours (typical window) or just check explicit delayed flag if exists.
-        // Using actualEndTime <= scheduledDate if available.
-        const completedJobs = await db.select()
-          .from(serviceRequests)
-          .where(and(
-            eq(serviceRequests.assignedTechnicianId, techId),
-            eq(serviceRequests.status, 'completed'),
-            ...dateFilter
-          ));
-
-        let onTimeCount = 0;
-        completedJobs.forEach(job => {
-          if (job.actualEndTime && job.scheduledDate) {
-            // Check if actual completion is on same day or before
-            if (new Date(job.actualEndTime) <= new Date(new Date(job.scheduledDate).getTime() + 24 * 60 * 60 * 1000)) {
-              onTimeCount++;
-            }
-          } else {
-            // If no scheduled date, assume on time (or ignore)
-            onTimeCount++;
-          }
-        });
-        const onTimeRate = completedJobs.length > 0 ? (onTimeCount / completedJobs.length) * 100 : 100;
-
-        // Pending requests
-        const pendingQuery = await db.select({ count: sql<number>`count(*)` })
-          .from(serviceRequests)
-          .where(and(
-            eq(serviceRequests.assignedTechnicianId, techId),
-            inArray(serviceRequests.status, ['assigned', 'in_progress', 'awaiting_parts']),
-            ...dateFilter
-          ));
-        const pendingRequestsCount = Number(pendingQuery[0]?.count || 0);
-
-        // Spend (Sum of totalCost)
-        const spendQuery = await db.select({ total: sql<number>`sum(${serviceRequests.totalCost})` })
-          .from(serviceRequests)
-          .where(and(
-            eq(serviceRequests.assignedTechnicianId, techId),
-            ...dateFilter
-          ));
-        const spend = Number(spendQuery[0]?.total || 0);
-        const costPerJob = (pmsDone + servicesDone) > 0 ? spend / (pmsDone + servicesDone) : 0;
-
-        // Feedback
-        const feedbackQuery = await db.select({ avg: sql<number>`avg(cast(${feedback.rating} as int))` })
-          .from(feedback)
-          .where(eq(feedback.technicianId, techId));
-        const clientRating = Number(feedbackQuery[0]?.avg || 0);
-
-        return {
-          technician: {
-            id: tech.id,
-            name: tech.user?.name || tech.name || 'Unknown',
-            avatar: null, // Placeholder
-          },
-          metrics: {
-            pmsDone,
-            servicesDone,
-            onTimeRate,
-            pendingRequests: pendingRequestsCount,
-            spend,
-            costPerJob,
-            clientRating
-          }
-        };
-      }));
-
-      // Sort by services done + PMs done descending for leaderboard
-      stats.sort((a, b) => (b.metrics.pmsDone + b.metrics.servicesDone) - (a.metrics.pmsDone + a.metrics.servicesDone));
-
-      res.json(stats);
-    } catch (error: any) {
-      console.error("Failed to fetch technician analytics:", error);
-      res.status(500).json({ error: "Failed to fetch technician analytics", details: error.message });
     }
   });
 
@@ -5780,48 +5503,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const result = await db.execute(sql`
         WITH pm_data AS (
-        SELECT 
+          SELECT 
             UPPER(TRIM(container_number)) as container_id,
-        MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
-        MAX(complaint_attended_date) as last_service_date,
-        COUNT(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN 1 END):: int as pm_count
+            MAX(complaint_attended_date) as last_pm_date,
+            COUNT(*)::int as pm_count
           FROM service_history
-          WHERE container_number IS NOT NULL
+          WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+            AND container_number IS NOT NULL
             AND container_number != ''
           GROUP BY UPPER(TRIM(container_number))
-      )
-      SELECT
-      c.id,
-        c.container_id,
-        c.depot,
-        c.grade,
-        cust.company_name as customer_name,
-        pm.last_pm_date,
-        pm.last_service_date,
-        COALESCE(pm.pm_count, 0) as pm_count,
-        CASE 
+        )
+        SELECT 
+          c.id,
+          c.container_id,
+          c.depot,
+          c.grade,
+          cust.company_name as customer_name,
+          pm.last_pm_date,
+          COALESCE(pm.pm_count, 0) as pm_count,
+          CASE 
             WHEN pm.last_pm_date IS NULL THEN NULL
-            ELSE EXTRACT(DAY FROM(NOW() - pm.last_pm_date))
-      END as days_since_pm,
-        (CASE 
-            WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
-            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
-            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
+            ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
+          END as days_since_pm,
+          (CASE 
+            WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
             ELSE 'UP_TO_DATE'
-          END):: text as pm_status_text
+          END)::text as pm_status_text
         FROM containers c
         LEFT JOIN customers cust ON c.assigned_client_id = cust.id
         LEFT JOIN pm_data pm ON UPPER(TRIM(c.container_id)) = pm.container_id
         WHERE c.status = 'active'
           AND c.assigned_client_id = ${customerId}
-        ORDER BY
-  CASE 
-            WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 1
-            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 2
-            WHEN EXTRACT(DAY FROM(NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 3
+        ORDER BY 
+          CASE 
+            WHEN pm.last_pm_date IS NULL THEN 1
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 2
+            WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 3
             ELSE 4
-  END,
-    CASE WHEN pm.last_pm_date IS NULL THEN NULL ELSE EXTRACT(DAY FROM(NOW() - pm.last_pm_date)) END DESC NULLS FIRST
+          END,
+          CASE WHEN pm.last_pm_date IS NULL THEN NULL ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) END DESC NULLS FIRST
       `);
 
       const containers = (result.rows as any[]).map(row => ({
@@ -5831,7 +5553,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         grade: row.grade,
         customerName: row.customer_name,
         lastPmDate: row.last_pm_date,
-        lastServiceDate: row.last_service_date,
         pmCount: row.pm_count,
         daysSincePm: row.days_since_pm ? Math.round(Number(row.days_since_pm)) : null,
         pmStatus: row.pm_status_text,
@@ -5841,7 +5562,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerResult = await db.execute(sql`
         SELECT id, company_name, contact_person, phone, email 
         FROM customers WHERE id = ${customerId}
-  `);
+      `);
       const customer = (customerResult.rows as any[])[0] || null;
 
       const pendingContainers = containers.filter(c =>
@@ -5915,7 +5636,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get customer info
       const customerResult = await db.execute(sql`
         SELECT id, company_name FROM customers WHERE id = ${customerId}
-  `);
+      `);
       const customer = (customerResult.rows as any[])[0];
       if (!customer) {
         return res.status(404).json({ error: "Customer not found" });
@@ -5926,15 +5647,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If specific containerIds are provided, use those
       if (containerIds && Array.isArray(containerIds) && containerIds.length > 0) {
         // Get the specified containers - use IN clause with joined IDs
-        const containerIdsList = containerIds.map((id: string) => `'${id.replace(/'/g, "''")}'`).join(', ');
+        const containerIdsList = containerIds.map((id: string) => `'${id.replace(/'/g, "''")}'`).join(',');
         const containerResult = await db.execute(sql.raw(`
           WITH pm_data AS (
             SELECT 
               UPPER(TRIM(container_number)) as container_id,
-              MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
-              MAX(complaint_attended_date) as last_service_date
+              MAX(complaint_attended_date) as last_pm_date
             FROM service_history
-            WHERE container_number IS NOT NULL
+            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+              AND container_number IS NOT NULL
               AND container_number != ''
             GROUP BY UPPER(TRIM(container_number))
           )
@@ -5947,9 +5668,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
             END as days_since_pm,
             (CASE 
-              WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
-              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
-              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
+              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
               ELSE 'UP_TO_DATE'
             END)::text as pm_status
           FROM containers c
@@ -5964,10 +5685,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           WITH pm_data AS (
             SELECT 
               UPPER(TRIM(container_number)) as container_id,
-              MAX(CASE WHEN UPPER(work_type) LIKE '%PREVENTIVE%' THEN complaint_attended_date END) as last_pm_date,
-              MAX(complaint_attended_date) as last_service_date
+              MAX(complaint_attended_date) as last_pm_date
             FROM service_history
-            WHERE container_number IS NOT NULL
+            WHERE UPPER(work_type) LIKE '%PREVENTIVE%'
+              AND container_number IS NOT NULL
               AND container_number != ''
             GROUP BY UPPER(TRIM(container_number))
           )
@@ -5980,9 +5701,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ELSE EXTRACT(DAY FROM (NOW() - pm.last_pm_date))
             END as days_since_pm,
             (CASE 
-              WHEN pm.last_pm_date IS NULL AND pm.last_service_date IS NULL THEN 'NEVER'
-              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 90 THEN 'OVERDUE'
-              WHEN EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75 THEN 'DUE_SOON'
+              WHEN pm.last_pm_date IS NULL THEN 'NEVER'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 90 THEN 'OVERDUE'
+              WHEN EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75 THEN 'DUE_SOON'
               ELSE 'UP_TO_DATE'
             END)::text as pm_status
           FROM containers c
@@ -5990,8 +5711,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           WHERE c.status = 'active'
             AND c.assigned_client_id = ${customerId}
             AND (
-              (pm.last_pm_date IS NULL AND pm.last_service_date IS NULL)
-              OR EXTRACT(DAY FROM (NOW() - GREATEST(COALESCE(pm.last_pm_date, '1970-01-01'), COALESCE(pm.last_service_date, '1970-01-01')))) > 75
+              pm.last_pm_date IS NULL 
+              OR EXTRACT(DAY FROM (NOW() - pm.last_pm_date)) > 75
             )
           ORDER BY days_since_pm DESC
         `);
@@ -7144,15 +6865,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     };
   }
 
-  // Start Preventive Maintenance checker (runs daily at midnight) - DISABLED
-  // (async () => {
-  //   try {
-  //     const { startPMChecker } = await import('./services/preventive-maintenance');
-  //     startPMChecker();
-  //   } catch (error) {
-  //     console.error('[Routes] Failed to start PM checker:', error);
-  //   }
-  // })();
+  // Start Preventive Maintenance checker (runs daily at midnight)
+  (async () => {
+    try {
+      const { startPMChecker } = await import('./services/preventive-maintenance');
+      startPMChecker();
+    } catch (error) {
+      console.error('[Routes] Failed to start PM checker:', error);
+    }
+  })();
 
   // Customer routes
   app.get("/api/customers", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (req: AuthRequest, res) => {
@@ -7532,8 +7253,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get service requests assigned to this technician
       const allRequests = await storage.getAllServiceRequests();
-      const serviceRequests = allRequests.filter((sr: any) =>
-        sr.assignedTechnicianId === technicianId &&
+      const serviceRequests = allRequests.filter((sr: any) => 
+        sr.assignedTechnicianId === technicianId && 
         ['assigned', 'in_progress', 'scheduled'].includes(sr.status)
       );
 

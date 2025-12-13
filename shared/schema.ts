@@ -62,6 +62,7 @@ export const users = pgTable("users", {
   whatsappVerified: boolean("whatsapp_verified").default(false).notNull(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   requiresPasswordReset: boolean("requires_password_reset").default(false).notNull(),
+  passwordReminderSentAt: timestamp("password_reminder_sent_at"), // Tracks when 24-hour password reminder was sent
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }) as any;
@@ -676,6 +677,18 @@ export const dailySummaryAcknowledgment = pgTable("daily_summary_acknowledgment"
   acknowledgedAt: timestamp("acknowledged_at"),
 });
 
+// Finance Expenses table
+export const financeExpenses = pgTable("finance_expenses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  containerId: varchar("container_id").references(() => containers.id).notNull(),
+  technicianId: varchar("technician_id").references(() => technicians.id),
+  expenseType: varchar("expense_type").notNull(), // 'Travel', 'Material', 'Misc'
+  description: text("description"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  date: date("date").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations (updated according to PRD)
 export const usersRelations = relations(users, ({ one, many }) => ({
   customer: one(customers, { fields: [users.id], references: [customers.userId] }),
@@ -799,7 +812,13 @@ export const technicianTripTasksRelations = relations(technicianTripTasks, ({ on
   alert: one(alerts, { fields: [technicianTripTasks.alertId], references: [alerts.id] }),
 }));
 
+export const financeExpensesRelations = relations(financeExpenses, ({ one }) => ({
+  container: one(containers, { fields: [financeExpenses.containerId], references: [containers.id] }),
+  technician: one(technicians, { fields: [financeExpenses.technicianId], references: [technicians.id] }),
+}));
+
 // Insert schemas (updated according to PRD)
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export const insertTechnicianSchema = createInsertSchema(technicians).omit({ id: true, createdAt: true, updatedAt: true } as any);
@@ -818,6 +837,7 @@ export const insertInventorySchema = createInsertSchema(inventory).omit({ id: tr
 export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({ id: true, createdAt: true } as any);
 export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({ id: true, createdAt: true } as any);
 export const insertManualSchema = createInsertSchema(manuals).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertFinanceExpenseSchema = createInsertSchema(financeExpenses).omit({ id: true, createdAt: true } as any);
 export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true, embedding: true } as any);
 export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: true, createdAt: true } as any);
 // Technician Travel Planning insert schemas

@@ -164,13 +164,13 @@ class OrbcommIntegrationService {
         // Extreme temperature ranges only (previously -25 to 30)
         alertType = 'temperature';
         severity = 'high';
-        description = `Temperature critically out of range: ${temperature}°C`;
+        description = `Temperature critically out of range: ${Math.round(temperature)}°C`;
         shouldCreateAlert = true; // High: Critical temperature
       } else if (temperature && (temperature < -25 || temperature > 30)) {
         // Warning range (don't create alert, just log)
         alertType = 'temperature';
         severity = 'medium';
-        description = `Temperature warning: ${temperature}°C`;
+        description = `Temperature warning: ${Math.round(temperature)}°C`;
         shouldCreateAlert = false; // Medium: Just monitor, don't alert
       } else if (doorStatus === 'Open') {
         alertType = 'door';
@@ -210,7 +210,7 @@ class OrbcommIntegrationService {
         console.log(`  AssetID: ${assetId || 'N/A'}`);
         console.log(`  DeviceID: ${deviceId || 'N/A'}`);
         console.log(`  Location: ${latitude && longitude ? `${latitude}, ${longitude}` : 'N/A'}`);
-        console.log(`  Temperature: ${temperature !== undefined ? `${temperature}°C` : 'N/A'}`);
+        console.log(`  Temperature: ${temperature !== undefined ? `${Math.round(temperature)}°C` : 'N/A'}`);
         console.log(`  Power: ${powerStatus || 'N/A'}`);
         console.log(`  Battery: ${batteryLevel !== undefined ? `${Math.round(batteryLevel)}%` : 'N/A'}`);
         console.log(`  Door: ${doorStatus || 'N/A'}`);
@@ -384,10 +384,10 @@ class OrbcommIntegrationService {
         updates.locationLng = alert.longitude.toString();
       }
 
-      // Update temperature if available
+      // Update temperature if available - store as rounded integer
       const temperature = reeferData.TAmb || deviceData.DeviceTemp || eventData.Temperature;
       if (temperature !== undefined) {
-        updates.temperature = temperature;
+        updates.temperature = Math.round(temperature);
       }
 
       // Update power status
@@ -415,7 +415,7 @@ class OrbcommIntegrationService {
 
       // Store complete telemetry in lastTelemetry JSONB field
       updates.lastTelemetry = {
-        temperature: temperature,
+        temperature: temperature !== undefined ? Math.round(temperature) : undefined,
         powerStatus: powerStatus,
         batteryLevel: batteryLevel !== undefined ? Math.round(batteryLevel) : undefined,
         doorStatus: doorStatus,
@@ -443,7 +443,7 @@ class OrbcommIntegrationService {
 
       console.log(`📊 Updated container telemetry: ${alert.containerId}`, {
         location: alert.latitude && alert.longitude ? `${alert.latitude}, ${alert.longitude}` : 'N/A',
-        temperature: temperature !== undefined ? `${temperature}°C` : 'N/A',
+        temperature: temperature !== undefined ? `${Math.round(temperature)}°C` : 'N/A',
         power: powerStatus || 'N/A',
         battery: batteryLevel !== undefined ? `${Math.round(batteryLevel)}%` : 'N/A',
         door: doorStatus || 'N/A',
@@ -495,7 +495,7 @@ class OrbcommIntegrationService {
             deviceId: alert.deviceId,
             latitude: alert.latitude,
             longitude: alert.longitude,
-            temperature: temperature,
+            temperature: temperature !== undefined ? Math.round(temperature) : undefined,
             powerStatus: powerStatus,
             batteryLevel: batteryLevel !== undefined ? Math.round(batteryLevel) : undefined,
             doorStatus: doorStatus,
@@ -507,7 +507,7 @@ class OrbcommIntegrationService {
 
         console.log(`📡 Broadcasted container update: ${alert.containerId}`, {
           location: `${alert.latitude}, ${alert.longitude}`,
-          temperature: temperature !== undefined ? `${temperature}°C` : 'N/A',
+          temperature: temperature !== undefined ? `${Math.round(temperature)}°C` : 'N/A',
           power: powerStatus || 'N/A',
           battery: batteryLevel !== undefined ? `${Math.round(batteryLevel)}%` : 'N/A',
           door: doorStatus || 'N/A',
@@ -543,14 +543,17 @@ class OrbcommIntegrationService {
             const previousTemp = this.extractTemperatureFromDescription(recentDuplicate.description);
 
             if (currentTemp !== null && previousTemp !== null) {
-              const tempDifference = Math.abs(currentTemp - previousTemp);
-              const TEMPERATURE_THRESHOLD = 2.0; // Only create new alert if temp changed by ±2°C
+              // Round temperatures to whole numbers for comparison
+              const currentTempRounded = Math.round(currentTemp);
+              const previousTempRounded = Math.round(previousTemp);
+              const tempDifference = Math.abs(currentTempRounded - previousTempRounded);
+              const TEMPERATURE_THRESHOLD = 1; // Only create new alert if temp changed by ±1°C
 
               if (tempDifference < TEMPERATURE_THRESHOLD) {
-                console.log(`⏭️  Skipping temperature alert - change of ${tempDifference.toFixed(1)}°C is below threshold of ${TEMPERATURE_THRESHOLD}°C (current: ${currentTemp}°C, previous: ${previousTemp}°C)`);
+                console.log(`⏭️  Skipping temperature alert - change of ${tempDifference}°C is below threshold of ${TEMPERATURE_THRESHOLD}°C (current: ${currentTempRounded}°C, previous: ${previousTempRounded}°C)`);
                 return recentDuplicate;
               } else {
-                console.log(`✅ Temperature changed significantly by ${tempDifference.toFixed(1)}°C (${previousTemp}°C → ${currentTemp}°C) - creating new alert`);
+                console.log(`✅ Temperature changed significantly by ${tempDifference}°C (${previousTempRounded}°C → ${currentTempRounded}°C) - creating new alert`);
               }
             }
           } else {

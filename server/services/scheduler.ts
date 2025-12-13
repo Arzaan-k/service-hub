@@ -26,14 +26,14 @@ export class SchedulerService {
     try {
       const dateStr = targetDate.toISOString().split('T')[0];
       const schedule = await storage.getTechnicianSchedule(technicianId, dateStr);
-      
+
       // Filter out completed and cancelled requests
       const activeJobs = schedule.filter((req: any) => {
         const status = (req.status || '').toLowerCase();
-        return !['completed', 'cancelled'].includes(status) && 
-               !req.actualEndTime; // Also exclude if already completed
+        return !['completed', 'cancelled'].includes(status) &&
+          !req.actualEndTime; // Also exclude if already completed
       });
-      
+
       return activeJobs.length;
     } catch (error) {
       console.error(`[Scheduler] Error getting job count for tech ${technicianId}:`, error);
@@ -54,7 +54,7 @@ export class SchedulerService {
     // Extract keywords from issue description to infer required skills
     const issueDescription = (serviceRequest.issueDescription || '').toLowerCase();
     const requiredParts = serviceRequest.requiredParts || [];
-    
+
     // Common skill keywords
     const skillKeywords: Record<string, string[]> = {
       'electrical': ['electrical', 'wiring', 'circuit', 'voltage', 'power', 'motor', 'compressor'],
@@ -69,7 +69,7 @@ export class SchedulerService {
     const requiredSkills: string[] = [];
     for (const [skill, keywords] of Object.entries(skillKeywords)) {
       const hasKeyword = keywords.some(kw => issueDescription.includes(kw)) ||
-                        requiredParts.some((part: string) => keywords.some(kw => part.toLowerCase().includes(kw)));
+        requiredParts.some((part: string) => keywords.some(kw => part.toLowerCase().includes(kw)));
       if (hasKeyword) {
         requiredSkills.push(skill);
       }
@@ -82,7 +82,7 @@ export class SchedulerService {
 
     // Check if technician has at least one of the required skills
     const techSkills = technician.skills.map((s: string) => s.toLowerCase());
-    const hasRequiredSkill = requiredSkills.some(rs => 
+    const hasRequiredSkill = requiredSkills.some(rs =>
       techSkills.some(ts => ts.includes(rs.toLowerCase()) || rs.toLowerCase().includes(ts))
     );
 
@@ -96,7 +96,7 @@ export class SchedulerService {
     try {
       const dateStr = targetDate.toISOString().split('T')[0];
       const schedule = await storage.getTechnicianSchedule(technicianId, dateStr);
-      
+
       // If no existing schedule, no overlap
       if (!schedule || schedule.length === 0) {
         return false;
@@ -167,7 +167,7 @@ export class SchedulerService {
    */
   private async getEligibleTechnicians(): Promise<any[]> {
     const allTechnicians = await storage.getAllTechnicians();
-    
+
     // Filter out technicians who are:
     // - off_duty (on leave)
     // - inactive (if status field indicates this)
@@ -193,6 +193,13 @@ export class SchedulerService {
       return { assigned: false, reason: "Container not found" };
     }
 
+    // Check if it's a PM request - exclude from auto-assignment
+    const issueDescription = (request.issueDescription || '').toLowerCase();
+    if (issueDescription.includes('preventive maintenance')) {
+      console.log(`[Scheduler] Skipping auto-assignment for PM request ${request.requestNumber}`);
+      return { assigned: false, reason: "Preventive Maintenance requests are excluded from auto-assignment" };
+    }
+
     // If container doesn't have location, use a default location
     let containerLocation = container.currentLocation;
     if (!containerLocation || typeof containerLocation.lat !== 'number' || typeof containerLocation.lng !== 'number') {
@@ -203,7 +210,7 @@ export class SchedulerService {
     // Get eligible technicians (not on leave, not inactive)
     const eligibleTechs = await this.getEligibleTechnicians();
     console.log('[Scheduler] Eligible technicians:', eligibleTechs.length);
-    
+
     if (eligibleTechs.length === 0) {
       return { assigned: false, reason: "No eligible technicians (all on leave or inactive)" };
     }
@@ -265,8 +272,8 @@ export class SchedulerService {
           serviceRequestIds.map(id => storage.getServiceRequest(id).catch(() => null))
         );
         // Filter for pending or scheduled requests without technicians
-        pendingRequests = pendingRequests.filter(req => 
-          req && 
+        pendingRequests = pendingRequests.filter(req =>
+          req &&
           !req.assignedTechnicianId &&
           (req.status === 'pending' || req.status === 'scheduled') &&
           !req.actualStartTime &&
@@ -277,14 +284,20 @@ export class SchedulerService {
         const pending = await storage.getPendingServiceRequests();
         // Also get scheduled requests without technicians
         const scheduled = await storage.getServiceRequestsByStatus('scheduled');
-        const unassignedScheduled = scheduled.filter((req: any) => 
-          !req.assignedTechnicianId && 
+        const unassignedScheduled = scheduled.filter((req: any) =>
+          !req.assignedTechnicianId &&
           !req.actualStartTime &&
           !req.actualEndTime &&
           !pending.find((p: any) => p.id === req.id) // Avoid duplicates
         );
         pendingRequests = [...pending.filter((req: any) => !req.assignedTechnicianId), ...unassignedScheduled];
       }
+
+      // Filter out PM requests
+      pendingRequests = pendingRequests.filter(req => {
+        const issueDescription = (req.issueDescription || '').toLowerCase();
+        return !issueDescription.includes('preventive maintenance');
+      });
 
       console.log(`[Scheduler] Distributing ${pendingRequests.length} unassigned requests using load-balanced scoring`);
 
@@ -295,7 +308,7 @@ export class SchedulerService {
       // Get eligible technicians (not on leave, not inactive)
       const candidateTechs = await this.getEligibleTechnicians();
       console.log(`[Scheduler] Total technician pool: ${candidateTechs.length} eligible technicians`);
-      
+
       if (candidateTechs.length === 0) {
         return {
           success: false,
@@ -374,19 +387,19 @@ export class SchedulerService {
           // Assign the request
           const scheduledDate = targetDate;
           const scheduledTimeWindow = request.scheduledTimeWindow || "ASAP";
-          
+
           try {
             await storage.assignServiceRequest(request.id, selectedTech.id, scheduledDate, scheduledTimeWindow);
-            
+
             // Update distribution tracking
             distribution[selectedTech.id] = (distribution[selectedTech.id] || 0) + 1;
-            
+
             assignments.push({
               assigned: true,
               requestId: request.id,
               technicianId: selectedTech.id
             });
-            
+
             console.log(`[Scheduler] Assigned request ${request.id} to technician ${selectedTech.id} on ${dateStr}`);
           } catch (error: any) {
             console.error(`[Scheduler] Error assigning request ${request.id}:`, error);
@@ -435,13 +448,13 @@ export class SchedulerService {
     try {
       const dateStr = date.toISOString().split('T')[0];
       const schedule = await storage.getTechnicianSchedule(technicianId, dateStr);
-      
+
       // Count only active jobs (not completed/cancelled) scheduled for this date
       const activeJobs = schedule.filter((req: any) => {
         const status = (req.status || '').toLowerCase();
         return !['completed', 'cancelled'].includes(status) && !req.actualEndTime;
       });
-      
+
       return activeJobs.length;
     } catch (error) {
       console.error(`[AutoAssign] Error getting job count for tech ${technicianId} on ${date.toISOString()}:`, error);
@@ -457,7 +470,7 @@ export class SchedulerService {
     const maxJobsPerDay = 3;
     let currentDate = new Date(startDate);
     currentDate.setHours(0, 0, 0, 0);
-    
+
     // Look up to 30 days ahead
     for (let i = 0; i < 30; i++) {
       const jobCount = await this.getJobCountForDate(technicianId, currentDate);
@@ -468,7 +481,7 @@ export class SchedulerService {
       currentDate = new Date(currentDate);
       currentDate.setDate(currentDate.getDate() + 1);
     }
-    
+
     // If no slot found in 30 days, return the 30th day anyway (better than failing)
     return currentDate;
   }
@@ -498,9 +511,9 @@ export class SchedulerService {
 
       // 1. Get all technicians and filter for internal only with valid status
       const allTechnicians = await storage.getAllTechnicians();
-      
+
       console.log(`[AutoAssign] Total technicians in database: ${allTechnicians.length}`);
-      
+
       // Try to get category field from database if it exists (might not be in schema)
       const { db } = await import('../db');
       const { sql } = await import('drizzle-orm');
@@ -522,7 +535,7 @@ export class SchedulerService {
         // Category field might not exist, that's okay - we'll treat null as internal
         console.log('[AutoAssign] Category field not accessible, will treat null/undefined as internal');
       }
-      
+
       // Filter: category='internal' AND status IN ('available','on_duty')
       // Note: technician_status enum values are: 'available', 'on_duty', 'busy', 'off_duty'
       // If category field doesn't exist or is null, treat as internal (exclude only explicitly third-party)
@@ -530,17 +543,17 @@ export class SchedulerService {
         .filter((tech: any) => {
           const category = (tech.category || '').toLowerCase();
           const status = (tech.status || '').toLowerCase();
-          
+
           // Exclude third-party technicians
           const isThirdParty = category === 'third-party' || category === 'thirdparty';
           if (isThirdParty) return false;
-          
+
           // Include if category is 'internal' OR if category is null/undefined (treat as internal)
           const isInternal = category === 'internal' || !tech.category;
-          
+
           // Valid statuses from technician_status enum: 'available', 'on_duty'
           const isValidStatus = ['available', 'on_duty'].includes(status);
-          
+
           return isInternal && isValidStatus;
         })
         // Stable ordering so round-robin is deterministic
@@ -548,8 +561,8 @@ export class SchedulerService {
 
       console.log(
         `[AutoAssign] Eligible internal techs (category='internal' AND status IN ('available','on_duty')):`,
-        eligibleTechs.map((t: any) => ({ 
-          id: t.id, 
+        eligibleTechs.map((t: any) => ({
+          id: t.id,
           name: t.name || t.employeeCode,
           status: t.status,
           category: t.category
@@ -558,9 +571,9 @@ export class SchedulerService {
 
       // Log all technicians for debugging
       if (allTechnicians.length > 0) {
-        console.log(`[AutoAssign] All technicians sample:`, 
-          allTechnicians.slice(0, 10).map((t: any) => ({ 
-            id: t.id, 
+        console.log(`[AutoAssign] All technicians sample:`,
+          allTechnicians.slice(0, 10).map((t: any) => ({
+            id: t.id,
             name: t.name || t.employeeCode,
             status: t.status,
             category: t.category || '(null)'
@@ -581,7 +594,7 @@ export class SchedulerService {
           acc[cat] = (acc[cat] || 0) + 1;
           return acc;
         }, {});
-        
+
         const err: any = new Error(
           `No eligible internal technicians found. ` +
           `Technicians must have category='internal' (or null/undefined) AND status IN ('available','on_duty'). ` +
@@ -607,6 +620,13 @@ export class SchedulerService {
       let unassignedRequests = allRequests.filter((req: any) => {
         if (!req || !req.id) return false;
         const status = (req.status || '').toLowerCase();
+        const issueDescription = (req.issueDescription || '').toLowerCase();
+
+        // Exclude PM requests from auto-assignment
+        if (issueDescription.includes('preventive maintenance')) {
+          return false;
+        }
+
         return (
           !req.assignedTechnicianId &&
           !excludedStatuses.has(status)
@@ -645,7 +665,7 @@ export class SchedulerService {
       const numRequests = unassignedRequests.length;
       const baseCount = Math.floor(numRequests / numTechs);
       const remainder = numRequests % numTechs;
-      
+
       // First 'remainder' techs get (baseCount + 1) tasks, rest get baseCount tasks
       const assignmentsPerTech: number[] = [];
       for (let i = 0; i < numTechs; i++) {
@@ -665,7 +685,7 @@ export class SchedulerService {
         const tech = eligibleTechs[techIndex];
         const techId = tech.id;
         const targetCount = assignmentsPerTech[techIndex];
-        
+
         // Assign 'targetCount' requests to this tech
         for (let i = 0; i < targetCount && requestIndex < unassignedRequests.length; i++) {
           const request = unassignedRequests[requestIndex];
@@ -766,7 +786,7 @@ export class SchedulerService {
 
     // Get pending service requests
     const pendingRequests = await storage.getPendingServiceRequests();
-    
+
     if (pendingRequests.length === 0) {
       console.log('[Scheduler] No pending service requests');
       return;
@@ -774,15 +794,15 @@ export class SchedulerService {
 
     // Get active technicians (simplified - in production, check availability)
     const allUsers = await storage.getAllContainers(); // This is a workaround, need to implement getAllUsers
-    
+
     // Group requests by geographic proximity (simplified clustering)
     const clusters = this.clusterByLocation(pendingRequests);
-    
+
     // Assign to technicians
     for (const cluster of clusters) {
       // Find best technician (simplified - just get first available)
       // In production: check skills, availability, current location
-      
+
       const schedule = await storage.createSchedule({
         technicianId: cluster.technicianId || 'default-tech-id',
         date: date,
@@ -813,7 +833,7 @@ export class SchedulerService {
   private clusterByLocation(requests: any[]): any[] {
     // Simplified clustering - in production use K-means or similar
     // For now, just group by proximity
-    
+
     const clusters: any[] = [];
     const processed = new Set<string>();
 
@@ -833,7 +853,7 @@ export class SchedulerService {
       // Find nearby requests (within ~50km)
       for (const other of requests) {
         if (processed.has(other.id)) continue;
-        
+
         // Simplified distance check
         cluster.requests.push(other);
         processed.add(other.id);
@@ -872,7 +892,7 @@ export class SchedulerService {
 Good morning! You have no scheduled service requests for today.
 
 Have a great day! 🌟`;
-      
+
       const { whatsappService } = await import('./whatsapp');
       await whatsappService.sendMessage(user.phoneNumber, message);
       return;
@@ -889,7 +909,7 @@ Good morning! Here's your schedule for today:
       const req = todayRequests[i];
       const container = await storage.getContainer(req.containerId);
       const customer = await storage.getCustomer(req.customerId);
-      
+
       message += `${i + 1}. ${req.scheduledTimeWindow || 'TBD'} - ${req.requestNumber}
    📦 Container: ${container?.containerCode}
    🏢 Customer: ${customer?.companyName}
@@ -914,7 +934,7 @@ Estimated total time: ${todayRequests.reduce((sum, req) => sum + (req.estimatedD
    */
   async sendDailySchedulesToAllTechnicians(date: Date = new Date()): Promise<void> {
     const technicians = await storage.getAllTechnicians();
-    
+
     for (const tech of technicians) {
       try {
         await this.sendDailyScheduleToTechnician(tech.id, date);
@@ -926,16 +946,16 @@ Estimated total time: ${todayRequests.reduce((sum, req) => sum + (req.estimatedD
 
   startDailyScheduling() {
     console.log('[Scheduler] Starting daily scheduling at 6 PM');
-    
+
     const scheduleDaily = async () => {
       const now = new Date();
       const targetHour = 18; // 6 PM
-      
+
       if (now.getHours() === targetHour) {
         const tomorrow = new Date(now);
         tomorrow.setDate(tomorrow.getDate() + 1);
         await this.generateDailySchedules(tomorrow);
-        
+
         // Send schedules to technicians for tomorrow
         await this.sendDailySchedulesToAllTechnicians(tomorrow);
       }
@@ -943,7 +963,7 @@ Estimated total time: ${todayRequests.reduce((sum, req) => sum + (req.estimatedD
 
     // Check every hour
     setInterval(scheduleDaily, 60 * 60 * 1000);
-    
+
     // Also run immediately for testing
     this.generateDailySchedules();
   }
