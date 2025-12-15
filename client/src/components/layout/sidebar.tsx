@@ -1,11 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { getCurrentUser, clearAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Sidebar() {
   const [location] = useLocation();
   const user = getCurrentUser();
+  const [unreadTrainingCount, setUnreadTrainingCount] = useState<number>(0);
 
   // Close sidebar on route change for mobile
   useEffect(() => {
@@ -16,6 +18,28 @@ export default function Sidebar() {
     };
     handleRouteChange();
   }, [location]);
+
+  // Fetch unread training count for clients and technicians
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      const role = (user?.role || "client").toLowerCase();
+      if (role === "client" || role === "technician" || role === "senior_technician") {
+        try {
+          const response = await apiRequest('GET', '/api/training/unread-count');
+          const data = await response.json();
+          setUnreadTrainingCount(data.count || 0);
+        } catch (error) {
+          console.error('Error fetching unread training count:', error);
+        }
+      }
+    };
+
+    fetchUnreadCount();
+    
+    // Refresh count every 5 minutes
+    const interval = setInterval(fetchUnreadCount, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user?.role]);
 
   const role = (user?.role || "client").toLowerCase();
   const navItems = [
@@ -46,6 +70,10 @@ export default function Sidebar() {
 
     // Inventory - Admin, Technician, Senior Technician
     { path: "/inventory", label: "Inventory", icon: "fas fa-warehouse", roles: ["admin", "technician", "senior_technician"] },
+
+    // Training - Clients and Technicians see their materials, Admin manages
+    { path: "/training", label: "Training", icon: "fas fa-book-open", badge: unreadTrainingCount > 0 ? String(unreadTrainingCount) : undefined, roles: ["client", "technician", "senior_technician"], highlight: unreadTrainingCount > 0 },
+    { path: "/admin/training", label: "Training", icon: "fas fa-book-open", roles: ["admin", "super_admin"] },
 
     // User Management - Admin only
     { path: "/admin/user-management", label: "User Management", icon: "fas fa-users-cog", roles: ["admin"] },

@@ -36,6 +36,8 @@ import ResetPassword from "@/pages/reset-password";
 import ContainerSpend from "@/pages/finance/container-spend";
 import FinanceOverview from "@/pages/finance/overview";
 import TechnicianSpend from "@/pages/finance/technician-spend";
+import Training from "@/pages/training";
+import AdminTraining from "@/pages/admin-training";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -145,6 +147,12 @@ function Router() {
       </Route>
       <Route path="/finance/technician-spend">
         {() => <ProtectedRoute component={TechnicianSpend} roles={["admin", "super_admin"]} />}
+      </Route>
+      <Route path="/training">
+        {() => <ProtectedRoute component={Training} roles={["client", "technician"]} />}
+      </Route>
+      <Route path="/admin/training">
+        {() => <ProtectedRoute component={AdminTraining} roles={["admin", "super_admin"]} />}
       </Route>
     </Switch>
   );
