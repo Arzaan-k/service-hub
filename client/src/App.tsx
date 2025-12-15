@@ -149,7 +149,7 @@ function Router() {
         {() => <ProtectedRoute component={TechnicianSpend} roles={["admin", "super_admin"]} />}
       </Route>
       <Route path="/training">
-        {() => <ProtectedRoute component={Training} roles={["client", "technician"]} />}
+        {() => <ProtectedRoute component={Training} roles={["client", "technician", "senior_technician", "amc"]} />}
       </Route>
       <Route path="/admin/training">
         {() => <ProtectedRoute component={AdminTraining} roles={["admin", "super_admin"]} />}
