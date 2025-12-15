@@ -303,14 +303,7 @@ export function PlannedTripsList({ onTripSelected }: PlannedTripsListProps) {
                         <FileText className="h-3 w-3" />
                         PDF
                       </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleSendToFinance(trip)}
-                        className="gap-1"
-                      >
-                        <Send className="h-3 w-3" />
-                        Send
-                      </Button>
+
                     </div>
                   </TableCell>
                 </TableRow>

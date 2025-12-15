@@ -103,7 +103,7 @@ const extractBaseCity = (baseLocation: any): string => {
  */
 const extractTechnicianServiceAreas = (technician: Technician): string[] => {
   const areas: string[] = [];
-  
+
   // Extract from baseLocation
   const baseCity = extractBaseCity((technician as any).baseLocation || null);
   if (baseCity && baseCity !== "Unknown") {
@@ -114,7 +114,7 @@ const extractTechnicianServiceAreas = (technician: Technician): string[] => {
       areas.push(cityMatch[1].trim());
     }
   }
-  
+
   // Add serviceAreas if they exist
   if (technician.serviceAreas && Array.isArray(technician.serviceAreas)) {
     technician.serviceAreas.forEach(area => {
@@ -126,7 +126,7 @@ const extractTechnicianServiceAreas = (technician: Technician): string[] => {
       }
     });
   }
-  
+
   return areas.filter(area => area && area !== "Unknown");
 };
 
@@ -140,14 +140,14 @@ const collectTechnicianAreaTaskCandidates = async (
   endDate: Date
 ): Promise<CityTaskCandidate[]> => {
   const serviceAreas = extractTechnicianServiceAreas(technician);
-  
+
   if (serviceAreas.length === 0) {
     throw new Error("Technician has no service areas configured. Please set baseLocation or serviceAreas.");
   }
-  
+
   // Build search patterns for all service areas
   const patterns = serviceAreas.map(area => `%${area.trim()}%`);
-  
+
   // Find containers matching any of the service areas
   const containerRows = await db
     .select({
@@ -365,11 +365,11 @@ export const formatCostRecordForClient = (record?: TechnicianTripCost | null, cu
 
   const total = toNumber(
     record?.totalEstimatedCost ||
-      result.travelFare.value +
-        result.stayCost.value +
-        result.dailyAllowance.value +
-        result.localTravelCost.value +
-        result.miscCost.value
+    result.travelFare.value +
+    result.stayCost.value +
+    result.dailyAllowance.value +
+    result.localTravelCost.value +
+    result.miscCost.value
   );
 
   return {
@@ -425,16 +425,16 @@ export const calculateCostEstimates = async (
   // Calculate costs according to requirements
   // travelFare = estimated default constant (₹1000) if no distance method exists
   const travelFare = 1000; // Default constant
-  
+
   // stayCost = technician.hotelAllowance * numberOfDays (using nights, no multiplier)
   const stayCost = roundCurrency(nights * hotelAllowance);
-  
+
   // dailyAllowance = technician.personalAllowance * numberOfDays (no multiplier)
   const dailyAllowance = roundCurrency(days * personalAllowance);
-  
+
   // localTravelCost = technician.localTravelAllowance * numberOfDays (with multiplier for location)
   const localTravelCost = roundCurrency(days * localTravelAllowance * multiplier);
-  
+
   // miscellaneous = 0 for now (as per requirements)
   const miscellaneous = 0;
 
@@ -551,297 +551,297 @@ const collectCityTaskCandidates = async (destinationCity: string, startDate: Dat
       return [];
     }
 
-  const containerIds = containerRows.map((row) => row.id);
-  const selected = new Map<string, CityTaskCandidate>();
+    const containerIds = containerRows.map((row) => row.id);
+    const selected = new Map<string, CityTaskCandidate>();
 
-  const addCandidate = (candidate: CityTaskCandidate) => {
-    if (!candidate.containerId || selected.has(candidate.containerId)) return;
-    selected.set(candidate.containerId, candidate);
-  };
+    const addCandidate = (candidate: CityTaskCandidate) => {
+      if (!candidate.containerId || selected.has(candidate.containerId)) return;
+      selected.set(candidate.containerId, candidate);
+    };
 
-  // PM system integration: Use 90-day threshold (3 months)
-  const PM_THRESHOLD_DAYS = 90;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  // Compute last PM date from service_requests table
-  // Get MAX(actualEndTime) for completed PM service requests
-  const lastPmDateMap = new Map<string, Date>();
-  
-  try {
-    if (containerIds.length > 0) {
-      const completedPMRequests = await db
-        .select({
-          containerId: serviceRequests.containerId,
-          actualEndTime: serviceRequests.actualEndTime,
-        })
-        .from(serviceRequests)
-        .where(
-          and(
-            inArray(serviceRequests.containerId, containerIds),
-            or(
-              ilike(serviceRequests.issueDescription, '%Preventive Maintenance%'),
-              ilike(serviceRequests.issueDescription, '%PM%'),
-              ilike(serviceRequests.workType, '%PM%')
-            ),
-            inArray(serviceRequests.status, ['completed']),
-            sql`${serviceRequests.actualEndTime} IS NOT NULL`
+    // PM system integration: Use 90-day threshold (3 months)
+    const PM_THRESHOLD_DAYS = 90;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Compute last PM date from service_requests table
+    // Get MAX(actualEndTime) for completed PM service requests
+    const lastPmDateMap = new Map<string, Date>();
+
+    try {
+      if (containerIds.length > 0) {
+        const completedPMRequests = await db
+          .select({
+            containerId: serviceRequests.containerId,
+            actualEndTime: serviceRequests.actualEndTime,
+          })
+          .from(serviceRequests)
+          .where(
+            and(
+              inArray(serviceRequests.containerId, containerIds),
+              or(
+                ilike(serviceRequests.issueDescription, '%Preventive Maintenance%'),
+                ilike(serviceRequests.issueDescription, '%PM%'),
+                ilike(serviceRequests.workType, '%PM%')
+              ),
+              inArray(serviceRequests.status, ['completed']),
+              sql`${serviceRequests.actualEndTime} IS NOT NULL`
+            )
           )
-        )
-        .limit(10000); // Safety limit
+          .limit(10000); // Safety limit
 
-      // Group by containerId and get the most recent PM date (MAX)
-      completedPMRequests.forEach((req: any) => {
-        if (req.containerId && req.actualEndTime) {
-          try {
-            const existing = lastPmDateMap.get(req.containerId);
-            const currentDate = new Date(req.actualEndTime);
-            if (!existing || currentDate > existing) {
-              lastPmDateMap.set(req.containerId, currentDate);
+        // Group by containerId and get the most recent PM date (MAX)
+        completedPMRequests.forEach((req: any) => {
+          if (req.containerId && req.actualEndTime) {
+            try {
+              const existing = lastPmDateMap.get(req.containerId);
+              const currentDate = new Date(req.actualEndTime);
+              if (!existing || currentDate > existing) {
+                lastPmDateMap.set(req.containerId, currentDate);
+              }
+            } catch (dateError) {
+              console.warn(`[Travel Planning] Invalid date for container ${req.containerId}:`, req.actualEndTime);
             }
-          } catch (dateError) {
-            console.warn(`[Travel Planning] Invalid date for container ${req.containerId}:`, req.actualEndTime);
           }
-        }
-      });
-    }
-  } catch (pmDateError: any) {
-    console.error('[Travel Planning] Error computing last PM dates:', pmDateError);
-    // Continue with empty map - containers without PM history will use createdAt fallback
-  }
-  
-  // First, check for PM-due containers using computed last PM dates
-  const pmDueContainers: Array<{ containerId: string; daysSinceLastPM: number; priority: string }> = [];
-  
-  for (const container of containerRows) {
-    let needsPM = false;
-    let daysSinceLastPM = 0;
-    let priority = 'HIGH';
-    
-    // Get computed last PM date from service history
-    const computedLastPmDate = lastPmDateMap.get(container.id);
-    
-    if (computedLastPmDate) {
-      // Use computed last PM date
-      const lastPmDate = new Date(computedLastPmDate);
-      lastPmDate.setHours(0, 0, 0, 0);
-      daysSinceLastPM = Math.floor((today.getTime() - lastPmDate.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (daysSinceLastPM >= PM_THRESHOLD_DAYS) {
-        needsPM = true;
-        priority = daysSinceLastPM > PM_THRESHOLD_DAYS + 30 ? 'CRITICAL' : 'HIGH';
-      }
-    } else if (container.createdAt) {
-      // If no PM history, check if container is old enough (created > 90 days ago)
-      const createdDate = new Date(container.createdAt);
-      daysSinceLastPM = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (daysSinceLastPM >= PM_THRESHOLD_DAYS) {
-        needsPM = true;
-        priority = 'HIGH';
-      }
-    }
-    
-    // Also check for existing PM service requests (pending/scheduled)
-    if (needsPM) {
-      const existingPMRequest = await db
-        .select({ id: serviceRequests.id })
-        .from(serviceRequests)
-        .where(
-          and(
-            eq(serviceRequests.containerId, container.id),
-            or(
-              ilike(serviceRequests.issueDescription, '%Preventive Maintenance%'),
-              ilike(serviceRequests.issueDescription, '%PM%')
-            ),
-            inArray(serviceRequests.status, ['pending', 'approved', 'scheduled']),
-            sql`${serviceRequests.actualEndTime} IS NULL`
-          )
-        )
-        .limit(1);
-      
-      // Only add if no existing PM request
-      if (existingPMRequest.length === 0) {
-        pmDueContainers.push({
-          containerId: container.id,
-          daysSinceLastPM,
-          priority,
         });
       }
+    } catch (pmDateError: any) {
+      console.error('[Travel Planning] Error computing last PM dates:', pmDateError);
+      // Continue with empty map - containers without PM history will use createdAt fallback
     }
-  }
-  
-  // Add PM-due containers FIRST (top priority)
-  for (const pmContainer of pmDueContainers) {
-    const container = containerRows.find(c => c.id === pmContainer.containerId);
-    if (!container) continue;
-    
-    const areaName = container.depot || container.customerName || trimmedCity;
-    addCandidate({
-      containerId: container.id,
-      siteName: container.customerName || container.depot || areaName,
-      customerId: container.customerId,
-      taskType: 'pm',
-      priority: pmContainer.priority,
-      scheduledDate: startDate,
-      estimatedDurationHours: 2,
-      notes: `Preventive Maintenance - ${pmContainer.daysSinceLastPM} days since last PM (90-day threshold)`,
-    });
-  }
-  
-  // Fallback: Check service history for containers without PM system data
-  const lastServiceDates = new Map<string, Date>();
-  const completedRequests = await db
-    .select({
-      containerId: serviceRequests.containerId,
-      completedAt: serviceRequests.actualEndTime,
-    })
-    .from(serviceRequests)
-    .where(
-      and(
-        inArray(serviceRequests.containerId, containerIds),
-        eq(serviceRequests.status, 'completed'),
-        sql`${serviceRequests.actualEndTime} IS NOT NULL`
-      )
-    );
 
-  completedRequests.forEach((request) => {
-    if (!request.containerId || !request.completedAt) return;
-    const completedAt = new Date(request.completedAt);
-    const existing = lastServiceDates.get(request.containerId);
-    if (!existing || completedAt > existing) {
-      lastServiceDates.set(request.containerId, completedAt);
-    }
-  });
+    // First, check for PM-due containers using computed last PM dates
+    const pmDueContainers: Array<{ containerId: string; daysSinceLastPM: number; priority: string }> = [];
 
-  try {
-    const history = await db.execute(sql`
-      SELECT container_number, MAX(complaint_attended_date) AS last_service_date
-      FROM service_history
-      WHERE container_number IN (${sql.join(containerRows.map((row) => sql`${row.containerCode}`), sql`, `)})
-      GROUP BY container_number
-    `);
-    const codeToId = new Map(containerRows.map((row) => [row.containerCode, row.id]));
-    const rows = Array.isArray(history) ? history : history.rows || [];
-    rows.forEach((row: any) => {
-      if (!row?.container_number || !row?.last_service_date) return;
-      const containerId = codeToId.get(row.container_number);
-      if (!containerId) return;
-      const date = new Date(row.last_service_date);
-      const existing = lastServiceDates.get(containerId);
-      if (!existing || date > existing) {
-        lastServiceDates.set(containerId, date);
+    for (const container of containerRows) {
+      let needsPM = false;
+      let daysSinceLastPM = 0;
+      let priority = 'HIGH';
+
+      // Get computed last PM date from service history
+      const computedLastPmDate = lastPmDateMap.get(container.id);
+
+      if (computedLastPmDate) {
+        // Use computed last PM date
+        const lastPmDate = new Date(computedLastPmDate);
+        lastPmDate.setHours(0, 0, 0, 0);
+        daysSinceLastPM = Math.floor((today.getTime() - lastPmDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (daysSinceLastPM >= PM_THRESHOLD_DAYS) {
+          needsPM = true;
+          priority = daysSinceLastPM > PM_THRESHOLD_DAYS + 30 ? 'CRITICAL' : 'HIGH';
+        }
+      } else if (container.createdAt) {
+        // If no PM history, check if container is old enough (created > 90 days ago)
+        const createdDate = new Date(container.createdAt);
+        daysSinceLastPM = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (daysSinceLastPM >= PM_THRESHOLD_DAYS) {
+          needsPM = true;
+          priority = 'HIGH';
+        }
       }
-    });
-  } catch {
-    // ignore
-  }
 
-  // Check remaining containers (not already in PM list) for service history-based PM
-  for (const container of containerRows) {
-    // Skip if already added as PM-due
-    if (pmDueContainers.some(pm => pm.containerId === container.id)) continue;
-    
-    const lastServiceDate = lastServiceDates.get(container.id);
-    let needsPM = false;
-    let pmReason = '';
+      // Also check for existing PM service requests (pending/scheduled)
+      if (needsPM) {
+        const existingPMRequest = await db
+          .select({ id: serviceRequests.id })
+          .from(serviceRequests)
+          .where(
+            and(
+              eq(serviceRequests.containerId, container.id),
+              or(
+                ilike(serviceRequests.issueDescription, '%Preventive Maintenance%'),
+                ilike(serviceRequests.issueDescription, '%PM%')
+              ),
+              inArray(serviceRequests.status, ['pending', 'approved', 'scheduled']),
+              sql`${serviceRequests.actualEndTime} IS NULL`
+            )
+          )
+          .limit(1);
 
-    if (!lastServiceDate) {
-      // No service history - might need PM
-      needsPM = true;
-      pmReason = 'No service history found';
-    } else {
-      const nextDue = new Date(lastServiceDate);
-      nextDue.setDate(nextDue.getDate() + PM_THRESHOLD_DAYS);
-      if (nextDue <= endDate && nextDue >= startDate) {
-        needsPM = true;
-        pmReason = `PM due ${nextDue.toISOString().split('T')[0]}`;
-      } else if (nextDue < today) {
-        needsPM = true;
-        pmReason = `PM overdue since ${nextDue.toISOString().split('T')[0]}`;
+        // Only add if no existing PM request
+        if (existingPMRequest.length === 0) {
+          pmDueContainers.push({
+            containerId: container.id,
+            daysSinceLastPM,
+            priority,
+          });
+        }
       }
     }
 
-    if (needsPM) {
+    // Add PM-due containers FIRST (top priority)
+    for (const pmContainer of pmDueContainers) {
+      const container = containerRows.find(c => c.id === pmContainer.containerId);
+      if (!container) continue;
+
       const areaName = container.depot || container.customerName || trimmedCity;
       addCandidate({
         containerId: container.id,
         siteName: container.customerName || container.depot || areaName,
         customerId: container.customerId,
         taskType: 'pm',
-        priority: pmReason.includes('overdue') ? 'CRITICAL' : 'HIGH',
+        priority: pmContainer.priority,
         scheduledDate: startDate,
         estimatedDurationHours: 2,
-        notes: pmReason,
+        notes: `Preventive Maintenance - ${pmContainer.daysSinceLastPM} days since last PM (90-day threshold)`,
       });
     }
-  }
 
-  const alertsRows = await db
-    .select({
-      alert: alerts,
-      container: containers,
-      customerName: customers.companyName,
-      customerId: customers.id,
-    })
-    .from(alerts)
-    .innerJoin(containers, eq(alerts.containerId, containers.id))
-    .leftJoin(customers, eq(containers.currentCustomerId, customers.id))
-    .where(
-      and(
-        inArray(alerts.containerId, containerIds),
-        isNull(alerts.resolvedAt)
-      )
-    );
+    // Fallback: Check service history for containers without PM system data
+    const lastServiceDates = new Map<string, Date>();
+    const completedRequests = await db
+      .select({
+        containerId: serviceRequests.containerId,
+        completedAt: serviceRequests.actualEndTime,
+      })
+      .from(serviceRequests)
+      .where(
+        and(
+          inArray(serviceRequests.containerId, containerIds),
+          eq(serviceRequests.status, 'completed'),
+          sql`${serviceRequests.actualEndTime} IS NOT NULL`
+        )
+      );
 
-  for (const row of alertsRows) {
-    const containerId = row.container?.id;
-    if (!containerId || selected.has(containerId)) continue;
-    addCandidate({
-      containerId,
-      siteName: row.customerName || row.container.depot || trimmedCity,
-      customerId: row.customerId,
-      taskType: 'alert',
-      priority: row.alert.severity === 'critical' ? 'CRITICAL' : row.alert.severity === 'high' ? 'HIGH' : 'MEDIUM',
-      scheduledDate: startDate,
-      estimatedDurationHours: row.alert.estimatedServiceTime ? Math.ceil(row.alert.estimatedServiceTime / 60) : 1,
-      alertId: row.alert.id,
-      notes: `Open alert: ${row.alert.title}`,
+    completedRequests.forEach((request) => {
+      if (!request.containerId || !request.completedAt) return;
+      const completedAt = new Date(request.completedAt);
+      const existing = lastServiceDates.get(request.containerId);
+      if (!existing || completedAt > existing) {
+        lastServiceDates.set(request.containerId, completedAt);
+      }
     });
-  }
 
-  const pendingRequests = await db
-    .select({
-      serviceRequest: serviceRequests,
-      container: containers,
-      customerName: customers.companyName,
-      customerId: customers.id,
-    })
-    .from(serviceRequests)
-    .innerJoin(containers, eq(serviceRequests.containerId, containers.id))
-    .leftJoin(customers, eq(containers.currentCustomerId, customers.id))
-    .where(
-      and(
-        inArray(serviceRequests.containerId, containerIds),
-        inArray(serviceRequests.status, ['pending', 'approved', 'scheduled'])
-      )
-    );
+    try {
+      const history = await db.execute(sql`
+      SELECT container_number, MAX(complaint_attended_date) AS last_service_date
+      FROM service_history
+      WHERE container_number IN (${sql.join(containerRows.map((row) => sql`${row.containerCode}`), sql`, `)})
+      GROUP BY container_number
+    `);
+      const codeToId = new Map(containerRows.map((row) => [row.containerCode, row.id]));
+      const rows = Array.isArray(history) ? history : history.rows || [];
+      rows.forEach((row: any) => {
+        if (!row?.container_number || !row?.last_service_date) return;
+        const containerId = codeToId.get(row.container_number);
+        if (!containerId) return;
+        const date = new Date(row.last_service_date);
+        const existing = lastServiceDates.get(containerId);
+        if (!existing || date > existing) {
+          lastServiceDates.set(containerId, date);
+        }
+      });
+    } catch {
+      // ignore
+    }
 
-  for (const row of pendingRequests) {
-    const containerId = row.container?.id;
-    if (!containerId || selected.has(containerId)) continue;
-    addCandidate({
-      containerId,
-      siteName: row.customerName || row.container.depot || trimmedCity,
-      customerId: row.customerId,
-      taskType: 'inspection',
-      priority: row.serviceRequest.priority || 'MEDIUM',
-      scheduledDate: row.serviceRequest.scheduledDate ? new Date(row.serviceRequest.scheduledDate) : startDate,
-      estimatedDurationHours: row.serviceRequest.estimatedDuration ? Math.ceil(row.serviceRequest.estimatedDuration / 60) : 1,
-      serviceRequestId: row.serviceRequest.id,
-      notes: `Pending service request: ${row.serviceRequest.issueDescription?.substring(0, 100)}`,
-    });
-  }
+    // Check remaining containers (not already in PM list) for service history-based PM
+    for (const container of containerRows) {
+      // Skip if already added as PM-due
+      if (pmDueContainers.some(pm => pm.containerId === container.id)) continue;
+
+      const lastServiceDate = lastServiceDates.get(container.id);
+      let needsPM = false;
+      let pmReason = '';
+
+      if (!lastServiceDate) {
+        // No service history - might need PM
+        needsPM = true;
+        pmReason = 'No service history found';
+      } else {
+        const nextDue = new Date(lastServiceDate);
+        nextDue.setDate(nextDue.getDate() + PM_THRESHOLD_DAYS);
+        if (nextDue <= endDate && nextDue >= startDate) {
+          needsPM = true;
+          pmReason = `PM due ${nextDue.toISOString().split('T')[0]}`;
+        } else if (nextDue < today) {
+          needsPM = true;
+          pmReason = `PM overdue since ${nextDue.toISOString().split('T')[0]}`;
+        }
+      }
+
+      if (needsPM) {
+        const areaName = container.depot || container.customerName || trimmedCity;
+        addCandidate({
+          containerId: container.id,
+          siteName: container.customerName || container.depot || areaName,
+          customerId: container.customerId,
+          taskType: 'pm',
+          priority: pmReason.includes('overdue') ? 'CRITICAL' : 'HIGH',
+          scheduledDate: startDate,
+          estimatedDurationHours: 2,
+          notes: pmReason,
+        });
+      }
+    }
+
+    const alertsRows = await db
+      .select({
+        alert: alerts,
+        container: containers,
+        customerName: customers.companyName,
+        customerId: customers.id,
+      })
+      .from(alerts)
+      .innerJoin(containers, eq(alerts.containerId, containers.id))
+      .leftJoin(customers, eq(containers.currentCustomerId, customers.id))
+      .where(
+        and(
+          inArray(alerts.containerId, containerIds),
+          isNull(alerts.resolvedAt)
+        )
+      );
+
+    for (const row of alertsRows) {
+      const containerId = row.container?.id;
+      if (!containerId || selected.has(containerId)) continue;
+      addCandidate({
+        containerId,
+        siteName: row.customerName || row.container.depot || trimmedCity,
+        customerId: row.customerId,
+        taskType: 'alert',
+        priority: row.alert.severity === 'critical' ? 'CRITICAL' : row.alert.severity === 'high' ? 'HIGH' : 'MEDIUM',
+        scheduledDate: startDate,
+        estimatedDurationHours: row.alert.estimatedServiceTime ? Math.ceil(row.alert.estimatedServiceTime / 60) : 1,
+        alertId: row.alert.id,
+        notes: `Open alert: ${row.alert.title}`,
+      });
+    }
+
+    const pendingRequests = await db
+      .select({
+        serviceRequest: serviceRequests,
+        container: containers,
+        customerName: customers.companyName,
+        customerId: customers.id,
+      })
+      .from(serviceRequests)
+      .innerJoin(containers, eq(serviceRequests.containerId, containers.id))
+      .leftJoin(customers, eq(containers.currentCustomerId, customers.id))
+      .where(
+        and(
+          inArray(serviceRequests.containerId, containerIds),
+          inArray(serviceRequests.status, ['pending', 'approved', 'scheduled'])
+        )
+      );
+
+    for (const row of pendingRequests) {
+      const containerId = row.container?.id;
+      if (!containerId || selected.has(containerId)) continue;
+      addCandidate({
+        containerId,
+        siteName: row.customerName || row.container.depot || trimmedCity,
+        customerId: row.customerId,
+        taskType: 'inspection',
+        priority: row.serviceRequest.priority || 'MEDIUM',
+        scheduledDate: row.serviceRequest.scheduledDate ? new Date(row.serviceRequest.scheduledDate) : startDate,
+        estimatedDurationHours: row.serviceRequest.estimatedDuration ? Math.ceil(row.serviceRequest.estimatedDuration / 60) : 1,
+        serviceRequestId: row.serviceRequest.id,
+        notes: `Pending service request: ${row.serviceRequest.issueDescription?.substring(0, 100)}`,
+      });
+    }
 
     return Array.from(selected.values());
   } catch (error: any) {
@@ -873,31 +873,31 @@ export async function generateTripTasksForDestination(tripId: string): Promise<T
   const existingContainers = new Set(existingTasks.map((task) => task.containerId));
 
   const candidates = await collectCityTaskCandidates(trip.destinationCity, startDate, endDate);
-  
+
   // Separate PM tasks from other tasks and prioritize PM
   const pmTasks = candidates.filter(c => c.taskType === 'pm');
   const otherTasks = candidates.filter(c => c.taskType !== 'pm');
-  
+
   // Sort PM tasks by priority (CRITICAL first, then HIGH)
   pmTasks.sort((a, b) => {
     const priorityOrder = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
-    return (priorityOrder[a.priority as keyof typeof priorityOrder] || 99) - 
-           (priorityOrder[b.priority as keyof typeof priorityOrder] || 99);
+    return (priorityOrder[a.priority as keyof typeof priorityOrder] || 99) -
+      (priorityOrder[b.priority as keyof typeof priorityOrder] || 99);
   });
-  
+
   // Combine: PM tasks first, then other tasks
   const prioritizedCandidates = [...pmTasks, ...otherTasks];
-  
+
   // Distribute tasks across days (max 3 per day)
   const tasksByDate = new Map<string, CityTaskCandidate[]>();
   const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / DAY_IN_MS);
   let currentDate = new Date(startDate);
   let taskIndex = 0;
-  
+
   for (let day = 0; day <= daysDiff && taskIndex < prioritizedCandidates.length; day++) {
     const dateKey = currentDate.toISOString().split('T')[0];
     const dayTasks: CityTaskCandidate[] = [];
-    
+
     // Add up to 3 tasks per day, prioritizing PM tasks
     for (let i = 0; i < 3 && taskIndex < prioritizedCandidates.length; i++) {
       const candidate = prioritizedCandidates[taskIndex];
@@ -905,14 +905,14 @@ export async function generateTripTasksForDestination(tripId: string): Promise<T
       dayTasks.push(candidate);
       taskIndex++;
     }
-    
+
     if (dayTasks.length > 0) {
       tasksByDate.set(dateKey, dayTasks);
     }
-    
+
     currentDate.setDate(currentDate.getDate() + 1);
   }
-  
+
   const created: TechnicianTripTask[] = [];
 
   // Create tasks in priority order (PM first)
@@ -976,28 +976,28 @@ export async function autoPlanTravel(params: AutoPlanInput) {
 
   const costEstimates = await calculateCostEstimates(selected.technician, destinationCity, startDate, endDate);
   const tasks = await collectCityTaskCandidates(destinationCity, startDate, endDate);
-  
+
   // Prioritize PM tasks: separate and sort
   const pmTasks = tasks.filter(t => t.taskType === 'pm');
   const otherTasks = tasks.filter(t => t.taskType !== 'pm');
-  
+
   // Sort PM tasks by priority (CRITICAL first, then HIGH)
   pmTasks.sort((a, b) => {
     const priorityOrder: Record<string, number> = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
     return (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99);
   });
-  
+
   // Distribute tasks across days (max 3 per day), PM tasks first
   const allTasks = [...pmTasks, ...otherTasks];
   const tasksByDate = new Map<string, typeof allTasks>();
   const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / DAY_IN_MS);
   let currentDate = new Date(startDate);
   let taskIndex = 0;
-  
+
   for (let day = 0; day <= daysDiff && taskIndex < allTasks.length; day++) {
     const dateKey = currentDate.toISOString().split('T')[0];
     const dayTasks: typeof allTasks = [];
-    
+
     // Add up to 3 tasks per day
     for (let i = 0; i < 3 && taskIndex < allTasks.length; i++) {
       const task = allTasks[taskIndex];
@@ -1005,11 +1005,11 @@ export async function autoPlanTravel(params: AutoPlanInput) {
       dayTasks.push(task);
       taskIndex++;
     }
-    
+
     if (dayTasks.length > 0) {
       tasksByDate.set(dateKey, dayTasks);
     }
-    
+
     currentDate.setDate(currentDate.getDate() + 1);
   }
 
@@ -1284,7 +1284,11 @@ export async function savePlannedTrip(payload: SaveTripPayload, userId?: string)
     });
 
     if (taskRows.length) {
-      await tx.insert(technicianTripTasks).values(taskRows);
+      const tasksWithTripId = taskRows.map(row => ({
+        ...row,
+        tripId: createdTrip.id
+      }));
+      await tx.insert(technicianTripTasks).values(tasksWithTripId);
     }
 
     return createdTrip;
@@ -1296,12 +1300,12 @@ export async function savePlannedTrip(payload: SaveTripPayload, userId?: string)
   // Auto-schedule PM service requests for PM tasks
   const pmTasks = tasks.filter(t => t.taskType === 'pm');
   const scheduledPMRequests: string[] = [];
-  
+
   for (const pmTask of pmTasks) {
     try {
       // Check if service request already exists
       let serviceRequestId = pmTask.serviceRequestId;
-      
+
       if (!serviceRequestId) {
         // Create PM service request if it doesn't exist
         const container = await storage.getContainer(pmTask.containerId);
@@ -1309,12 +1313,12 @@ export async function savePlannedTrip(payload: SaveTripPayload, userId?: string)
           const allUsers = await storage.getAllUsers();
           const adminUser = allUsers.find((u: any) => ['admin', 'super_admin'].includes(u.role?.toLowerCase()));
           const createdBy = adminUser?.id || allUsers[0]?.id;
-          
+
           if (createdBy) {
             // Generate job order number (e.g., NOV081)
             const { generateJobOrderNumber } = await import('../utils/jobOrderGenerator');
             const jobOrderNumber = await generateJobOrderNumber();
-            
+
             const newRequest = await storage.createServiceRequest({
               requestNumber: jobOrderNumber,  // Use job order format (e.g., NOV081)
               jobOrder: jobOrderNumber,
@@ -1328,9 +1332,9 @@ export async function savePlannedTrip(payload: SaveTripPayload, userId?: string)
               workType: 'SERVICE-AT SITE',
               jobType: 'FOC',
             });
-            
+
             serviceRequestId = newRequest.id;
-            
+
             // Update trip task with service request ID
             await db
               .update(technicianTripTasks)
@@ -1339,12 +1343,12 @@ export async function savePlannedTrip(payload: SaveTripPayload, userId?: string)
           }
         }
       }
-      
+
       // Schedule the service request
       if (serviceRequestId) {
         const scheduledDate = pmTask.scheduledDate ? new Date(pmTask.scheduledDate) : startDate;
         const scheduledTimeWindow = '09:00-17:00'; // Default time window
-        
+
         await db
           .update(serviceRequests)
           .set({
@@ -1356,7 +1360,7 @@ export async function savePlannedTrip(payload: SaveTripPayload, userId?: string)
             assignedAt: new Date(),
           })
           .where(eq(serviceRequests.id, serviceRequestId));
-        
+
         scheduledPMRequests.push(serviceRequestId);
       }
     } catch (error) {
