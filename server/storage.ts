@@ -715,7 +715,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllServiceRequests(): Promise<ServiceRequest[]> {
     // Select only fields that exist in the database to avoid schema mismatch errors
-    return await db
+    return (await db
       .select({
         id: serviceRequests.id,
         requestNumber: serviceRequests.requestNumber,
@@ -756,7 +756,7 @@ export class DatabaseStorage implements IStorage {
         // workType, clientType, jobType, billingType, callStatus, month, year, excelData will be added later
       })
       .from(serviceRequests)
-      .orderBy(desc(serviceRequests.createdAt));
+      .orderBy(desc(serviceRequests.createdAt))) as any;
   }
 
   async getServiceRequest(id: string): Promise<ServiceRequest | undefined> {
@@ -801,7 +801,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(serviceRequests)
       .where(eq(serviceRequests.id, id));
-    return request;
+    return request as any;
   }
 
   async getServiceRequestsByCustomer(customerId: string): Promise<ServiceRequest[]> {
@@ -827,8 +827,8 @@ export class DatabaseStorage implements IStorage {
 
       // If activeOnly is true, filter by active statuses
       if (activeOnly) {
-        const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'];
-        conditions.push(inArray(serviceRequests.status, activeStatuses));
+        const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'] as const;
+        conditions.push(inArray(serviceRequests.status, activeStatuses as any));
       }
 
       // Clean, simple select without nested objects to avoid orderSelectedFields issues
@@ -2175,16 +2175,15 @@ export class DatabaseStorage implements IStorage {
   async getInventoryTransactions(itemId?: string, limit: number = 100): Promise<any[]> {
     let query = db
       .select()
-      .from(inventoryTransactions)
-      .where(sql`1=1`) // Always true condition to satisfy where requirement
-      .orderBy(desc(inventoryTransactions.timestamp))
-      .limit(limit);
+      .from(inventoryTransactions);
 
     if (itemId) {
       query = query.where(eq(inventoryTransactions.itemId, itemId));
     }
 
-    return await query;
+    return await query
+      .orderBy(desc(inventoryTransactions.timestamp))
+      .limit(limit);
   }
 
   async createInventoryTransaction(transactionData: any): Promise<any> {
@@ -2275,11 +2274,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getScheduledServicesByTechnician(technicianId: string, date?: string): Promise<ScheduledService[]> {
-    let query = db
-      .select()
-      .from(scheduledServices)
-      .where(eq(scheduledServices.technicianId, technicianId))
-      .orderBy(scheduledServices.sequenceNumber);
+    const conditions: any[] = [eq(scheduledServices.technicianId, technicianId)];
 
     if (date) {
       const startOfDay = new Date(date);
@@ -2287,13 +2282,17 @@ export class DatabaseStorage implements IStorage {
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
-      query = query.where(and(
+      conditions.push(
         sql`${scheduledServices.scheduledDate} >= ${startOfDay}`,
         sql`${scheduledServices.scheduledDate} <= ${endOfDay}`
-      ));
+      );
     }
 
-    return await query;
+    return await db
+      .select()
+      .from(scheduledServices)
+      .where(and(...conditions))
+      .orderBy(scheduledServices.sequenceNumber);
   }
 
   async createScheduledService(service: any): Promise<ScheduledService> {
