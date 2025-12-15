@@ -50,6 +50,7 @@ import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
 import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
+import { getServiceSummaryScheduler } from './services/serviceSummaryScheduler';
 import { registerFinanceRoutes } from "./routes/finance";
 
 // Initialize RAG services
@@ -1013,6 +1014,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
         </body>
       </html>
     `);
+  });
+
+  // Service Summary Scheduler Status and Control Endpoints
+  app.get("/api/summary/scheduler/status", authenticateUser, async (req, res) => {
+    try {
+      const scheduler = getServiceSummaryScheduler();
+      const status = scheduler.getStatus();
+      res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Manual trigger for prefetch (admin only)
+  app.post("/api/summary/scheduler/trigger-prefetch", authenticateUser, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      const scheduler = getServiceSummaryScheduler();
+      await scheduler.triggerPrefetch();
+      res.json({ message: "Prefetch triggered successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Manual trigger for email send (admin only)
+  app.post("/api/summary/scheduler/trigger-email", authenticateUser, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      const scheduler = getServiceSummaryScheduler();
+      await scheduler.triggerEmailSend();
+      res.json({ message: "Email send triggered successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Manual trigger for escalation check (admin only)
+  app.post("/api/summary/scheduler/trigger-escalation", authenticateUser, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      const scheduler = getServiceSummaryScheduler();
+      await scheduler.triggerEscalationCheck();
+      res.json({ message: "Escalation check triggered successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Clear cache (admin only)
+  app.post("/api/summary/scheduler/clear-cache", authenticateUser, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      const scheduler = getServiceSummaryScheduler();
+      scheduler.clearCache();
+      res.json({ message: "Cache cleared successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Test endpoint to get all users (for development only)

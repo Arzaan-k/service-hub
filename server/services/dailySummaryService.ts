@@ -4,12 +4,17 @@ import { sendEmail } from "./emailService";
 import { eq, and, gte, lte, sql, desc, isNotNull } from "drizzle-orm";
 import { subDays, startOfDay, endOfDay, format } from "date-fns";
 
-const SITARAM_EMAIL = "chavandhiksha2003@gmail.com";
-const CEO_EMAIL = "chavandhiksha212@gmail.com";
-// const APP_URL = process.env.APP_URL || "http://localhost:5000"; // Adjust based on environment
-// For local dev, we might need a way to know the URL. I'll assume a standard one or use a relative path if handled by frontend, but email needs absolute.
-// I'll try to use a reasonable default or environment variable.
-const APP_URL = process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : (process.env.APP_URL || "http://localhost:5000");
+// Get configuration from environment variables
+function getConfig() {
+  return {
+    // Daily summary recipient (expert technician)
+    expertTechnicianEmail: process.env.EXPERT_TECHNICIAN_EMAIL || "chavandhiksha212@gmail.com",
+    // CEO escalation recipient
+    ceoEmail: process.env.CEO_EMAIL || "chavandhiksha2003@gmail.com",
+    // App URL for acknowledgment links
+    appUrl: process.env.FRONTEND_URL || process.env.APP_URL || "http://localhost:5000",
+  };
+}
 
 interface DailySummary {
   totalRequests: number;
@@ -138,6 +143,8 @@ export function generateEmailHtml(summary: DailySummary, acknowledgmentLink: str
 }
 
 export async function generateDailySummaryAndNotify() {
+  const config = getConfig();
+  
   try {
     const summary = await getDailyServiceRequestSummary();
 
@@ -153,27 +160,28 @@ export async function generateDailySummaryAndNotify() {
     // Let's assume we have a frontend route /acknowledge-summary/:id
     // Or we can point directly to the API if it returns HTML.
     // User asked for "Link/button to 'Acknowledge Summary'".
-    const acknowledgmentLink = `${APP_URL}/api/summary/acknowledge-view/${record.id}`;
+    const acknowledgmentLink = `${config.appUrl}/api/summary/acknowledge-view/${record.id}`;
 
     // Send Email
     await sendEmail({
-      to: SITARAM_EMAIL,
+      to: config.expertTechnicianEmail,
       subject: `Daily Service Request Summary – ${summary.date}`,
       body: `Please review the daily summary for ${summary.date}. Total Requests: ${summary.totalRequests}.`,
       html: generateEmailHtml(summary, acknowledgmentLink, false)
     });
 
-    console.log(`Daily summary generated and sent for ${summary.date}`);
+    console.log(`[DailySummary] ✅ Summary generated and sent to ${config.expertTechnicianEmail} for ${summary.date}`);
   } catch (error) {
-    console.error("Error generating daily summary:", error);
+    console.error("[DailySummary] ❌ Error generating daily summary:", error);
   }
 }
 
 export async function checkAndEscalate() {
+  const config = getConfig();
   console.log(`[EscalationCheck] Starting escalation check at ${new Date().toLocaleString()}`);
 
   try {
-    // We want to check the summary that was generated TODAY (at 6 AM).
+    // We want to check the summary that was generated TODAY (at configured time).
     // That summary is for YESTERDAY's data.
     // So we are looking for a record where date = yesterday.
 
@@ -197,14 +205,14 @@ export async function checkAndEscalate() {
       console.log(`[EscalationCheck] Status is PENDING. Initiating escalation...`);
 
       const summary = record.summary as DailySummary;
-      const acknowledgmentLink = `${APP_URL}/api/summary/acknowledge-view/${record.id}`;
+      const acknowledgmentLink = `${config.appUrl}/api/summary/acknowledge-view/${record.id}`;
 
       try {
-        console.log(`[EscalationCheck] Sending escalation email to CEO (${CEO_EMAIL})...`);
+        console.log(`[EscalationCheck] Sending escalation email to CEO (${config.ceoEmail})...`);
         await sendEmail({
-          to: CEO_EMAIL,
+          to: config.ceoEmail,
           subject: `Escalation: Daily Service Summary Not Acknowledged – ${summary.date}`,
-          body: `Daily summary for ${summary.date} was not acknowledged by 12:00 PM.`,
+          body: `Daily summary for ${summary.date} was not acknowledged by the deadline.`,
           html: generateEmailHtml(summary, acknowledgmentLink, true)
         });
         console.log(`[EscalationCheck] ✅ Escalation email sent successfully.`);
@@ -221,6 +229,8 @@ export async function checkAndEscalate() {
 }
 
 export async function acknowledgeSummary(id: string) {
+  const config = getConfig();
+  
   const [record] = await db.select().from(dailySummaryAcknowledgment)
     .where(eq(dailySummaryAcknowledgment.id, id))
     .limit(1);
@@ -247,14 +257,14 @@ export async function acknowledgeSummary(id: string) {
     const acknowledgedAt = updated.acknowledgedAt ? new Date(updated.acknowledgedAt).toLocaleString() : new Date().toLocaleString();
 
     await sendEmail({
-      to: CEO_EMAIL,
-      subject: `Daily Summary Acknowledged – ${summary.date}`,
-      body: `Sitaram has acknowledged today's service request summary on ${acknowledgedAt}.`,
+      to: config.ceoEmail,
+      subject: `✅ Daily Summary Acknowledged – ${summary.date}`,
+      body: `Expert Technician has acknowledged today's service request summary at ${acknowledgedAt}.`,
       html: generateAcknowledgmentEmailHtml(summary, acknowledgedAt)
     });
-    console.log("CEO acknowledgment email sent.");
+    console.log("[DailySummary] CEO acknowledgment notification sent.");
   } catch (error) {
-    console.error("Failed to send CEO acknowledgment email:", error);
+    console.error("[DailySummary] Failed to send CEO acknowledgment email:", error);
     // Don't fail the acknowledgment request itself
   }
 
