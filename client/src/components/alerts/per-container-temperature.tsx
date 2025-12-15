@@ -43,10 +43,30 @@ export function PerContainerTemperature({ alerts, containers }: PerContainerTemp
     const dataByContainer: Record<string, ContainerTemperatureData> = {};
 
     alerts.forEach(alert => {
+      // Only process temperature-related alerts
+      if (alert.alertType !== 'temperature' && !alert.description?.toLowerCase().includes('temperature')) {
+        return; // Skip non-temperature alerts
+      }
+
       // Extract temperature from alert data
       let temperature: number | null = null;
 
-      if (alert.rawData?.Event?.ReeferData?.TAmb !== undefined) {
+      // Check metadata field first (how Orbcomm alerts store data)
+      if (alert.metadata?.rawData?.Event?.ReeferData?.TAmb !== undefined) {
+        temperature = alert.metadata.rawData.Event.ReeferData.TAmb;
+      } else if (alert.metadata?.rawData?.Event?.DeviceData?.DeviceTemp !== undefined) {
+        temperature = alert.metadata.rawData.Event.DeviceData.DeviceTemp;
+      } else if (alert.metadata?.rawData?.ReeferData?.TAmb !== undefined) {
+        temperature = alert.metadata.rawData.ReeferData.TAmb;
+      } else if (alert.metadata?.rawData?.DeviceData?.DeviceTemp !== undefined) {
+        temperature = alert.metadata.rawData.DeviceData.DeviceTemp;
+      } else if (alert.metadata?.rawData?.Temperature !== undefined) {
+        temperature = alert.metadata.rawData.Temperature;
+      } else if (alert.metadata?.temperature !== undefined) {
+        temperature = alert.metadata.temperature;
+      } 
+      // Check rawData field (legacy format)
+      else if (alert.rawData?.Event?.ReeferData?.TAmb !== undefined) {
         temperature = alert.rawData.Event.ReeferData.TAmb;
       } else if (alert.rawData?.Event?.DeviceData?.DeviceTemp !== undefined) {
         temperature = alert.rawData.Event.DeviceData.DeviceTemp;
@@ -58,6 +78,13 @@ export function PerContainerTemperature({ alerts, containers }: PerContainerTemp
         temperature = alert.rawData.Temperature;
       } else if (alert.temperature !== undefined && alert.temperature !== null) {
         temperature = alert.temperature;
+      }
+      // Last resort: parse from description (e.g., "Temperature: 25°C" or "25°C")
+      else if (alert.description) {
+        const tempMatch = alert.description.match(/(-?\d+)\s*°C/);
+        if (tempMatch) {
+          temperature = parseInt(tempMatch[1]);
+        }
       }
 
       if (temperature !== null && !isNaN(temperature) && alert.containerId) {
@@ -86,7 +113,7 @@ export function PerContainerTemperature({ alerts, containers }: PerContainerTemp
             hour: '2-digit',
             minute: '2-digit'
           }),
-          temperature: Math.round(temperature * 10) / 10,
+          temperature: Math.round(temperature),
           severity: alert.severity,
           date: timestamp,
           alertId: alert.id
@@ -116,7 +143,7 @@ export function PerContainerTemperature({ alerts, containers }: PerContainerTemp
 
       // Calculate average
       const sum = containerData.data.reduce((acc, d) => acc + d.temperature, 0);
-      containerData.avgTemp = Math.round((sum / containerData.data.length) * 10) / 10;
+      containerData.avgTemp = Math.round(sum / containerData.data.length);
 
       // Calculate trend (compare first half to second half)
       if (containerData.data.length >= 4) {
