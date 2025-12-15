@@ -220,6 +220,10 @@ export interface IStorage {
   createTechnicianTripTask(task: any): Promise<any>;
   updateTechnicianTripTask(id: string, task: any): Promise<any>;
   getLocationMultiplier(city: string): Promise<number>;
+  
+  // Analytics operations
+  getClientAnalytics(range: number): Promise<any[]>;
+  getTechnicianAnalytics(range: number): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2528,6 +2532,131 @@ return trips;
   return Number.isNaN(value) ? 1 : value;
 }
 return 1;
+  }
+
+  async getClientAnalytics(range: number): Promise<any[]> {
+    // Calculate date range
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - range);
+
+    // Fetch all customers
+    const allCustomers = await this.getAllCustomers();
+
+    // For each customer, gather stats
+    const results = await Promise.all(allCustomers.map(async (customer) => {
+      // Get containers
+      const customerContainers = await this.getContainersByCustomer(customer.id);
+
+      // Get service requests
+      const customerSRs = await this.getServiceRequestsByCustomer(customer.id);
+
+      const completedSRs = customerSRs.filter(sr =>
+        sr.status === 'completed' &&
+        sr.actualEndTime && new Date(sr.actualEndTime) >= startDate
+      );
+
+      const pendingSRs = customerSRs.filter(sr =>
+        ['pending', 'approved', 'scheduled', 'in_progress'].includes(sr.status)
+      );
+
+      const overdueSRs = customerSRs.filter(sr =>
+        sr.status !== 'completed' &&
+        sr.status !== 'cancelled' &&
+        sr.scheduledDate && new Date(sr.scheduledDate) < new Date()
+      );
+
+      const totalPMs = customerSRs.length;
+
+      // Compliance: (Completed / (Completed + Overdue)) * 100
+      // If no completed or overdue, 100% compliance? Or 0?
+      // Let's use a simple metric: Completed / (Completed + Overdue + Pending)
+      const totalActive = completedSRs.length + overdueSRs.length + pendingSRs.length;
+      const compliance = totalActive > 0 ? (completedSRs.length / totalActive) * 100 : 100;
+
+      // Last activity
+      const lastActivity = customerSRs.length > 0 ? customerSRs[0].updatedAt : null;
+
+      return {
+        client_id: customer.id,
+        client_name: customer.companyName,
+        container_count: customerContainers.length,
+        total_pms: totalPMs,
+        completed: completedSRs.length,
+        pending: pendingSRs.length,
+        overdue: overdueSRs.length,
+        never: 0, // Placeholder
+        compliance_percentage: Math.round(compliance * 10) / 10,
+        last_activity: lastActivity ? new Date(lastActivity).toISOString().split('T')[0] : null
+      };
+    }));
+
+    return results;
+  }
+
+  async getTechnicianAnalytics(range: number): Promise<any[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - range);
+
+    const allTechnicians = await this.getAllTechnicians();
+
+    const results = await Promise.all(allTechnicians.map(async (tech) => {
+      // Get user details for name
+      const user = await this.getUser(tech.userId);
+
+      // Get assigned service requests
+      const techSRs = await db
+        .select()
+        .from(serviceRequests)
+        .where(eq(serviceRequests.assignedTechnicianId, tech.id));
+
+      const completedSRs = techSRs.filter(sr =>
+        sr.status === 'completed' &&
+        sr.actualEndTime && new Date(sr.actualEndTime) >= startDate
+      );
+
+      const pendingSRs = techSRs.filter(sr =>
+        ['pending', 'approved', 'scheduled', 'in_progress'].includes(sr.status)
+      );
+
+      const overdueSRs = techSRs.filter(sr =>
+        sr.status !== 'completed' &&
+        sr.status !== 'cancelled' &&
+        sr.scheduledDate && new Date(sr.scheduledDate) < new Date()
+      );
+
+      // Travel Cost from trips
+      const trips = await this.getTechnicianTrips({ technicianId: tech.id, startDate });
+      let totalTravelCost = 0;
+
+      for (const trip of trips) {
+        const costs = await this.getTechnicianTripCosts(trip.id);
+        if (costs && costs.totalEstimatedCost) {
+          totalTravelCost += Number(costs.totalEstimatedCost);
+        }
+      }
+
+      const totalAssigned = techSRs.length;
+      const completionRate = totalAssigned > 0 ? (completedSRs.length / totalAssigned) * 100 : 0;
+
+      // Last completed date
+      const lastCompleted = completedSRs.length > 0
+        ? completedSRs.sort((a, b) => new Date(b.actualEndTime!).getTime() - new Date(a.actualEndTime!).getTime())[0].actualEndTime
+        : null;
+
+      return {
+        technician_id: tech.id,
+        technician_name: user?.name || 'Unknown',
+        total_assigned: totalAssigned,
+        completed: completedSRs.length,
+        pending: pendingSRs.length,
+        overdue: overdueSRs.length,
+        travel_cost: totalTravelCost,
+        pm_completion_rate: Math.round(completionRate * 10) / 10,
+        last_completed_date: lastCompleted ? new Date(lastCompleted).toISOString().split('T')[0] : null
+      };
+    }));
+
+    return results;
   }
 }
 
