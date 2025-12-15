@@ -1,64 +1,18 @@
 import express from 'express';
 import multer from 'multer';
 import { storage } from '../storage';
-import type { Request, Response } from 'express';
+import { authenticateUser, requireRole } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Extend Request type to include user
-interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    role: string;
-    name?: string;
-  };
-}
-
-// Middleware to authenticate user
-const authenticateUser = (req: AuthRequest, res: Response, next: any) => {
-  const userId = req.headers['x-user-id'] as string;
-  
-  if (!userId) {
-    return res.status(401).json({ success: false, message: 'Not authenticated' });
-  }
-  
-  // In a real app, you'd fetch the user from the database
-  // For now, we'll attach the userId and assume role from the request
-  req.user = {
-    id: userId,
-    role: req.headers['x-user-role'] as string || 'client'
-  };
-  
-  next();
-};
-
-// Middleware to authenticate admin
-const authenticateAdmin = (req: AuthRequest, res: Response, next: any) => {
-  const userId = req.headers['x-user-id'] as string;
-  const userRole = req.headers['x-user-role'] as string;
-  
-  if (!userId) {
-    return res.status(401).json({ success: false, message: 'Not authenticated' });
-  }
-  
-  if (userRole !== 'admin' && userRole !== 'super_admin') {
-    return res.status(403).json({ success: false, message: 'Admin access required' });
-  }
-  
-  req.user = {
-    id: userId,
-    role: userRole
-  };
-  
-  next();
-};
-
 // Upload training material (Admin only)
 router.post('/training/upload', 
-  authenticateAdmin, 
+  authenticateUser,
+  requireRole('admin', 'super_admin'),
   upload.single('file'), 
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res) => {
     try {
       const { title, description, category, forClient, forTechnician } = req.body;
       const file = req.file;
@@ -109,7 +63,7 @@ router.post('/training/upload',
 });
 
 // Get materials for current user (Client/Technician)
-router.get('/training/my-materials', authenticateUser, async (req: AuthRequest, res: Response) => {
+router.get('/training/my-materials', authenticateUser, async (req: AuthRequest, res) => {
   try {
     const userRole = req.user!.role;
     const materials = await storage.getTrainingMaterialsForRole(userRole, req.user!.id);
@@ -122,7 +76,7 @@ router.get('/training/my-materials', authenticateUser, async (req: AuthRequest, 
 });
 
 // Get unread count
-router.get('/training/unread-count', authenticateUser, async (req: AuthRequest, res: Response) => {
+router.get('/training/unread-count', authenticateUser, async (req: AuthRequest, res) => {
   try {
     const count = await storage.getUnreadTrainingCount(req.user!.id, req.user!.role);
     res.json({ success: true, count });
@@ -133,7 +87,7 @@ router.get('/training/unread-count', authenticateUser, async (req: AuthRequest, 
 });
 
 // Mark material as viewed
-router.post('/training/materials/:id/view', authenticateUser, async (req: AuthRequest, res: Response) => {
+router.post('/training/materials/:id/view', authenticateUser, async (req: AuthRequest, res) => {
   try {
     await storage.markTrainingAsViewed(req.params.id, req.user!.id, req.user!.role);
     res.json({ success: true });
@@ -144,7 +98,7 @@ router.post('/training/materials/:id/view', authenticateUser, async (req: AuthRe
 });
 
 // Serve file
-router.get('/training/materials/:id/file', authenticateUser, async (req: AuthRequest, res: Response) => {
+router.get('/training/materials/:id/file', authenticateUser, async (req: AuthRequest, res) => {
   try {
     const material = await storage.getTrainingMaterialFile(req.params.id);
     
@@ -168,7 +122,7 @@ router.get('/training/materials/:id/file', authenticateUser, async (req: AuthReq
 });
 
 // Get all materials (Admin only)
-router.get('/training/materials', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+router.get('/training/materials', authenticateUser, requireRole('admin', 'super_admin'), async (req: AuthRequest, res) => {
   try {
     const materials = await storage.getAllTrainingMaterials();
     res.json({ success: true, materials });
@@ -179,7 +133,7 @@ router.get('/training/materials', authenticateAdmin, async (req: AuthRequest, re
 });
 
 // Delete material (Admin only)
-router.delete('/training/materials/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/training/materials/:id', authenticateUser, requireRole('admin', 'super_admin'), async (req: AuthRequest, res) => {
   try {
     await storage.deleteTrainingMaterial(req.params.id);
     console.log('[Training] Material deleted:', req.params.id);
@@ -191,7 +145,7 @@ router.delete('/training/materials/:id', authenticateAdmin, async (req: AuthRequ
 });
 
 // Update material (Admin only)
-router.put('/training/materials/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+router.put('/training/materials/:id', authenticateUser, requireRole('admin', 'super_admin'), async (req: AuthRequest, res) => {
   try {
     const { title, description, category, forClient, forTechnician } = req.body;
     
