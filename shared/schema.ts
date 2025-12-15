@@ -50,6 +50,7 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   requiresPasswordReset: boolean("requires_password_reset").default(false).notNull(),
   passwordReminderSentAt: timestamp("password_reminder_sent_at"), // Tracks when 24-hour password reminder was sent
+  passwordEscalationSentAt: timestamp("password_escalation_sent_at"), // Tracks when escalation email was sent to expert technician
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }) as any;

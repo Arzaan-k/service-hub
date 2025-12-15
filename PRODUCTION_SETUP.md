@@ -57,6 +57,16 @@ CORS_ORIGIN=https://your-domain.com
 
 # Logging
 LOG_LEVEL=info
+
+# Password Reminder & Escalation (for new technician accounts)
+# Reminder after technician account creation (default 6 hours; use a smaller value only for testing)
+PASSWORD_REMINDER_DELAY_HOURS=6
+# Escalation to expert after reminder (default 2 hours after reminder)
+PASSWORD_ESCALATION_DELAY_HOURS=2
+# Interval in minutes for checking pending password setups (default 1 minute; raise in production if desired)
+PASSWORD_CHECK_INTERVAL_MINUTES=1
+# Expert technician email to receive escalation notifications
+EXPERT_TECHNICIAN_EMAIL=expert@yourcompany.com
 ```
 
 ## Production Features

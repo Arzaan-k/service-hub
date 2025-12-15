@@ -582,6 +582,95 @@ export async function sendPasswordReminderEmail(
 }
 
 /**
+ * Sends escalation email to expert technician when a technician hasn't set their password
+ * after receiving a reminder. This notifies the supervisor/expert about the pending account.
+ *
+ * @param expertEmail - Email of the expert technician to notify
+ * @param pendingUser - User object of the technician who hasn't set password
+ * @returns Success status and error if any
+ */
+export async function sendPasswordEscalationEmail(
+  expertEmail: string,
+  pendingUser: any
+): Promise<{ success: boolean; error?: string }> {
+  const appName = 'Service Hub';
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+  const html = `
+  <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;max-width:600px;margin:0 auto;">
+    <div style="background:#dc3545;padding:20px;border-radius:8px;margin-bottom:20px;">
+      <h2 style="color:#ffffff;margin:0;">🚨 ${appName} - Password Setup Escalation</h2>
+    </div>
+
+    <div style="background:white;padding:30px;border-radius:8px;border:1px solid #e2e8f0;">
+      <p style="margin-top:0;">Hello Expert Technician,</p>
+
+      <p>This is an <strong>escalation notice</strong> regarding a technician account that has not been activated.</p>
+
+      <div style="background:#fff3cd;padding:15px;border-radius:6px;margin:20px 0;border-left:4px solid #ffc107;">
+        <p style="margin:0;color:#856404;">
+          <strong>⚠️ Pending Account Details:</strong><br><br>
+          <strong>Name:</strong> ${pendingUser.name || 'Not provided'}<br>
+          <strong>Email:</strong> ${pendingUser.email}<br>
+          <strong>Phone:</strong> ${pendingUser.phoneNumber || 'Not provided'}<br>
+          <strong>Role:</strong> ${pendingUser.role}<br>
+          <strong>Account Created:</strong> ${new Date(pendingUser.createdAt).toLocaleString()}<br>
+          <strong>Reminder Sent:</strong> ${pendingUser.passwordReminderSentAt ? new Date(pendingUser.passwordReminderSentAt).toLocaleString() : 'Not sent'}
+        </p>
+      </div>
+
+      <p>The technician <strong>${pendingUser.name || pendingUser.email}</strong> has not set their password despite receiving a reminder email.</p>
+
+      <p><strong>Recommended Actions:</strong></p>
+      <ul>
+        <li>Contact the technician directly to assist with account setup</li>
+        <li>Verify the email address is correct</li>
+        <li>Check if the technician needs help accessing their email</li>
+        <li>Consider resending the password reset link from the admin dashboard</li>
+      </ul>
+
+      <div style="margin:20px 0;text-align:center;">
+        <a href="${frontendUrl}/technicians"
+           style="background:#4299e1;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
+          View Technicians Dashboard
+        </a>
+      </div>
+
+      <p style="color:#718096;font-size:12px;margin-top:30px;">
+        This escalation was automatically triggered because the technician did not complete account setup within the expected timeframe.
+      </p>
+    </div>
+
+    <div style="text-align:center;margin-top:20px;color:#718096;font-size:12px;">
+      <p>This is an automated escalation from ${appName}. Please do not reply to this email.</p>
+    </div>
+  </div>`;
+
+  try {
+    const result = await sendEmail({
+      to: expertEmail,
+      subject: `${appName} - ESCALATION: Technician Password Not Set - ${pendingUser.name || pendingUser.email}`,
+      body: `ESCALATION: Technician ${pendingUser.name || pendingUser.email} (${pendingUser.email}) has not set their password.\n\nAccount created: ${new Date(pendingUser.createdAt).toLocaleString()}\nReminder sent: ${pendingUser.passwordReminderSentAt ? new Date(pendingUser.passwordReminderSentAt).toLocaleString() : 'Not sent'}\n\nPlease contact the technician to assist with account setup.`,
+      html,
+      from: process.env.MAILGUN_FROM || process.env.EMAIL_FROM
+    });
+
+    if (result.skipped || result.error) {
+      console.warn('⚠️  Escalation email not sent.');
+      console.warn('📧 Expert:', expertEmail);
+      console.warn('📧 Pending User:', pendingUser.email);
+      return { success: false, error: 'Email not configured. Check server logs.' };
+    }
+
+    console.log('✅ Escalation email sent to expert', expertEmail, 'about user', pendingUser.email, 'via', result.provider || 'email');
+    return { success: true };
+  } catch (error: any) {
+    console.error('❌ Escalation email sending failed:', error.message);
+    return { success: false, error: 'Email sending failed.' };
+  }
+}
+
+/**
  * Logs security events to audit log
  *
  * @param userId - User ID affected by the action
