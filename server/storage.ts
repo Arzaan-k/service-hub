@@ -1766,7 +1766,12 @@ export class DatabaseStorage implements IStorage {
   async createCourierShipment(shipment: InsertCourierShipment): Promise<CourierShipment> {
     const [newShipment] = await db
       .insert(courierShipments)
-      .values(shipment)
+      .values({
+        ...shipment,
+        id: shipment.id || crypto.randomUUID(),
+        createdAt: shipment.createdAt || new Date(),
+        updatedAt: shipment.updatedAt || new Date()
+      })
       .returning();
     return newShipment;
   }
@@ -2107,7 +2112,7 @@ export class DatabaseStorage implements IStorage {
         const externalPool = await createExternalPool(externalUrl);
         try {
           const res = await externalPool.query(queryText);
-          rows = res.rows as any[];
+          rows = res.rows;
         } finally {
           await externalPool.end();
         }

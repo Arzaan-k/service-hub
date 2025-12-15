@@ -45,10 +45,10 @@ import {
   recalculateTripCosts
 } from "./services/travel-planning";
 import { db } from './db';
-import { sql, eq, desc, isNotNull, isNull, and } from 'drizzle-orm';
+import { sql, eq, desc, isNotNull, isNull, and, or, not, inArray } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
-import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers } from '@shared/schema';
+import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers, feedback } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
 import technicianDocumentRoutes from './routes/technicianDocumentRoutes';
 import { registerFinanceRoutes } from "./routes/finance";
@@ -1184,11 +1184,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(data);
     } catch (error) {
       console.error('Error fetching technician analytics:', error);
-      console.error('Error stack:', error.stack);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'N/A');
       res.status(500).json({
         error: "Failed to fetch technician analytics",
-        details: error.message,
-        stack: error.stack
+        details: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
     }
   });
@@ -3347,7 +3347,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const cityClientMapping: Record<string, string[]> = {}; // Maps city to list of clients
 
         for (const sr of techServices) {
-          const container = sr.container || await storage.getContainer(sr.containerId).catch(() => null);
+          const srAny = sr as any; // Type assertion for optional properties
+          const container = srAny.container || await storage.getContainer(sr.containerId).catch(() => null);
           // Load customer data if not already populated
           const customer = sr.customerId ? await storage.getCustomer(sr.customerId).catch(() => null) : null;
           let clientName = customer?.companyName || 'Unknown Client';
@@ -3357,8 +3358,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (container && container.depot) {
             city = container.depot.trim();
           }
-          if (city === 'Unknown' && sr.siteAddress) {
-            city = sr.siteAddress.trim();
+          if (city === 'Unknown' && srAny.siteAddress) {
+            city = srAny.siteAddress.trim();
           }
 
           // Debug logging
@@ -3371,7 +3372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               customerName: customer?.companyName,
               containerFound: !!container,
               containerDepot: container?.depot,
-              siteAddress: sr.siteAddress,
+              siteAddress: srAny.siteAddress,
               extractedCity: city,
               finalClientName: clientName
             });
@@ -3434,7 +3435,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const nextService = scheduledServices[0];
         let nextLocation = null;
         if (nextService) {
-          const container = nextService.container || await storage.getContainer(nextService.containerId).catch(() => null);
+          const nextServiceAny = nextService as any; // Type assertion for optional properties
+          const container = nextServiceAny.container || await storage.getContainer(nextService.containerId).catch(() => null);
           nextLocation = {
             city: container?.depot || container?.currentLocation?.city || 'Unknown',
             scheduledDate: nextService.scheduledDate,
