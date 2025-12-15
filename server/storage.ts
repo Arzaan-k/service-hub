@@ -2829,7 +2829,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTrainingMaterialsForRole(userRole: string, userId: string): Promise<any[]> {
-    const roleColumn = userRole === 'client' ? trainingMaterials.forClient : trainingMaterials.forTechnician;
+    // Check if user is a client or a technician variant (technician, senior_technician, amc)
+    const isClient = userRole.toLowerCase() === 'client';
+    const roleColumn = isClient ? trainingMaterials.forClient : trainingMaterials.forTechnician;
     
     const materials = await db
       .select({
@@ -2860,7 +2862,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUnreadTrainingCount(userId: string, userRole: string): Promise<number> {
-    const roleColumn = userRole === 'client' ? trainingMaterials.forClient : trainingMaterials.forTechnician;
+    // Check if user is a client or a technician variant (technician, senior_technician, amc)
+    const isClient = userRole.toLowerCase() === 'client';
+    const roleColumn = isClient ? trainingMaterials.forClient : trainingMaterials.forTechnician;
     
     const result = await db
       .select({ count: sql<number>`count(*)::int` })
