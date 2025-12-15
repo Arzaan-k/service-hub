@@ -75,6 +75,7 @@ export default function Training() {
   
   const handleView = async (material: TrainingMaterial) => {
     try {
+      // Mark as viewed first
       await apiRequest('POST', `/api/training/materials/${material.id}/view`);
       
       setMaterials(materials.map(m => 
@@ -83,18 +84,49 @@ export default function Training() {
       
       setUnreadCount(prev => Math.max(0, prev - 1));
       
-      window.open(`/api/training/materials/${material.id}/file`, '_blank');
+      // Fetch file with authentication and open as blob
+      const fileResponse = await apiRequest('GET', `/api/training/materials/${material.id}/file`);
+      const blob = await fileResponse.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      
+      // Clean up blob URL after a delay
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
     } catch (error) {
-      console.error('Error marking as viewed:', error);
-      window.open(`/api/training/materials/${material.id}/file`, '_blank');
+      console.error('Error viewing material:', error);
+      toast({
+        title: "Error",
+        description: "Failed to open training material",
+        variant: "destructive",
+      });
     }
   };
   
-  const handleDownload = (material: TrainingMaterial) => {
-    const link = document.createElement('a');
-    link.href = `/api/training/materials/${material.id}/file?download=true`;
-    link.download = material.fileName;
-    link.click();
+  const handleDownload = async (material: TrainingMaterial) => {
+    try {
+      // Fetch file with authentication
+      const fileResponse = await apiRequest('GET', `/api/training/materials/${material.id}/file?download=true`);
+      const blob = await fileResponse.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Create download link
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = material.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up blob URL
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+    } catch (error) {
+      console.error('Error downloading material:', error);
+      toast({
+        title: "Error",
+        description: "Failed to download training material",
+        variant: "destructive",
+      });
+    }
   };
   
   const filteredMaterials = materials.filter(material => {
