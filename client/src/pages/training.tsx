@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Eye, Download, Search, Loader2, BookOpen } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
+import Sidebar from '@/components/layout/sidebar';
+import Header from '@/components/layout/header';
 
 interface TrainingMaterial {
   id: string;
@@ -114,14 +116,25 @@ export default function Training() {
   
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+      <div className="flex h-screen overflow-hidden bg-gray-50">
+        <Sidebar />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Header />
+          <main className="flex-1 overflow-y-auto flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          </main>
+        </div>
       </div>
     );
   }
   
   return (
-    <div className="space-y-6 p-6">
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      <Sidebar />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header />
+        <main className="flex-1 overflow-y-auto">
+          <div className="space-y-6 p-6">
       <Card className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
@@ -243,6 +256,9 @@ export default function Training() {
             </CardContent>
           </Card>
         )}
+      </div>
+          </div>
+        </main>
       </div>
     </div>
   );

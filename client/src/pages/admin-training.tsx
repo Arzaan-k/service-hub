@@ -3,6 +3,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AdminTrainingUpload } from '@/components/training/admin-training-upload';
 import { AdminTrainingList } from '@/components/training/admin-training-list';
 import { BookOpen } from 'lucide-react';
+import Sidebar from '@/components/layout/sidebar';
+import Header from '@/components/layout/header';
 
 export default function AdminTraining() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -12,7 +14,12 @@ export default function AdminTraining() {
   };
   
   return (
-    <div className="space-y-6 p-6">
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      <Sidebar />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header />
+        <main className="flex-1 overflow-y-auto">
+          <div className="space-y-6 p-6">
       <div className="flex items-center gap-3">
         <BookOpen className="h-8 w-8 text-blue-600" />
         <div>
@@ -35,6 +42,9 @@ export default function AdminTraining() {
           <AdminTrainingList refreshTrigger={refreshTrigger} />
         </TabsContent>
       </Tabs>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
