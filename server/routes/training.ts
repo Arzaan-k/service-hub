@@ -125,6 +125,7 @@ router.get('/training/materials/:id/file', authenticateUser, async (req: AuthReq
 router.get('/training/materials', authenticateUser, requireRole('admin', 'super_admin'), async (req: AuthRequest, res) => {
   try {
     const materials = await storage.getAllTrainingMaterials();
+    console.log('[Training] Fetched materials for admin:', materials.map(m => ({ id: m.id, title: m.title, viewCount: m.viewCount })));
     res.json({ success: true, materials });
   } catch (error) {
     console.error('[Training] Error fetching all materials:', error);

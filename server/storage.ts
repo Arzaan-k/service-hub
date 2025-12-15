@@ -2893,7 +2893,8 @@ export class DatabaseStorage implements IStorage {
 
   async markTrainingAsViewed(materialId: string, userId: string, userRole: string): Promise<void> {
     try {
-      await db
+      console.log('[Training] Recording view:', { materialId, userId, userRole });
+      const result = await db
         .insert(trainingViews)
         .values({
           id: crypto.randomUUID(),
@@ -2902,7 +2903,9 @@ export class DatabaseStorage implements IStorage {
           userRole,
           viewedAt: new Date()
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning();
+      console.log('[Training] View recorded successfully:', result.length > 0 ? 'new view' : 'duplicate view');
     } catch (error) {
       // Ignore duplicate key errors
       console.log('[Training] View already recorded or error:', error);
