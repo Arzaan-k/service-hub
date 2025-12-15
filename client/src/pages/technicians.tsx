@@ -93,7 +93,7 @@ export default function Technicians() {
     queryKey: ["/api/technicians"],
     enabled: authReady && !!authToken,
     retry: false,
-    retry: false,
+
   });
 
   // Fetch cities for location dropdown
@@ -172,7 +172,7 @@ export default function Technicians() {
     queryKey: ["/api/thirdparty-technicians"],
     enabled: authReady && !!authToken,
     retry: false,
-    retry: false,
+
   });
 
   const createTechnician = useMutation({
@@ -512,12 +512,30 @@ export default function Technicians() {
               <TabsTrigger value="performance">Performance</TabsTrigger>
             </TabsList>
 
+
             <TabsContent value="overview" className="space-y-6">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  👷 Internal Technicians: {(technicians as any[])?.length ?? 0} • 🧰 Third-Party Technicians: {(thirdPartyTechs as any[])?.length ?? 0}
-                </p>
+
+
+              <div className="mb-6 flex items-center justify-between">
+                <div></div>
+                <div className="flex justify-end gap-3">
+                  <button
+                    className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFC6B3] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
+                    onClick={() => setIsAddDialogOpen(true)}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Add Technician
+                  </button>
+                  <button
+                    className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFA07A] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
+                    onClick={() => setIsAddThirdPartyDialogOpen(true)}
+                  >
+                    <UserCog className="w-4 h-4" />
+                    Add Third-Party Technician
+                  </button>
+                </div>
               </div>
+
 
               {/* Assignment Distribution Summary */}
               {assignedServicesData && technicians && (
@@ -576,155 +594,179 @@ export default function Technicians() {
                 </Card>
               )}
 
-              <div className="mb-6 flex items-center justify-between">
-                <div></div>
-                <div className="flex justify-end gap-3">
-                  <button
-                    className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFC6B3] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
-                    onClick={() => setIsAddDialogOpen(true)}
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Add Technician
-                  </button>
-                  <button
-                    className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFA07A] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
-                    onClick={() => setIsAddThirdPartyDialogOpen(true)}
-                  >
-                    <UserCog className="w-4 h-4" />
-                    Add Third-Party Technician
-                  </button>
-                </div>
-              </div>
+              {/* Internal Technicians - Grouped by Experience Level */}
+              <div className="space-y-8">
+                {['expert', 'senior', 'mid', 'junior'].map((level) => {
+                  const levelConfig = {
+                    expert: {
+                      label: '🏆 Expert Technicians',
+                      color: 'from-purple-500/10 to-purple-600/10 border-purple-500/30',
+                      badgeClass: 'bg-purple-500 text-white'
+                    },
+                    senior: {
+                      label: '⭐ Senior Technicians',
+                      color: 'from-blue-500/10 to-blue-600/10 border-blue-500/30',
+                      badgeClass: 'bg-blue-500 text-white'
+                    },
+                    mid: {
+                      label: '📋 Mid-Level Technicians',
+                      color: 'from-green-500/10 to-green-600/10 border-green-500/30',
+                      badgeClass: 'bg-green-500 text-white'
+                    },
+                    junior: {
+                      label: '🌱 Junior Technicians',
+                      color: 'from-orange-500/10 to-orange-600/10 border-orange-500/30',
+                      badgeClass: 'bg-orange-500 text-white'
+                    }
+                  }[level]!;
 
-              {/* Internal Technicians */}
-              <div className="mb-3">
-                <h3 className="text-lg font-semibold text-foreground mb-3">Internal Technicians</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                  {technicians && (technicians as any[]).length > 0 ? (
-                    (technicians as any[]).map((tech: Technician) => (
-                      <Card key={tech.id} className="shadow-sm hover:shadow-md transition-all bg-card border-border">
-                        <CardHeader className="pb-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-full flex items-center justify-center bg-primary/10 border border-primary/20">
-                                <User className="h-6 w-6 text-muted-foreground" />
-                              </div>
-                              <div>
-                                <Link href={`/technicians/${tech.id}`}>
-                                  <CardTitle className="text-lg cursor-pointer hover:underline">{tech.name}</CardTitle>
-                                </Link>
-                                <p className="text-sm font-medium text-muted-foreground">
-                                  {(tech as any).experienceLevel?.toUpperCase?.() || "MID"}
-                                </p>
-                              </div>
-                            </div>
-                            <Badge className={`${getStatusBadge(tech.status)} rounded-full`}>
-                              {tech.status}
-                            </Badge>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          {/* Location - Prominent */}
-                          <div className="flex items-center gap-2 text-sm p-2 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <MapPin className="h-4 w-4 text-blue-500" />
-                            <span className="font-semibold text-blue-700 dark:text-blue-300">
-                              {typeof (tech as any).baseLocation === "string"
-                                ? ((tech as any).baseLocation || "📍 Not set - Click Edit")
-                                : ((tech as any).baseLocation?.city || "📍 Not set - Click Edit")}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Phone className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-foreground">{tech.phone}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Wrench className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-muted-foreground">
-                              {(tech as any).specialization || Array.isArray((tech as any).skills) ? (tech as any).skills?.join(", ") : "general"}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between pt-3 border-t border-border">
-                            <div className="flex items-center gap-1">
-                              <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                              <span className="text-sm font-medium">{(tech as any).rating ?? (tech as any).averageRating ?? 0}/5</span>
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
-                            </span>
-                          </div>
-                          {/* Assigned Services Section */}
-                          <div className="mt-3 pt-3 border-t border-border">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-semibold text-foreground">Assigned Services</span>
-                              <Badge variant="outline" className="text-xs">
-                                {(() => {
-                                  const count = assignedServicesData?.[tech.id]?.count ?? assignedServicesData?.[tech.id]?.services?.length ?? 0;
-                                  return `${count} ${count === 1 ? 'service' : 'services'}`;
-                                })()}
-                              </Badge>
-                            </div>
-                            {(() => {
-                              const techServices = assignedServicesData?.[tech.id]?.services;
-                              const hasServices = techServices && Array.isArray(techServices) && techServices.length > 0;
+                  const levelTechs = technicians ? (technicians as any[]).filter((tech: Technician) => {
+                    const techLevel = (tech as any).experienceLevel?.toLowerCase?.() || 'mid';
+                    // Debug: log the comparison
+                    console.log(`Tech: ${tech.name}, Level: "${techLevel}", Comparing with: "${level}", Match: ${techLevel === level}`);
+                    return techLevel === level;
+                  }) : [];
 
-                              if (!hasServices) {
-                                return (
-                                  <div className="text-xs text-muted-foreground text-center py-2">
-                                    No assigned services
+                  console.log(`Level "${level}" has ${levelTechs.length} technicians`);
+
+                  if (levelTechs.length === 0) return null;
+
+                  return (
+                    <div key={level} className="mb-8">
+                      <div className={`flex items-center justify-between p-4 rounded-lg border bg-gradient-to-r ${levelConfig.color} mb-4`}>
+                        <h3 className="text-lg font-bold text-foreground">{levelConfig.label}</h3>
+                        <Badge className={`${levelConfig.badgeClass} h-7 px-3`}>
+                          {levelTechs.length} {levelTechs.length === 1 ? 'technician' : 'technicians'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                        {levelTechs.map((tech: Technician) => (
+                          <Card key={tech.id} className="shadow-sm hover:shadow-md transition-all bg-card border-border">
+                            <CardHeader className="pb-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-12 h-12 rounded-full flex items-center justify-center bg-primary/10 border border-primary/20">
+                                    <User className="h-6 w-6 text-muted-foreground" />
                                   </div>
-                                );
-                              }
-
-                              return (
-                                <div className="space-y-1 max-h-32 overflow-y-auto">
-                                  {techServices.slice(0, 3).map((service: any) => (
-                                    <Link key={service.id} href={`/service-requests/${service.id}`} className="block">
-                                      <div className="text-xs p-2 bg-muted/50 rounded border border-border hover:bg-muted/70 hover:border-primary transition-colors cursor-pointer">
-                                        <div className="font-medium text-foreground truncate">
-                                          {service.requestNumber || service.id?.slice(0, 8) || 'N/A'}
-                                        </div>
-                                        <div className="text-muted-foreground truncate">
-                                          {service.containerCode || 'N/A'} • <span className="capitalize">{service.status || 'pending'}</span>
-                                        </div>
-                                        {service.issueDescription && (
-                                          <div className="text-muted-foreground truncate text-[10px] mt-1">
-                                            {service.issueDescription.substring(0, 50)}...
-                                          </div>
-                                        )}
-                                        {service.scheduledDate && (
-                                          <div className="text-muted-foreground text-[10px] mt-1">
-                                            📅 {new Date(service.scheduledDate).toLocaleDateString()}
-                                          </div>
-                                        )}
-                                      </div>
+                                  <div>
+                                    <Link href={`/technicians/${tech.id}`}>
+                                      <CardTitle className="text-lg cursor-pointer hover:underline">{tech.name}</CardTitle>
                                     </Link>
-                                  ))}
-                                  {techServices.length > 3 && (
-                                    <div className="text-xs text-muted-foreground text-center pt-1">
-                                      +{techServices.length - 3} more
-                                    </div>
-                                  )}
+                                    <p className="text-sm font-medium text-muted-foreground">
+                                      {(tech as any).experienceLevel?.toUpperCase?.() || "MID"}
+                                    </p>
+                                  </div>
                                 </div>
-                              );
-                            })()}
-                          </div>
-                          <div className="mt-4">
-                            <button
-                              onClick={() => handleEdit(tech)}
-                              className="w-full bg-gradient-to-r from-peach-200 to-peach-300 text-black font-medium py-2 rounded-2xl shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
-                            >
-                              ✏️ Edit
-                            </button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))
-                  ) : (
-                    <div className="col-span-full text-center py-6 text-sm text-muted-foreground">
-                      No internal technicians found.
+                                <Badge className={`${getStatusBadge(tech.status)} rounded-full`}>
+                                  {tech.status}
+                                </Badge>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                              {/* Location - Prominent */}
+                              <div className="flex items-center gap-2 text-sm p-2 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                                <MapPin className="h-4 w-4 text-blue-500" />
+                                <span className="font-semibold text-blue-700 dark:text-blue-300">
+                                  {typeof (tech as any).baseLocation === "string"
+                                    ? ((tech as any).baseLocation || "📍 Not set - Click Edit")
+                                    : ((tech as any).baseLocation?.city || "📍 Not set - Click Edit")}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <Phone className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-foreground">{tech.phone}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <Wrench className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-muted-foreground">
+                                  {(tech as any).specialization || Array.isArray((tech as any).skills) ? (tech as any).skills?.join(", ") : "general"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between pt-3 border-t border-border">
+                                <div className="flex items-center gap-1">
+                                  <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                                  <span className="text-sm font-medium">{(tech as any).rating ?? (tech as any).averageRating ?? 0}/5</span>
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                  {(tech as any).servicesCompleted ?? (tech as any).totalJobsCompleted ?? 0} services
+                                </span>
+                              </div>
+                              {/* Assigned Services Section */}
+                              <div className="mt-3 pt-3 border-t border-border">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-xs font-semibold text-foreground">Assigned Services</span>
+                                  <Badge variant="outline" className="text-xs">
+                                    {(() => {
+                                      const count = assignedServicesData?.[tech.id]?.count ?? assignedServicesData?.[tech.id]?.services?.length ?? 0;
+                                      return `${count} ${count === 1 ? 'service' : 'services'}`;
+                                    })()}
+                                  </Badge>
+                                </div>
+                                {(() => {
+                                  const techServices = assignedServicesData?.[tech.id]?.services;
+                                  const hasServices = techServices && Array.isArray(techServices) && techServices.length > 0;
+
+                                  if (!hasServices) {
+                                    return (
+                                      <div className="text-xs text-muted-foreground text-center py-2">
+                                        No assigned services
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                                      {techServices.slice(0, 3).map((service: any) => (
+                                        <Link key={service.id} href={`/service-requests/${service.id}`} className="block">
+                                          <div className="text-xs p-2 bg-muted/50 rounded border border-border hover:bg-muted/70 hover:border-primary transition-colors cursor-pointer">
+                                            <div className="font-medium text-foreground truncate">
+                                              {service.requestNumber || service.id?.slice(0, 8) || 'N/A'}
+                                            </div>
+                                            <div className="text-muted-foreground truncate">
+                                              {service.containerCode || 'N/A'} • <span className="capitalize">{service.status || 'pending'}</span>
+                                            </div>
+                                            {service.issueDescription && (
+                                              <div className="text-muted-foreground truncate text-[10px] mt-1">
+                                                {service.issueDescription.substring(0, 50)}...
+                                              </div>
+                                            )}
+                                            {service.scheduledDate && (
+                                              <div className="text-muted-foreground text-[10px] mt-1">
+                                                📅 {new Date(service.scheduledDate).toLocaleDateString()}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </Link>
+                                      ))}
+                                      {techServices.length > 3 && (
+                                        <div className="text-xs text-muted-foreground text-center pt-1">
+                                          +{techServices.length - 3} more
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                              <div className="mt-4">
+                                <button
+                                  onClick={() => handleEdit(tech)}
+                                  className="w-full bg-gradient-to-r from-peach-200 to-peach-300 text-black font-medium py-2 rounded-2xl shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
+                                >
+                                  ✏️ Edit
+                                </button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                </div>
+                  );
+                })}
+                {technicians && (technicians as any[]).length === 0 && (
+                  <div className="text-center py-12 text-sm text-muted-foreground">
+                    No internal technicians found.
+                  </div>
+                )}
               </div>
 
               {/* Divider */}
@@ -863,6 +905,7 @@ export default function Technicians() {
               </div>
 
               {/* Overall empty state */}
+              {/* Overall empty state */}
               {(!(technicians as any[])?.length && !(thirdPartyTechs as any[])?.length) && (
                 <div className="col-span-full text-center py-12">
                   <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
@@ -879,240 +922,242 @@ export default function Technicians() {
             </TabsContent>
 
 
-<TabsContent value="performance">
-    <TechnicianPerformance />
-</TabsContent>
-        </Tabs >
-      </div >
-    </main >
 
-    {/* Add Technician Dialog */ }
-    < Dialog open = { isAddDialogOpen } onOpenChange = { setIsAddDialogOpen } >
-        <DialogContent className="max-w-md modal-content modal">
-            <DialogHeader>
-                <DialogTitle>Add New Technician</DialogTitle>
-                <DialogDescription>
-                    Add a new technician to your team with their contact information and specialization.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-                <div>
-                    <Label htmlFor="name">Name</Label>
-                    <Input
-                        id="name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="John Doe"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="phone">Phone</Label>
-                    <Input
-                        id="phone"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        placeholder="+1234567890"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                        id="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        placeholder="john@example.com"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="whatsapp">WhatsApp Number</Label>
-                    <Input
-                        id="whatsapp"
-                        value={formData.whatsappNumber}
-                        onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-                        placeholder="+1234567890"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="experience">Experience Level</Label>
-                    <Select
-                        value={formData.experienceLevel}
-                        onValueChange={(value) => setFormData({ ...formData, experienceLevel: value })}
-                    >
-                        <SelectTrigger>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="junior">Junior</SelectItem>
-                            <SelectItem value="mid">Mid-Level</SelectItem>
-                            <SelectItem value="senior">Senior</SelectItem>
-                            <SelectItem value="expert">Expert</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div>
-                    <Label htmlFor="role">Role</Label>
-                    <Select
-                        value={formData.role}
-                        onValueChange={(value) => setFormData({ ...formData, role: value })}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select Role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="technician">Technician</SelectItem>
-                            <SelectItem value="senior_technician">Senior Technician</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div>
-                    <Label htmlFor="specialization">Specialization</Label>
-                    <Input
-                        id="specialization"
-                        value={formData.specialization}
-                        onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-                        placeholder="e.g., Refrigeration, General"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="location">Current City / Location *</Label>
-                    <Input
-                        id="location"
-                        value={formData.baseLocation}
-                        onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
-                        placeholder="Enter city or location..."
-                    />
-                </div>
-            </div>
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                    Cancel
-                </Button>
-                <Button onClick={handleAdd} disabled={createTechnician.isPending}>
-                    {createTechnician.isPending ? "Adding..." : "Add Technician"}
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog >
 
-    {/* Add Third-Party Technician Dialog */ }
-    < Dialog open = { isAddThirdPartyDialogOpen } onOpenChange = { setIsAddThirdPartyDialogOpen } >
-        <DialogContent className="max-w-md modal-content modal">
-            <DialogHeader>
-                <DialogTitle>Add Third-Party Technician</DialogTitle>
-                <DialogDescription>
-                    Add a third-party technician with their contact details and service information.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-                <ThirdPartyTechnicianForm
-                    value={thirdPartyFormData}
-                    onChange={setThirdPartyFormData}
-                />
-            </div>
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddThirdPartyDialogOpen(false)}>
-                    Cancel
-                </Button>
-                <button
-                    className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFA07A] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
-                    onClick={handleAddThirdParty}
-                    disabled={createThirdPartyTechnician.isPending}
-                >
-                    {createThirdPartyTechnician.isPending ? "Adding..." : "Add Third-Party Technician"}
-                </button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog >
+            <TabsContent value="performance">
+              <TechnicianPerformance />
+            </TabsContent>
+          </Tabs >
+        </div >
+      </main >
 
-    {/* Edit Technician Dialog */ }
-    < Dialog open = { isEditDialogOpen } onOpenChange = { setIsEditDialogOpen } >
+      {/* Add Technician Dialog */}
+      < Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} >
         <DialogContent className="max-w-md modal-content modal">
-            <DialogHeader>
-                <DialogTitle>Edit Technician</DialogTitle>
-                <DialogDescription>
-                    Update technician information and settings.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-                <div>
-                    <Label htmlFor="edit-name">Name</Label>
-                    <Input
-                        id="edit-name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-phone">Phone</Label>
-                    <Input
-                        id="edit-phone"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-email">Email</Label>
-                    <Input
-                        id="edit-email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-whatsapp">WhatsApp Number</Label>
-                    <Input
-                        id="edit-whatsapp"
-                        value={formData.whatsappNumber}
-                        onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-experience">Experience Level</Label>
-                    <Select
-                        value={formData.experienceLevel}
-                        onValueChange={(value) => setFormData({ ...formData, experienceLevel: value })}
-                    >
-                        <SelectTrigger>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="junior">Junior</SelectItem>
-                            <SelectItem value="mid">Mid-Level</SelectItem>
-                            <SelectItem value="senior">Senior</SelectItem>
-                            <SelectItem value="expert">Expert</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div>
-                    <Label htmlFor="edit-specialization">Specialization</Label>
-                    <Input
-                        id="edit-specialization"
-                        value={formData.specialization}
-                        onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-location">Current City / Location *</Label>
-                    <Input
-                        id="edit-location"
-                        value={formData.baseLocation}
-                        onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
-                        placeholder="Enter city or location..."
-                    />
-                </div>
+          <DialogHeader>
+            <DialogTitle>Add New Technician</DialogTitle>
+            <DialogDescription>
+              Add a new technician to your team with their contact information and specialization.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="John Doe"
+              />
             </div>
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                    Cancel
-                </Button>
-                <Button onClick={handleUpdate} disabled={updateTechnician.isPending}>
-                    {updateTechnician.isPending ? "Updating..." : "Update Technician"}
-                </Button>
-            </DialogFooter>
+            <div>
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="+1234567890"
+              />
+            </div>
+            <div>
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="john@example.com"
+              />
+            </div>
+            <div>
+              <Label htmlFor="whatsapp">WhatsApp Number</Label>
+              <Input
+                id="whatsapp"
+                value={formData.whatsappNumber}
+                onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                placeholder="+1234567890"
+              />
+            </div>
+            <div>
+              <Label htmlFor="experience">Experience Level</Label>
+              <Select
+                value={formData.experienceLevel}
+                onValueChange={(value) => setFormData({ ...formData, experienceLevel: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="junior">Junior</SelectItem>
+                  <SelectItem value="mid">Mid-Level</SelectItem>
+                  <SelectItem value="senior">Senior</SelectItem>
+                  <SelectItem value="expert">Expert</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="role">Role</Label>
+              <Select
+                value={formData.role}
+                onValueChange={(value) => setFormData({ ...formData, role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="technician">Technician</SelectItem>
+                  <SelectItem value="senior_technician">Senior Technician</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="specialization">Specialization</Label>
+              <Input
+                id="specialization"
+                value={formData.specialization}
+                onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
+                placeholder="e.g., Refrigeration, General"
+              />
+            </div>
+            <div>
+              <Label htmlFor="location">Current City / Location *</Label>
+              <Input
+                id="location"
+                value={formData.baseLocation}
+                onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
+                placeholder="Enter city or location..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAdd} disabled={createTechnician.isPending}>
+              {createTechnician.isPending ? "Adding..." : "Add Technician"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-    </Dialog >
-  </div >
+      </Dialog >
+
+      {/* Add Third-Party Technician Dialog */}
+      < Dialog open={isAddThirdPartyDialogOpen} onOpenChange={setIsAddThirdPartyDialogOpen} >
+        <DialogContent className="max-w-md modal-content modal">
+          <DialogHeader>
+            <DialogTitle>Add Third-Party Technician</DialogTitle>
+            <DialogDescription>
+              Add a third-party technician with their contact details and service information.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <ThirdPartyTechnicianForm
+              value={thirdPartyFormData}
+              onChange={setThirdPartyFormData}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddThirdPartyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <button
+              className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFA07A] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
+              onClick={handleAddThirdParty}
+              disabled={createThirdPartyTechnician.isPending}
+            >
+              {createThirdPartyTechnician.isPending ? "Adding..." : "Add Third-Party Technician"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+
+      {/* Edit Technician Dialog */}
+      < Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} >
+        <DialogContent className="max-w-md modal-content modal">
+          <DialogHeader>
+            <DialogTitle>Edit Technician</DialogTitle>
+            <DialogDescription>
+              Update technician information and settings.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-phone">Phone</Label>
+              <Input
+                id="edit-phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-email">Email</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-whatsapp">WhatsApp Number</Label>
+              <Input
+                id="edit-whatsapp"
+                value={formData.whatsappNumber}
+                onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-experience">Experience Level</Label>
+              <Select
+                value={formData.experienceLevel}
+                onValueChange={(value) => setFormData({ ...formData, experienceLevel: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="junior">Junior</SelectItem>
+                  <SelectItem value="mid">Mid-Level</SelectItem>
+                  <SelectItem value="senior">Senior</SelectItem>
+                  <SelectItem value="expert">Expert</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="edit-specialization">Specialization</Label>
+              <Input
+                id="edit-specialization"
+                value={formData.specialization}
+                onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-location">Current City / Location *</Label>
+              <Input
+                id="edit-location"
+                value={formData.baseLocation}
+                onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
+                placeholder="Enter city or location..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdate} disabled={updateTechnician.isPending}>
+              {updateTechnician.isPending ? "Updating..." : "Update Technician"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog >
+    </div >
   );
 }
