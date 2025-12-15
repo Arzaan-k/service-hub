@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Eye, Download, Search, Loader2, BookOpen } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { useUser } from '@/hooks/use-user';
 
 interface TrainingMaterial {
   id: string;
@@ -34,7 +33,6 @@ const CATEGORIES = [
 
 export default function Training() {
   const { toast } = useToast();
-  const { user } = useUser();
   const [materials, setMaterials] = useState<TrainingMaterial[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
