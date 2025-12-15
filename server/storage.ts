@@ -24,6 +24,8 @@ import {
   ragQueries,
   financeExpenses,
   locationMultipliers,
+  trainingMaterials,
+  trainingViews,
   type User,
   type InsertUser,
   type Customer,
@@ -218,6 +220,16 @@ export interface IStorage {
   // Analytics operations
   getClientAnalytics(range: number): Promise<any[]>;
   getTechnicianAnalytics(range: number): Promise<any[]>;
+  
+  // Training operations
+  createTrainingMaterial(data: any): Promise<any>;
+  getTrainingMaterialsForRole(userRole: string, userId: string): Promise<any[]>;
+  getUnreadTrainingCount(userId: string, userRole: string): Promise<number>;
+  markTrainingAsViewed(materialId: string, userId: string, userRole: string): Promise<void>;
+  getTrainingMaterialFile(materialId: string): Promise<any>;
+  getAllTrainingMaterials(): Promise<any[]>;
+  deleteTrainingMaterial(materialId: string): Promise<void>;
+  updateTrainingMaterial(materialId: string, data: any): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2789,6 +2801,160 @@ export class DatabaseStorage implements IStorage {
     }));
 
     return results;
+  }
+
+  // Training Module Methods
+  async createTrainingMaterial(data: any): Promise<any> {
+    const [material] = await db
+      .insert(trainingMaterials)
+      .values({
+        id: crypto.randomUUID(),
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        fileType: data.fileType,
+        fileName: data.fileName,
+        fileData: data.fileData,
+        fileSize: data.fileSize,
+        contentType: data.contentType,
+        forClient: data.forClient,
+        forTechnician: data.forTechnician,
+        uploadedBy: data.uploadedBy,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+      .returning();
+    
+    return material;
+  }
+
+  async getTrainingMaterialsForRole(userRole: string, userId: string): Promise<any[]> {
+    const roleColumn = userRole === 'client' ? trainingMaterials.forClient : trainingMaterials.forTechnician;
+    
+    const materials = await db
+      .select({
+        id: trainingMaterials.id,
+        title: trainingMaterials.title,
+        description: trainingMaterials.description,
+        category: trainingMaterials.category,
+        fileType: trainingMaterials.fileType,
+        fileName: trainingMaterials.fileName,
+        fileSize: trainingMaterials.fileSize,
+        contentType: trainingMaterials.contentType,
+        createdAt: trainingMaterials.createdAt,
+        viewedAt: trainingViews.viewedAt,
+        isViewed: sql<boolean>`${trainingViews.id} IS NOT NULL`
+      })
+      .from(trainingMaterials)
+      .leftJoin(
+        trainingViews,
+        and(
+          eq(trainingViews.materialId, trainingMaterials.id),
+          eq(trainingViews.userId, userId)
+        )
+      )
+      .where(eq(roleColumn, true))
+      .orderBy(desc(trainingMaterials.createdAt));
+    
+    return materials;
+  }
+
+  async getUnreadTrainingCount(userId: string, userRole: string): Promise<number> {
+    const roleColumn = userRole === 'client' ? trainingMaterials.forClient : trainingMaterials.forTechnician;
+    
+    const result = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(trainingMaterials)
+      .leftJoin(
+        trainingViews,
+        and(
+          eq(trainingViews.materialId, trainingMaterials.id),
+          eq(trainingViews.userId, userId)
+        )
+      )
+      .where(
+        and(
+          eq(roleColumn, true),
+          isNull(trainingViews.id)
+        )
+      );
+    
+    return result[0]?.count || 0;
+  }
+
+  async markTrainingAsViewed(materialId: string, userId: string, userRole: string): Promise<void> {
+    try {
+      await db
+        .insert(trainingViews)
+        .values({
+          id: crypto.randomUUID(),
+          materialId,
+          userId,
+          userRole,
+          viewedAt: new Date()
+        })
+        .onConflictDoNothing();
+    } catch (error) {
+      // Ignore duplicate key errors
+      console.log('[Training] View already recorded or error:', error);
+    }
+  }
+
+  async getTrainingMaterialFile(materialId: string): Promise<any> {
+    const [material] = await db
+      .select({
+        fileData: trainingMaterials.fileData,
+        fileName: trainingMaterials.fileName,
+        contentType: trainingMaterials.contentType,
+        fileSize: trainingMaterials.fileSize
+      })
+      .from(trainingMaterials)
+      .where(eq(trainingMaterials.id, materialId));
+    
+    return material;
+  }
+
+  async getAllTrainingMaterials(): Promise<any[]> {
+    const materials = await db
+      .select({
+        id: trainingMaterials.id,
+        title: trainingMaterials.title,
+        description: trainingMaterials.description,
+        category: trainingMaterials.category,
+        fileType: trainingMaterials.fileType,
+        fileName: trainingMaterials.fileName,
+        fileSize: trainingMaterials.fileSize,
+        forClient: trainingMaterials.forClient,
+        forTechnician: trainingMaterials.forTechnician,
+        createdAt: trainingMaterials.createdAt,
+        viewCount: sql<number>`
+          (SELECT COUNT(*)::int FROM ${trainingViews} 
+           WHERE ${trainingViews.materialId} = ${trainingMaterials.id})
+        `
+      })
+      .from(trainingMaterials)
+      .orderBy(desc(trainingMaterials.createdAt));
+    
+    return materials;
+  }
+
+  async deleteTrainingMaterial(materialId: string): Promise<void> {
+    await db
+      .delete(trainingMaterials)
+      .where(eq(trainingMaterials.id, materialId));
+  }
+
+  async updateTrainingMaterial(materialId: string, data: any): Promise<any> {
+    const [updated] = await db
+      .update(trainingMaterials)
+      .set({
+        ...data,
+        updatedAt: new Date()
+      })
+      .where(eq(trainingMaterials.id, materialId))
+      .returning();
+    
+    return updated;
   }
 }
 

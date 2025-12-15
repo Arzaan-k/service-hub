@@ -52,6 +52,7 @@ import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceReque
 import { acknowledgeSummary } from './services/dailySummaryService';
 import technicianDocumentRoutes from './routes/technicianDocumentRoutes';
 import { registerFinanceRoutes } from "./routes/finance";
+import trainingRoutes from './routes/training';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -106,6 +107,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Finance Routes
   registerFinanceRoutes(app);
+
+  // Register Training Routes
+  app.use('/api', trainingRoutes);
 
   // Third-party technicians helper functions (defined early for use throughout routes)
   const thirdPartyDir = path.join(process.cwd(), "server", "data");
