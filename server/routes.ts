@@ -5444,16 +5444,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Inventory routes
-  app.get("/api/inventory", authenticateUser, async (req, res, next) => {
-    try {
-      // This would need a getAllInventory method in storage
-      return next();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch inventory" });
-    }
-  });
-
   // Scheduling routes
   app.post("/api/scheduling/run", authenticateUser, requireRole("admin", "coordinator"), async (req, res) => {
     try {
