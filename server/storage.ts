@@ -2927,8 +2927,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllTrainingMaterials(): Promise<any[]> {
-    console.log('[Training] Fetching all training materials with view counts...');
-    
     const materials = await db
       .select({
         id: trainingMaterials.id,
@@ -2941,31 +2939,23 @@ export class DatabaseStorage implements IStorage {
         forClient: trainingMaterials.forClient,
         forTechnician: trainingMaterials.forTechnician,
         createdAt: trainingMaterials.createdAt,
-        viewCount: sql<number>`
-          (SELECT COUNT(*)::int FROM training_views 
-           WHERE training_views.material_id = training_materials.id)
-        `
+        viewCount: sql<number>`COALESCE(COUNT(${trainingViews.id}), 0)::int`
       })
       .from(trainingMaterials)
+      .leftJoin(trainingViews, eq(trainingViews.materialId, trainingMaterials.id))
+      .groupBy(
+        trainingMaterials.id,
+        trainingMaterials.title,
+        trainingMaterials.description,
+        trainingMaterials.category,
+        trainingMaterials.fileType,
+        trainingMaterials.fileName,
+        trainingMaterials.fileSize,
+        trainingMaterials.forClient,
+        trainingMaterials.forTechnician,
+        trainingMaterials.createdAt
+      )
       .orderBy(desc(trainingMaterials.createdAt));
-    
-    console.log('[Training] Query returned materials:', materials.map(m => ({ id: m.id, title: m.title, viewCount: m.viewCount })));
-    
-    // Debug: Check what's in training_views table for each material
-    for (const material of materials) {
-      const views = await db
-        .select()
-        .from(trainingViews)
-        .where(eq(trainingViews.materialId, material.id));
-      console.log(`[Training] Material ${material.id} (${material.title}) - Direct query shows ${views.length} views:`, views.map(v => ({ userId: v.userId, userRole: v.userRole })));
-      
-      // Try raw SQL query to verify
-      const rawResult = await db.execute(sql`
-        SELECT COUNT(*)::int as count FROM training_views 
-        WHERE material_id = ${material.id}
-      `);
-      console.log(`[Training] Material ${material.id} - Raw SQL count:`, rawResult.rows[0]);
-    }
     
     return materials;
   }
