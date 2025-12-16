@@ -4156,7 +4156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { startDate, endDate } = req.query;
 
       // Build date constraints
-      const dateFilter = [];
+      const dateFilter: SQL<unknown>[] = [];
       if (startDate) {
         dateFilter.push(sql`${serviceRequests.updatedAt} >= ${new Date(startDate as string).toISOString()}`);
       }
@@ -4208,7 +4208,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               sql`${serviceRequests.workType} ILIKE '%PM%'`,
               sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
               sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
-            )),
+            ) as SQL<unknown>),
             ...dateFilter
           ));
         const servicesDone = Number(servicesDoneQuery[0]?.count || 0);
@@ -4244,7 +4244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .from(serviceRequests)
           .where(and(
             eq(serviceRequests.assignedTechnicianId, techId),
-            inArray(serviceRequests.status, ['assigned', 'in_progress', 'awaiting_parts']),
+            sql`${serviceRequests.status} IN ('assigned', 'in_progress', 'awaiting_parts')`,
             ...dateFilter
           ));
         const pendingRequestsCount = Number(pendingQuery[0]?.count || 0);

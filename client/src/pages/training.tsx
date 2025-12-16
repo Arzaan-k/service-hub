@@ -151,7 +151,7 @@ export default function Training() {
       <div className="flex h-screen overflow-hidden bg-gray-50">
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
+          <Header title="Training Materials" />
           <main className="flex-1 overflow-y-auto flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
           </main>
@@ -164,7 +164,7 @@ export default function Training() {
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
+        <Header title="Training Materials" />
         <main className="flex-1 overflow-y-auto">
           <div className="space-y-6 p-6">
       <Card className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">

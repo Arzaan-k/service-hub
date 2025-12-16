@@ -17,7 +17,7 @@ export default function AdminTraining() {
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
+        <Header title="Training Management" />
         <main className="flex-1 overflow-y-auto">
           <div className="space-y-6 p-6">
       <div className="flex items-center gap-3">
