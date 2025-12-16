@@ -2927,6 +2927,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllTrainingMaterials(): Promise<any[]> {
+    console.log('[Training] Fetching all training materials with view counts...');
+    
     const materials = await db
       .select({
         id: trainingMaterials.id,
@@ -2947,13 +2949,22 @@ export class DatabaseStorage implements IStorage {
       .from(trainingMaterials)
       .orderBy(desc(trainingMaterials.createdAt));
     
+    console.log('[Training] Query returned materials:', materials.map(m => ({ id: m.id, title: m.title, viewCount: m.viewCount })));
+    
     // Debug: Check what's in training_views table for each material
     for (const material of materials) {
       const views = await db
         .select()
         .from(trainingViews)
         .where(eq(trainingViews.materialId, material.id));
-      console.log(`[Training] Material ${material.id} has ${views.length} views in DB:`, views.map(v => ({ userId: v.userId, userRole: v.userRole })));
+      console.log(`[Training] Material ${material.id} (${material.title}) - Direct query shows ${views.length} views:`, views.map(v => ({ userId: v.userId, userRole: v.userRole })));
+      
+      // Try raw SQL query to verify
+      const rawResult = await db.execute(sql`
+        SELECT COUNT(*)::int as count FROM training_views 
+        WHERE material_id = ${material.id}
+      `);
+      console.log(`[Training] Material ${material.id} - Raw SQL count:`, rawResult.rows[0]);
     }
     
     return materials;
