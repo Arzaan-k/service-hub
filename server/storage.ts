@@ -2940,8 +2940,8 @@ export class DatabaseStorage implements IStorage {
         forTechnician: trainingMaterials.forTechnician,
         createdAt: trainingMaterials.createdAt,
         viewCount: sql<number>`
-          (SELECT COUNT(*)::int FROM ${trainingViews} 
-           WHERE ${trainingViews.materialId} = ${trainingMaterials.id})
+          (SELECT COUNT(*)::int FROM training_views 
+           WHERE training_views.material_id = training_materials.id)
         `
       })
       .from(trainingMaterials)
