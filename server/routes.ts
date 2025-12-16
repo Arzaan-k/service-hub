@@ -45,7 +45,7 @@ import {
   recalculateTripCosts
 } from "./services/travel-planning";
 import { db } from './db';
-import { sql, eq, desc, isNotNull, isNull, and, or, not, inArray } from 'drizzle-orm';
+import { sql, eq, desc, isNotNull, isNull, and, or, not, inArray, SQL } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
 import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers, feedback } from '@shared/schema';
