@@ -31,8 +31,7 @@ import { startDataUpdateScheduler } from "./services/dataUpdateScheduler";
 import { startPasswordReminderScheduler } from "./services/passwordReminderScheduler";
 import { vectorStore } from "./services/vectorStore";
 import { db, closeDatabase } from "./db";
-import cron from "node-cron";
-import { generateDailySummaryAndNotify, checkAndEscalate } from "./services/dailySummaryService";
+import { startServiceSummaryScheduler, getServiceSummaryScheduler } from "./services/serviceSummaryScheduler";
 
 const app = express();
 
@@ -205,24 +204,15 @@ app.use((req, res, next) => {
       console.error('❌ Error starting Orbcomm CDH integration:', error);
     }
 
-    // Daily Summary Cron Jobs
-    console.log('[SERVER] Starting Daily Summary Cron Jobs...');
-
-    // 6 AM Daily: Generate Summary
-    cron.schedule("0 6 * * *", () => {
-      console.log("Running daily summary generation...");
-      generateDailySummaryAndNotify();
-    });
-
-    // 12 PM Daily: Check Escalation
-    cron.schedule("0 12 * * *", () => {
-      console.log("Running daily summary escalation check...");
-      checkAndEscalate();
-    });
-    console.log('✅ Daily Summary Cron Jobs scheduled');
   } else {
     console.log('⏭️ Skipping Orbcomm initialization in development mode');
   }
+
+  // Daily Service Summary Scheduler (env-based timing with caching)
+  // Runs in BOTH development and production modes
+  console.log('[SERVER] Starting Service Summary Scheduler...');
+  startServiceSummaryScheduler();
+  console.log('✅ Service Summary Scheduler started (uses env variables for timing)');
 
   // Start password reminder scheduler (runs every hour in both dev and production)
   console.log('[SERVER] Starting password reminder scheduler...');

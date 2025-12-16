@@ -1,12 +1,14 @@
 import { useState, useMemo } from "react";
 import { format, subHours, isAfter, getHours } from "date-fns";
-import { ChevronDown, ChevronUp, ExternalLink, AlertTriangle, AlertCircle, Info, CheckCircle2, Clock, Activity } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, AlertTriangle, AlertCircle, Info, CheckCircle2, Clock, Activity, BarChart3, Thermometer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import { ContainerAnalytics } from "@/components/container/container-analytics-enhanced";
 
 interface Alert {
     id: string;
@@ -21,13 +23,15 @@ interface Alert {
 interface ContainerAlertCardProps {
     container: any;
     alerts: Alert[];
+    allAlerts: Alert[]; // All alerts for analytics
     onViewAll: (containerId: string) => void;
     onAcknowledge: (alertId: string) => void;
     onResolve: (alertId: string) => void;
 }
 
-export function ContainerAlertCard({ container, alerts, onViewAll, onAcknowledge, onResolve }: ContainerAlertCardProps) {
+export function ContainerAlertCard({ container, alerts, allAlerts, onViewAll, onAcknowledge, onResolve }: ContainerAlertCardProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [showAnalytics, setShowAnalytics] = useState(false);
 
     // Smart Deduplication and Grouping Logic
     const groupedAlerts = useMemo(() => {
@@ -136,6 +140,41 @@ export function ContainerAlertCard({ container, alerts, onViewAll, onAcknowledge
             else if (alert.severity === 'medium') acc.medium++;
             return acc;
         }, { total: 0, critical: 0, high: 0, medium: 0 });
+    }, [alerts]);
+
+    // Temperature Stats
+    const temperatureStats = useMemo(() => {
+        const temps: number[] = [];
+        alerts.forEach((alert: any) => {
+            let temp: number | null = null;
+
+            // Extract temperature from rawData
+            if (alert.rawData?.Event?.ReeferData?.TAmb !== undefined) {
+                temp = alert.rawData.Event.ReeferData.TAmb;
+            } else if (alert.rawData?.Event?.DeviceData?.DeviceTemp !== undefined) {
+                temp = alert.rawData.Event.DeviceData.DeviceTemp;
+            } else if (alert.rawData?.temperature !== undefined) {
+                temp = alert.rawData.temperature;
+            }
+
+            if (temp !== null && !isNaN(temp)) {
+                temps.push(temp);
+            }
+        });
+
+        if (temps.length === 0) return null;
+
+        const avg = temps.reduce((a, b) => a + b, 0) / temps.length;
+        const min = Math.min(...temps);
+        const max = Math.max(...temps);
+
+        return {
+            current: temps[temps.length - 1],
+            avg: parseFloat(avg.toFixed(1)),
+            min: parseFloat(min.toFixed(1)),
+            max: parseFloat(max.toFixed(1)),
+            readings: temps.length
+        };
     }, [alerts]);
 
     const latestAlert = alerts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
@@ -344,12 +383,71 @@ export function ContainerAlertCard({ container, alerts, onViewAll, onAcknowledge
                                         </span>
                                     </div>
                                 </div>
+
+                                {/* Temperature Stats */}
+                                {temperatureStats && (
+                                    <div className="mt-6 pt-4 border-t border-border/50">
+                                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+                                            <Thermometer className="h-3 w-3" />
+                                            Temperature
+                                        </h4>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground">Current</span>
+                                                <span className="font-mono font-medium text-orange-600 dark:text-orange-400">
+                                                    {temperatureStats.current}°C
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground">Average</span>
+                                                <span className="font-mono font-medium">{temperatureStats.avg}°C</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground">Range</span>
+                                                <span className="font-mono font-medium text-xs">
+                                                    {temperatureStats.min}°C - {temperatureStats.max}°C
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground text-center mt-2">
+                                                {temperatureStats.readings} readings
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* View Analytics Button */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full mt-6 gap-2"
+                                    onClick={() => setShowAnalytics(true)}
+                                >
+                                    <BarChart3 className="h-4 w-4" />
+                                    View Analytics
+                                </Button>
                             </div>
 
                         </div>
                     </div>
                 </CollapsibleContent>
             </Collapsible>
+
+            {/* Analytics Dialog */}
+            <Dialog open={showAnalytics} onOpenChange={setShowAnalytics}>
+                <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Container Analytics - {container?.containerCode || "Unknown"}</DialogTitle>
+                        <DialogDescription>
+                            Detailed performance analytics and insights
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <ContainerAnalytics
+                        container={container}
+                        alerts={allAlerts}
+                    />
+                </DialogContent>
+            </Dialog>
         </Card>
     );
 }

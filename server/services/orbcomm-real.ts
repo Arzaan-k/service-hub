@@ -632,12 +632,13 @@ class OrbcommAPIClient {
                   console.log(`✅ Container match found: ${container.containerCode} (ID: ${container.id}) - creating REAL ORBCOMM alert`);
 
                   // Update container telemetry with full Orbcomm data using enhanced method
+                  const rawTemp = event.Temperature || event.temperature;
                   await storage.updateContainerTelemetry(container.id, {
                     lastAssetId: lastAssetId || deviceId,
                     timestamp,
                     latitude: location?.latitude,
                     longitude: location?.longitude,
-                    temperature: event.Temperature || event.temperature,
+                    temperature: rawTemp !== undefined ? Math.round(rawTemp) : undefined,
                     rawData: event // Store complete raw Orbcomm event as JSONB
                   });
 
@@ -687,12 +688,13 @@ class OrbcommAPIClient {
                   if (container) {
                     console.log(`✅ Container match found: ${container.containerCode} (ID: ${container.id}) - updating telemetry with REAL ORBCOMM data`);
 
+                    const rawTemp = event.Temperature || event.temperature;
                     await storage.updateContainerTelemetry(container.id, {
                       lastAssetId: lastAssetId,
                       timestamp,
                       latitude: location?.latitude,
                       longitude: location?.longitude,
-                      temperature: event.Temperature || event.temperature,
+                      temperature: rawTemp !== undefined ? Math.round(rawTemp) : undefined,
                       rawData: event // Store complete raw Orbcomm event as JSONB
                     });
 
@@ -770,7 +772,7 @@ class OrbcommAPIClient {
 
           // Construct normalized telemetry object for frontend display
           const telemetryData = {
-            temperature: device.temperature,
+            temperature: device.temperature !== undefined ? Math.round(device.temperature) : undefined,
             doorStatus: device.doorStatus,
             powerStatus: device.powerStatus,
             batteryLevel: device.batteryLevel,

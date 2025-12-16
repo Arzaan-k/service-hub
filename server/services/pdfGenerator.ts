@@ -103,7 +103,6 @@ export async function generateServiceReportPDF(serviceRequestId: string, stage: 
         const doc = new PDFDocument({ 
             margin: LAYOUT.margin, 
             size: 'LETTER',
-            bufferPages: true,
             autoFirstPage: true
         });
         const buffers: Buffer[] = [];
@@ -592,7 +591,7 @@ function drawSectionHeader(ctx: { doc: any, y: number }, title: string) {
        .text(title, LAYOUT.margin + 15, ctx.y + 5);
        
     doc.moveTo(LAYOUT.margin, ctx.y + 20).lineTo(LAYOUT.width - LAYOUT.margin, ctx.y + 20)
-       .lineWidth(0.5).stroke(COLORS.border);
+       .strokeColor(COLORS.border).lineWidth(0.5).stroke();
        
     ctx.y += 30;
     doc.fillColor(COLORS.text).font('Helvetica').fontSize(10);
@@ -714,25 +713,15 @@ function drawCoverPage(ctx: any, req: any, customer: any) {
 }
 
 function drawFooter(doc: any, docId: string) {
+    // Get the actual page range from PDFKit
     const range = doc.bufferedPageRange();
+    const totalPages = range.count;
     
-    // Count actual content pages (pages that have content beyond header area)
-    let actualPageCount = 0;
-    const contentPages: number[] = [];
-    
-    for (let i = range.start; i < range.start + range.count; i++) {
-        doc.switchToPage(i);
-        // A page is considered to have content if y position is beyond header (120px)
-        // We check by seeing if there's any content drawn below header
-        // For simplicity, we'll include all pages but the logic prevents empty trailing pages
-        contentPages.push(i);
-        actualPageCount++;
-    }
-    
-    // Draw footer on all pages with correct page numbering
-    for (let idx = 0; idx < contentPages.length; idx++) {
-        const pageNum = contentPages[idx];
-        doc.switchToPage(pageNum);
+    // Add footer to each page that was actually created
+    // PDFKit page numbers start from range.start (usually 0)
+    for (let i = 0; i < totalPages; i++) {
+        const pageIndex = range.start + i;
+        doc.switchToPage(pageIndex);
         const bottom = LAYOUT.height - 30;
         
         doc.moveTo(LAYOUT.margin, bottom - 10).lineTo(LAYOUT.width - LAYOUT.margin, bottom - 10)
@@ -740,7 +729,7 @@ function drawFooter(doc: any, docId: string) {
            
         doc.fontSize(8).fillColor(COLORS.textLabel);
         doc.text('Service Hub Management System', LAYOUT.margin, bottom);
-        doc.text(`Page ${idx + 1} of ${actualPageCount}`, 0, bottom, { align: 'center' });
+        doc.text(`Page ${i + 1} of ${totalPages}`, 0, bottom, { align: 'center' });
         doc.text(`Doc ID: ${docId.substring(0, 8).toUpperCase()}`, 0, bottom, { align: 'right' });
         
         doc.text('CONFIDENTIAL - This document contains proprietary information', 0, bottom + 10, { align: 'center' });
@@ -767,16 +756,16 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
   const tripTasks = await storage.getTechnicianTripTasks(tripId);
 
   // Get service requests and PM containers
-  const serviceRequests = [];
-  const pmContainers = [];
+  const serviceRequests: any[] = [];
+  const pmContainers: any[] = [];
 
   for (const task of tripTasks) {
-    if (task.taskType === 'alert' || task.taskType === 'service') {
+    if (task.taskType === 'alert') {
       if (task.serviceRequestId) {
         const sr = await storage.getServiceRequest(task.serviceRequestId);
         if (sr) serviceRequests.push(sr);
       }
-    } else if (task.taskType === 'pm') {
+    } else if (task.taskType === 'pm' || task.taskType === 'inspection') {
       const container = await storage.getContainer(task.containerId);
       if (container) pmContainers.push(container);
     }
@@ -788,7 +777,7 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
         size: 'A4',
         margin: 50,
         info: {
-          Title: `Trip Finance Report - ${technician?.name || 'Technician'}`,
+          Title: `Trip Finance Report - ${technician?.employeeCode || 'Technician'}`,
           Author: 'Service Hub',
           Subject: 'Trip Finance Approval Report'
         }
@@ -804,8 +793,9 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
       doc.fontSize(24).font('Helvetica-Bold').fillColor(COLORS.primary)
          .text('TRIP FINANCE APPROVAL REPORT', 50, 50, { align: 'center' });
 
+      const techUser = technician ? await storage.getUser(technician.userId) : null;
       doc.fontSize(18).fillColor(COLORS.text)
-         .text(`${technician?.name || 'Technician'} - ${trip.destinationCity}`, 50, 90, { align: 'center' });
+         .text(`${techUser?.name || technician?.employeeCode || 'Technician'} - ${trip.destinationCity}`, 50, 90, { align: 'center' });
 
       doc.fontSize(10).fillColor(COLORS.textLabel)
          .text(`Report ID: TRIP-${Date.now()}`, 50, 120, { align: 'left' })
@@ -828,11 +818,11 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
       yPos += 20;
 
       doc.fontSize(10).fillColor(COLORS.text)
-         .text(`Name: ${technician?.name}`, leftX, yPos);
+         .text(`Name: ${techUser?.name || 'N/A'}`, leftX, yPos);
       yPos += 15;
       doc.text(`Employee Code: ${technician?.employeeCode}`, leftX, yPos);
       yPos += 15;
-      doc.text(`Base Location: ${typeof technician?.baseLocation === 'string' ? technician.baseLocation : technician?.baseLocation?.city || 'N/A'}`, leftX, yPos);
+      doc.text(`Base Location: ${typeof technician?.baseLocation === 'string' ? technician.baseLocation : (technician?.baseLocation as any)?.city || 'N/A'}`, leftX, yPos);
       yPos += 15;
       doc.text(`Grade: ${technician?.grade || 'N/A'}`, leftX, yPos);
       yPos += 15;
@@ -958,7 +948,7 @@ export async function generateTripFinancePDF(tripId: string): Promise<Buffer> {
 
       const taskCosts = (serviceTasks * serviceRate) + (pmTasks * pmRate);
       const travelAllowance = estimatedDays * dailyAllowance;
-      const miscellaneous = tripCosts?.miscCost || 0;
+      const miscellaneous = Number(tripCosts?.miscCost || 0);
       const contingency = Math.round(taskCosts * 0.03);
       const totalCost = taskCosts + travelAllowance + miscellaneous + contingency;
 

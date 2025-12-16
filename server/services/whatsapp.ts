@@ -4871,7 +4871,7 @@ export async function processIncomingMessage(message: any, from: string): Promis
       messageContent: message,
       whatsappMessageId: message.id,
       status: 'received',
-      sentAt: new Date(parseInt(message.timestamp) * 1000),
+      sentAt: new Date(parseInt(message.timestamp)),
       relatedEntityType,
       relatedEntityId
     });

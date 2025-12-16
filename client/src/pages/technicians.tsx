@@ -93,7 +93,6 @@ export default function Technicians() {
     queryKey: ["/api/technicians"],
     enabled: authReady && !!authToken,
     retry: false,
-    retry: false,
   });
 
   // Fetch cities for location dropdown
@@ -171,7 +170,6 @@ export default function Technicians() {
   const { data: thirdPartyTechs, isLoading: isLoadingThirdParty, error: thirdPartyError } = useQuery({
     queryKey: ["/api/thirdparty-technicians"],
     enabled: authReady && !!authToken,
-    retry: false,
     retry: false,
   });
 
@@ -879,240 +877,242 @@ export default function Technicians() {
             </TabsContent>
 
 
-<TabsContent value="performance">
-    <TechnicianPerformance />
-</TabsContent>
-        </Tabs >
-      </div >
-    </main >
+<<<<<<< HEAD
+            <TabsContent value="performance">
+              <TechnicianPerformance />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </main>
 
-    {/* Add Technician Dialog */ }
-    < Dialog open = { isAddDialogOpen } onOpenChange = { setIsAddDialogOpen } >
+      {/* Add Technician Dialog */}
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        
         <DialogContent className="max-w-md modal-content modal">
-            <DialogHeader>
-                <DialogTitle>Add New Technician</DialogTitle>
-                <DialogDescription>
-                    Add a new technician to your team with their contact information and specialization.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-                <div>
-                    <Label htmlFor="name">Name</Label>
-                    <Input
-                        id="name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="John Doe"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="phone">Phone</Label>
-                    <Input
-                        id="phone"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        placeholder="+1234567890"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                        id="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        placeholder="john@example.com"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="whatsapp">WhatsApp Number</Label>
-                    <Input
-                        id="whatsapp"
-                        value={formData.whatsappNumber}
-                        onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-                        placeholder="+1234567890"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="experience">Experience Level</Label>
-                    <Select
-                        value={formData.experienceLevel}
-                        onValueChange={(value) => setFormData({ ...formData, experienceLevel: value })}
-                    >
-                        <SelectTrigger>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="junior">Junior</SelectItem>
-                            <SelectItem value="mid">Mid-Level</SelectItem>
-                            <SelectItem value="senior">Senior</SelectItem>
-                            <SelectItem value="expert">Expert</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div>
-                    <Label htmlFor="role">Role</Label>
-                    <Select
-                        value={formData.role}
-                        onValueChange={(value) => setFormData({ ...formData, role: value })}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select Role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="technician">Technician</SelectItem>
-                            <SelectItem value="senior_technician">Senior Technician</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div>
-                    <Label htmlFor="specialization">Specialization</Label>
-                    <Input
-                        id="specialization"
-                        value={formData.specialization}
-                        onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-                        placeholder="e.g., Refrigeration, General"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="location">Current City / Location *</Label>
-                    <Input
-                        id="location"
-                        value={formData.baseLocation}
-                        onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
-                        placeholder="Enter city or location..."
-                    />
-                </div>
+          <DialogHeader>
+            <DialogTitle>Add New Technician</DialogTitle>
+            <DialogDescription>
+              Add a new technician to your team with their contact information and specialization.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="John Doe"
+              />
             </div>
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                    Cancel
-                </Button>
-                <Button onClick={handleAdd} disabled={createTechnician.isPending}>
-                    {createTechnician.isPending ? "Adding..." : "Add Technician"}
-                </Button>
-            </DialogFooter>
+            <div>
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="+1234567890"
+              />
+            </div>
+            <div>
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="john@example.com"
+              />
+            </div>
+            <div>
+              <Label htmlFor="whatsapp">WhatsApp Number</Label>
+              <Input
+                id="whatsapp"
+                value={formData.whatsappNumber}
+                onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                placeholder="+1234567890"
+              />
+            </div>
+            <div>
+              <Label htmlFor="experience">Experience Level</Label>
+              <Select
+                value={formData.experienceLevel}
+                onValueChange={(value) => setFormData({ ...formData, experienceLevel: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="junior">Junior</SelectItem>
+                  <SelectItem value="mid">Mid-Level</SelectItem>
+                  <SelectItem value="senior">Senior</SelectItem>
+                  <SelectItem value="expert">Expert</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="role">Role</Label>
+              <Select
+                value={formData.role}
+                onValueChange={(value) => setFormData({ ...formData, role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="technician">Technician</SelectItem>
+                  <SelectItem value="senior_technician">Senior Technician</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="specialization">Specialization</Label>
+              <Input
+                id="specialization"
+                value={formData.specialization}
+                onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
+                placeholder="e.g., Refrigeration, General"
+              />
+            </div>
+            <div>
+              <Label htmlFor="location">Current City / Location *</Label>
+              <Input
+                id="location"
+                value={formData.baseLocation}
+                onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
+                placeholder="Enter city or location..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAdd} disabled={createTechnician.isPending}>
+              {createTechnician.isPending ? "Adding..." : "Add Technician"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-    </Dialog >
+      </Dialog >
 
-    {/* Add Third-Party Technician Dialog */ }
-    < Dialog open = { isAddThirdPartyDialogOpen } onOpenChange = { setIsAddThirdPartyDialogOpen } >
+      {/* Add Third-Party Technician Dialog */}
+      < Dialog open={isAddThirdPartyDialogOpen} onOpenChange={setIsAddThirdPartyDialogOpen} >
         <DialogContent className="max-w-md modal-content modal">
-            <DialogHeader>
-                <DialogTitle>Add Third-Party Technician</DialogTitle>
-                <DialogDescription>
-                    Add a third-party technician with their contact details and service information.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-                <ThirdPartyTechnicianForm
-                    value={thirdPartyFormData}
-                    onChange={setThirdPartyFormData}
-                />
-            </div>
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddThirdPartyDialogOpen(false)}>
-                    Cancel
-                </Button>
-                <button
-                    className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFA07A] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
-                    onClick={handleAddThirdParty}
-                    disabled={createThirdPartyTechnician.isPending}
-                >
-                    {createThirdPartyTechnician.isPending ? "Adding..." : "Add Third-Party Technician"}
-                </button>
-            </DialogFooter>
+          <DialogHeader>
+            <DialogTitle>Add Third-Party Technician</DialogTitle>
+            <DialogDescription>
+              Add a third-party technician with their contact details and service information.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <ThirdPartyTechnicianForm
+              value={thirdPartyFormData}
+              onChange={setThirdPartyFormData}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddThirdPartyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <button
+              className="flex items-center gap-2 bg-gradient-to-r from-[#FFD4E3] to-[#FFA07A] text-[#3A3A3A] hover:opacity-90 font-medium px-4 py-2 rounded-xl shadow-sm transition-all duration-300"
+              onClick={handleAddThirdParty}
+              disabled={createThirdPartyTechnician.isPending}
+            >
+              {createThirdPartyTechnician.isPending ? "Adding..." : "Add Third-Party Technician"}
+            </button>
+          </DialogFooter>
         </DialogContent>
-    </Dialog >
+      </Dialog >
 
-    {/* Edit Technician Dialog */ }
-    < Dialog open = { isEditDialogOpen } onOpenChange = { setIsEditDialogOpen } >
+      {/* Edit Technician Dialog */}
+      < Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} >
         <DialogContent className="max-w-md modal-content modal">
-            <DialogHeader>
-                <DialogTitle>Edit Technician</DialogTitle>
-                <DialogDescription>
-                    Update technician information and settings.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-                <div>
-                    <Label htmlFor="edit-name">Name</Label>
-                    <Input
-                        id="edit-name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-phone">Phone</Label>
-                    <Input
-                        id="edit-phone"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-email">Email</Label>
-                    <Input
-                        id="edit-email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-whatsapp">WhatsApp Number</Label>
-                    <Input
-                        id="edit-whatsapp"
-                        value={formData.whatsappNumber}
-                        onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-experience">Experience Level</Label>
-                    <Select
-                        value={formData.experienceLevel}
-                        onValueChange={(value) => setFormData({ ...formData, experienceLevel: value })}
-                    >
-                        <SelectTrigger>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="junior">Junior</SelectItem>
-                            <SelectItem value="mid">Mid-Level</SelectItem>
-                            <SelectItem value="senior">Senior</SelectItem>
-                            <SelectItem value="expert">Expert</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div>
-                    <Label htmlFor="edit-specialization">Specialization</Label>
-                    <Input
-                        id="edit-specialization"
-                        value={formData.specialization}
-                        onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="edit-location">Current City / Location *</Label>
-                    <Input
-                        id="edit-location"
-                        value={formData.baseLocation}
-                        onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
-                        placeholder="Enter city or location..."
-                    />
-                </div>
+          <DialogHeader>
+            <DialogTitle>Edit Technician</DialogTitle>
+            <DialogDescription>
+              Update technician information and settings.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
             </div>
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                    Cancel
-                </Button>
-                <Button onClick={handleUpdate} disabled={updateTechnician.isPending}>
-                    {updateTechnician.isPending ? "Updating..." : "Update Technician"}
-                </Button>
-            </DialogFooter>
+            <div>
+              <Label htmlFor="edit-phone">Phone</Label>
+              <Input
+                id="edit-phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-email">Email</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-whatsapp">WhatsApp Number</Label>
+              <Input
+                id="edit-whatsapp"
+                value={formData.whatsappNumber}
+                onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-experience">Experience Level</Label>
+              <Select
+                value={formData.experienceLevel}
+                onValueChange={(value) => setFormData({ ...formData, experienceLevel: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="junior">Junior</SelectItem>
+                  <SelectItem value="mid">Mid-Level</SelectItem>
+                  <SelectItem value="senior">Senior</SelectItem>
+                  <SelectItem value="expert">Expert</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="edit-specialization">Specialization</Label>
+              <Input
+                id="edit-specialization"
+                value={formData.specialization}
+                onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-location">Current City / Location *</Label>
+              <Input
+                id="edit-location"
+                value={formData.baseLocation}
+                onChange={(e) => setFormData({ ...formData, baseLocation: e.target.value })}
+                placeholder="Enter city or location..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdate} disabled={updateTechnician.isPending}>
+              {updateTechnician.isPending ? "Updating..." : "Update Technician"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-    </Dialog >
-  </div >
+      </Dialog >
+    </div >
   );
 }

@@ -109,23 +109,25 @@ export function TripDetailsModal({
   const technician = technicianData as TechnicianData;
   const trip = tripData as TripData;
 
-  // Group tasks by type
-  const serviceRequests = trip?.tasks?.filter((task: any) => task.taskType === 'service' || task.taskType === 'alert') || [];
-  const pmTasks = trip?.tasks?.filter((task: any) => task.taskType === 'pm') || [];
+  // Group tasks by type with safety checks
+  const safeTasks = Array.isArray(trip?.tasks) ? trip.tasks : [];
+  const serviceRequests = safeTasks.filter((task: any) => task.taskType === 'service' || task.taskType === 'alert');
+  const pmTasks = safeTasks.filter((task: any) => task.taskType === 'pm');
 
   // Group services by city
   const servicesByCity = serviceRequests.reduce((acc: any, task: any) => {
     let city = 'Unknown';
 
     // Safely extract city from various possible locations
-    const containerCity = task.container?.currentLocation?.city;
-    const customerCity = task.customer?.city;
+    const containerCity = task?.container?.currentLocation?.city;
+    const customerCity = task?.customer?.city;
 
     if (typeof containerCity === 'string' && containerCity.trim()) {
       city = containerCity.trim();
     } else if (typeof customerCity === 'string' && customerCity.trim()) {
       city = customerCity.trim();
     }
+
     if (!acc[city]) {
       acc[city] = {
         city,
@@ -134,9 +136,11 @@ export function TripDetailsModal({
         clientCount: new Set()
       };
     }
+
     acc[city].services.push(task);
-    acc[city].totalCost += task.estimatedCost || 0;
-    if (task.customer?.companyName) {
+    acc[city].totalCost += (typeof task?.estimatedCost === 'number' ? task.estimatedCost : 0);
+
+    if (task?.customer?.companyName) {
       acc[city].clientCount.add(task.customer.companyName);
     }
     return acc;
@@ -147,14 +151,15 @@ export function TripDetailsModal({
     let city = 'Unknown';
 
     // Safely extract city from various possible locations
-    const containerCity = task.container?.currentLocation?.city;
-    const customerCity = task.customer?.city;
+    const containerCity = task?.container?.currentLocation?.city;
+    const customerCity = task?.customer?.city;
 
     if (typeof containerCity === 'string' && containerCity.trim()) {
       city = containerCity.trim();
     } else if (typeof customerCity === 'string' && customerCity.trim()) {
       city = customerCity.trim();
     }
+
     if (!acc[city]) {
       acc[city] = {
         city,
@@ -163,9 +168,11 @@ export function TripDetailsModal({
         clientCount: new Set()
       };
     }
+
     acc[city].tasks.push(task);
-    acc[city].totalCost += task.estimatedCost || 1800; // Default PM cost
-    if (task.customer?.companyName) {
+    acc[city].totalCost += (typeof task?.estimatedCost === 'number' ? task.estimatedCost : 1800); // Default PM cost
+
+    if (task?.customer?.companyName) {
       acc[city].clientCount.add(task.customer.companyName);
     }
     return acc;
@@ -280,10 +287,16 @@ export function TripDetailsModal({
                     <p className="text-sm text-muted-foreground">TECH ID</p>
                     <p className="font-mono font-medium">{technician.employeeCode}</p>
                   </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Current Location</p>
-                      <p className="font-medium">{typeof technician.currentLocation === 'string' ? technician.currentLocation : (technician.baseLocation || 'N/A')}</p>
-                    </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Current Location</p>
+                    <p className="font-medium">
+                      {typeof technician.currentLocation === 'string'
+                        ? technician.currentLocation
+                        : (typeof technician.baseLocation === 'object' && technician.baseLocation !== null
+                          ? ((technician.baseLocation as any).city || (technician.baseLocation as any).address || (technician.baseLocation as any).label || 'Unknown')
+                          : (technician.baseLocation || 'N/A'))}
+                    </p>
+                  </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Category</p>
                     <Badge variant="outline">{technician.grade || 'N/A'}</Badge>
@@ -467,7 +480,9 @@ export function TripDetailsModal({
                   <span>{new Date(trip?.endDate).toLocaleDateString()}</span>
                 </div>
                 <Badge variant="outline" className="ml-4">
-                  {Math.ceil((new Date(trip?.endDate).getTime() - new Date(trip?.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} days
+                  {trip?.startDate && trip?.endDate
+                    ? Math.max(1, Math.ceil((new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                    : 0} days
                 </Badge>
               </div>
             </CardContent>
@@ -523,8 +538,8 @@ export function TripDetailsModal({
                           ₹{typeof wageData.allowances?.dailyAllowance?.rate === 'number'
                             ? wageData.allowances.dailyAllowance.rate
                             : 0} × {typeof wageData.allowances?.dailyAllowance?.days === 'number'
-                            ? wageData.allowances.dailyAllowance.days
-                            : 0} days
+                              ? wageData.allowances.dailyAllowance.days
+                              : 0} days
                         </p>
                       </div>
                       <div>

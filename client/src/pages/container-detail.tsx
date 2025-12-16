@@ -658,7 +658,7 @@ export default function ContainerDetail() {
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="telemetry">
                 <Activity className="h-4 w-4 mr-1" />
-                Status
+                IOT Status
               </TabsTrigger>
               <TabsTrigger value="specifications">Specifications</TabsTrigger>
               <TabsTrigger value="ownership">Ownership History</TabsTrigger>
