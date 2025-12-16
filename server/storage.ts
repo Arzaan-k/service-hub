@@ -2947,6 +2947,15 @@ export class DatabaseStorage implements IStorage {
       .from(trainingMaterials)
       .orderBy(desc(trainingMaterials.createdAt));
     
+    // Debug: Check what's in training_views table for each material
+    for (const material of materials) {
+      const views = await db
+        .select()
+        .from(trainingViews)
+        .where(eq(trainingViews.materialId, material.id));
+      console.log(`[Training] Material ${material.id} has ${views.length} views in DB:`, views.map(v => ({ userId: v.userId, userRole: v.userRole })));
+    }
+    
     return materials;
   }
 
