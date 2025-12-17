@@ -677,6 +677,20 @@ export const dailySummaryAcknowledgment = pgTable("daily_summary_acknowledgment"
   acknowledgedAt: timestamp("acknowledged_at"),
 });
 
+// Weekly Summary Reports table (for CAPA Reefer Reports)
+export const weeklySummaryReports = pgTable("weekly_summary_reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  weekStartDate: date("week_start_date").notNull(), // Monday of the week
+  weekEndDate: date("week_end_date").notNull(),     // Friday of the week
+  weekIdentifier: text("week_identifier").notNull().unique(), // e.g., "2025-W51" for idempotency
+  summary: jsonb("summary").notNull(),
+  detailedReport: text("detailed_report").notNull(), // Paragraph format report
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  sentTo: jsonb("sent_to").notNull(), // Array of recipient emails
+  status: text("status").notNull().default("sent"), // 'sent', 'failed'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Finance Expenses table
 export const financeExpenses = pgTable("finance_expenses", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -846,6 +860,7 @@ export const insertTechnicianTripCostSchema = createInsertSchema(technicianTripC
 export const insertTechnicianTripTaskSchema = createInsertSchema(technicianTripTasks).omit({ id: true, createdAt: true, updatedAt: true } as any);
 
 export const insertDailySummaryAcknowledgmentSchema = createInsertSchema(dailySummaryAcknowledgment).omit({ id: true } as any);
+export const insertWeeklySummaryReportSchema = createInsertSchema(weeklySummaryReports).omit({ id: true, createdAt: true } as any);
 
 // Service Request Remarks (immutable)
 export const serviceRequestRemarks = pgTable("service_request_remarks", {
