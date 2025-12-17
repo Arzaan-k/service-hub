@@ -1,6 +1,6 @@
 # Service Summary Email System - Environment Variables
 
-This document describes the environment variables used to configure the automated service summary email system.
+This document describes the environment variables used to configure the automated service summary email system (Daily & Weekly).
 
 ## Email Scheduling Configuration
 
@@ -28,13 +28,25 @@ CEO_ESCALATION_TIME=12:00
 # This person must acknowledge the summary before the escalation time
 EXPERT_TECHNICIAN_EMAIL=chavandhiksha212@gmail.com
 
-# CEO email for escalation notifications
+# CEO email for escalation notifications and weekly CAPA reports
 # Will receive notification if expert technician doesn't acknowledge by deadline
-CEO_EMAIL=ceo@yourcompany.com
+CEO_EMAIL=chavandhiksha2003@gmail.com
 
 # Frontend URL for acknowledgment links (used in email buttons)
 # Should be your production domain
 FRONTEND_URL=https://service-hub-uvfw.onrender.com
+
+# =============================================================================
+# WEEKLY CAPA REPORT CONFIGURATION (Reefer Service Operations)
+# =============================================================================
+
+# Time to send weekly CAPA report (HH:MM format, 24-hour)
+# Default: 13:00 (1:00 PM IST)
+WEEKLY_SUMMARY_TIME=13:00
+
+# Day of week to send weekly report (0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday)
+# Default: 5 (Friday)
+WEEKLY_SUMMARY_DAY=5
 ```
 
 ## Implementation Flow
@@ -141,4 +153,110 @@ SERVICE_HISTORY_FETCH_TIME=14:55
 SERVICE_SUMMARY_EMAIL_TIME=15:00
 CEO_ESCALATION_TIME=15:05
 ```
+
+---
+
+## Weekly CAPA Report (Reefer Service Operations)
+
+The weekly CAPA report is a comprehensive summary sent to the CEO and Senior Technician every Friday at 1:00 PM IST (configurable).
+
+### Features
+
+1. **Detailed Paragraph Format**: The report is written in a professional paragraph format suitable for executive review
+2. **Full Week Data**: Aggregates all service requests from Monday to Friday of the current week
+3. **Idempotent**: Uses `weekly_summary_reports` table to prevent duplicate emails for the same week
+4. **Real-time Data**: Fetches actual data from the database at the time of sending
+5. **Technician Performance**: Includes completion rates and task assignments per technician
+6. **Delayed Alerts**: Highlights overdue service requests requiring attention
+
+### Report Contents
+
+The weekly CAPA report includes:
+
+- **Executive Summary**: High-level overview of the week's operations
+- **Key Performance Metrics**: Total requests, completion rate, on-time delivery rate
+- **Technician Performance Table**: Individual technician statistics
+- **Delayed Requests Alert**: List of overdue service requests
+- **Completed Work Summary**: Successfully resolved requests
+- **Recommendations**: Action items based on performance data
+
+### Environment Variables
+
+```env
+# Time to send weekly summary (HH:MM format, 24-hour)
+# Default: 13:00 (1:00 PM)
+WEEKLY_SUMMARY_TIME=13:00
+
+# Day of week (0=Sunday, 5=Friday)
+# Default: 5 (Friday)
+WEEKLY_SUMMARY_DAY=5
+
+# Recipients (shared with daily summary)
+EXPERT_TECHNICIAN_EMAIL=chavandhiksha212@gmail.com
+CEO_EMAIL=chavandhiksha2003@gmail.com
+```
+
+### API Endpoints
+
+```
+GET /api/summary/weekly/status
+```
+Returns current weekly scheduler configuration.
+
+```
+POST /api/summary/weekly/trigger
+```
+Manually trigger the weekly summary email (Admin only). Useful for testing.
+
+### Database Table
+
+The system uses the `weekly_summary_reports` table:
+
+```sql
+CREATE TABLE IF NOT EXISTS weekly_summary_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  week_start_date DATE NOT NULL,
+  week_end_date DATE NOT NULL,
+  week_identifier TEXT NOT NULL UNIQUE, -- e.g., "2025-W51"
+  summary JSONB NOT NULL,
+  detailed_report TEXT NOT NULL,
+  sent_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  sent_to JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'sent',
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+```
+
+### Idempotency
+
+The `week_identifier` column (e.g., "2025-W51") ensures that only one report is sent per week. If the scheduler runs multiple times on the same Friday, subsequent runs will be skipped.
+
+### Example Weekly Report Email
+
+The email includes:
+
+1. **Header**: Week period and generation timestamp
+2. **Executive Summary Box**: Paragraph summarizing operations
+3. **Metrics Grid**: Visual cards showing key numbers
+4. **Detailed Table**: Breakdown of all metrics
+5. **Delayed Requests Alert**: Orange warning box if any delays
+6. **Technician Table**: Performance by technician
+7. **Recommendations**: Green box with actionable items
+
+### Testing the Weekly Report
+
+To test the weekly report without waiting for Friday:
+
+1. Change the day temporarily:
+   ```env
+   WEEKLY_SUMMARY_DAY=2  # Tuesday
+   WEEKLY_SUMMARY_TIME=14:30
+   ```
+
+2. Or use the API endpoint:
+   ```bash
+   curl -X POST http://localhost:5000/api/summary/weekly/trigger
+   ```
+
+**Note**: The idempotency check uses the week identifier. To re-test for the same week, you'll need to delete the record from `weekly_summary_reports` table.
 

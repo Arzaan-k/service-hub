@@ -51,6 +51,7 @@ import { sendEmail } from './services/emailService';
 import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
 import { getServiceSummaryScheduler } from './services/serviceSummaryScheduler';
+import { getWeeklySummaryScheduler } from './services/weeklySummaryScheduler';
 import { registerFinanceRoutes } from "./routes/finance";
 
 // Initialize RAG services
@@ -1086,6 +1087,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const scheduler = getServiceSummaryScheduler();
       scheduler.clearCache();
       res.json({ message: "Cache cleared successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Weekly CAPA Report Scheduler Endpoints
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Weekly Summary Scheduler Status
+  app.get("/api/summary/weekly/status", authenticateUser, async (req, res) => {
+    try {
+      const scheduler = getWeeklySummaryScheduler();
+      const status = scheduler.getStatus();
+      res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Manual trigger for weekly summary (admin only)
+  app.post("/api/summary/weekly/trigger", authenticateUser, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      const scheduler = getWeeklySummaryScheduler();
+      await scheduler.triggerWeeklySummary();
+      res.json({ message: "Weekly summary triggered successfully" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
