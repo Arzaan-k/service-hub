@@ -232,6 +232,9 @@ export interface IStorage {
   getAllTrainingMaterials(): Promise<any[]>;
   deleteTrainingMaterial(materialId: string): Promise<void>;
   updateTrainingMaterial(materialId: string, data: any): Promise<any>;
+  
+  // Location operations
+  getLatestTechnicianLocations(): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2862,6 +2865,7 @@ export class DatabaseStorage implements IStorage {
     return results;
   }
 
+<<<<<<< HEAD
   async getClientAnalytics(range: number): Promise<any[]> {
     // Calculate date range
     const startDate = new Date();
@@ -3156,6 +3160,137 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return updated;
+  }
+
+  // Connection pool for external Service Hub database
+  private serviceHubPool = new NeonPool({
+    connectionString: 'postgresql://neondb_owner:npg_ls7YTgzeoNA4@ep-young-grass-aewvokzj-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require',
+    ssl: true,
+  });
+
+  async getLatestTechnicianLocations(): Promise<any[]> {
+    try {
+      console.log('[Storage] Fetching live technician locations from Service Hub DB...');
+      const result = await this.serviceHubPool.query(`
+        SELECT DISTINCT ON (l.employee_id)
+            e.first_name,
+            e.last_name,
+            e.email,
+            l.employee_id,
+            l.latitude,
+            l.longitude,
+            l.heading,
+            l.speed,
+            l.battery_level,
+            l.timestamp as last_seen
+        FROM location_logs l
+        JOIN employees e ON l.employee_id = e.employee_id
+        WHERE l.timestamp > NOW() - INTERVAL '24 hours'
+        ORDER BY l.employee_id, l.timestamp DESC;
+      `);
+
+      console.log(`[Storage] ✅ Fetched ${result.rows.length} technician locations from Service Hub DB`);
+
+      if (result.rows.length === 0) {
+        console.warn('[Storage] ⚠️ No technician location data found in external DB, falling back to local technicians with base locations');
+        return await this.getLocalTechniciansAsLocations();
+      }
+
+      // Map to frontend interface
+      const locations = result.rows.map((row: any) => ({
+        id: row.email,
+        technicianId: row.employee_id,
+        name: `${row.first_name} ${row.last_name}`,
+        latitude: parseFloat(row.latitude),
+        longitude: parseFloat(row.longitude),
+        lastSeen: row.last_seen,
+        batteryLevel: row.battery_level,
+        speed: row.speed ? Math.round(row.speed * 3.6) : 0, // Convert m/s to km/h
+        accuracy: 0,
+        address: ''
+      }));
+
+      console.log('[Storage] Sample location data:', locations[0]);
+      return locations;
+    } catch (error) {
+      console.error('[Storage] ❌ Error fetching fleet data from external DB:', error);
+      console.error('[Storage] Error details:', {
+        message: (error as any)?.message,
+        code: (error as any)?.code,
+        detail: (error as any)?.detail
+      });
+
+      // Fallback to local technicians
+      console.log('[Storage] Falling back to local technicians with base locations');
+      return await this.getLocalTechniciansAsLocations();
+    }
+  }
+
+  // Helper method to get local technicians as location data
+  private async getLocalTechniciansAsLocations(): Promise<any[]> {
+    try {
+      const technicians = await this.getAllTechnicians();
+      console.log(`[Storage] Found ${technicians.length} local technicians`);
+
+      // City coordinates mapping (major Indian cities)
+      const cityCoordinates: Record<string, { lat: number; lng: number }> = {
+        'mumbai': { lat: 19.0760, lng: 72.8777 },
+        'delhi': { lat: 28.7041, lng: 77.1025 },
+        'bangalore': { lat: 12.9716, lng: 77.5946 },
+        'bengaluru': { lat: 12.9716, lng: 77.5946 },
+        'hyderabad': { lat: 17.3850, lng: 78.4867 },
+        'chennai': { lat: 13.0827, lng: 80.2707 },
+        'kolkata': { lat: 22.5726, lng: 88.3639 },
+        'pune': { lat: 18.5204, lng: 73.8567 },
+        'ahmedabad': { lat: 23.0225, lng: 72.5714 },
+        'jaipur': { lat: 26.9124, lng: 75.7873 },
+        'surat': { lat: 21.1702, lng: 72.8311 },
+        'lucknow': { lat: 26.8467, lng: 80.9462 },
+        'kanpur': { lat: 26.4499, lng: 80.3319 },
+        'nagpur': { lat: 21.1458, lng: 79.0882 },
+        'indore': { lat: 22.7196, lng: 75.8577 },
+        'thane': { lat: 19.2183, lng: 72.9781 },
+        'bhopal': { lat: 23.2599, lng: 77.4126 },
+        'visakhapatnam': { lat: 17.6868, lng: 83.2185 },
+        'pimpri-chinchwad': { lat: 18.6298, lng: 73.7997 },
+        'patna': { lat: 25.5941, lng: 85.1376 },
+        'vadodara': { lat: 22.3072, lng: 73.1812 },
+        'ghaziabad': { lat: 28.6692, lng: 77.4538 },
+        'ludhiana': { lat: 30.9010, lng: 75.8573 },
+        'agra': { lat: 27.1767, lng: 78.0081 },
+        'nashik': { lat: 19.9975, lng: 73.7898 },
+      };
+
+      const locations = technicians
+        .filter((tech: any) => tech.baseLocation) // Only include technicians with base location
+        .map((tech: any) => {
+          const baseLocation = typeof tech.baseLocation === 'string'
+            ? tech.baseLocation
+            : (tech.baseLocation as any)?.city || (tech.baseLocation as any)?.address || '';
+
+          const cityKey = baseLocation.toLowerCase().trim();
+          const coords = cityCoordinates[cityKey] || { lat: 20.5937, lng: 78.9629 }; // Default to center of India
+
+          return {
+            id: tech.id,
+            technicianId: tech.id,
+            name: tech.name || tech.employeeCode || 'Unknown',
+            latitude: coords.lat,
+            longitude: coords.lng,
+            lastSeen: new Date().toISOString(), // Current time as last seen
+            batteryLevel: null,
+            speed: 0,
+            accuracy: 0,
+            address: baseLocation
+          };
+        });
+
+      console.log(`[Storage] Converted ${locations.length} local technicians to location data`);
+      return locations;
+    } catch (error) {
+      console.error('[Storage] ❌ Error fetching local technicians:', error);
+      return [];
+    }
   }
 }
 

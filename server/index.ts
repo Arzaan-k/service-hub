@@ -32,6 +32,7 @@ import { startPasswordReminderScheduler } from "./services/passwordReminderSched
 import { vectorStore } from "./services/vectorStore";
 import { db, closeDatabase } from "./db";
 import { startServiceSummaryScheduler, getServiceSummaryScheduler } from "./services/serviceSummaryScheduler";
+import { startWeeklySummaryScheduler, getWeeklySummaryScheduler } from "./services/weeklySummaryScheduler";
 
 const app = express();
 
@@ -213,6 +214,12 @@ app.use((req, res, next) => {
   console.log('[SERVER] Starting Service Summary Scheduler...');
   startServiceSummaryScheduler();
   console.log('✅ Service Summary Scheduler started (uses env variables for timing)');
+
+  // Weekly CAPA Report Scheduler (Friday 1:00 PM IST by default)
+  // Sends detailed weekly summary to CEO and Senior Technician
+  console.log('[SERVER] Starting Weekly Summary Scheduler...');
+  startWeeklySummaryScheduler();
+  console.log('✅ Weekly Summary Scheduler started (WEEKLY_SUMMARY_TIME, WEEKLY_SUMMARY_DAY env vars)');
 
   // Start password reminder scheduler (runs every hour in both dev and production)
   console.log('[SERVER] Starting password reminder scheduler...');

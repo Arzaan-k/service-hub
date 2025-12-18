@@ -677,6 +677,35 @@ export const dailySummaryAcknowledgment = pgTable("daily_summary_acknowledgment"
   acknowledgedAt: timestamp("acknowledged_at"),
 });
 
+// Weekly Summary Reports table (for CAPA Reefer Reports)
+export const weeklySummaryReports = pgTable("weekly_summary_reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  weekStartDate: date("week_start_date").notNull(), // Monday of the week
+  weekEndDate: date("week_end_date").notNull(),     // Friday of the week
+  weekIdentifier: text("week_identifier").notNull().unique(), // e.g., "2025-W51" for idempotency
+  summary: jsonb("summary").notNull(),
+  detailedReport: text("detailed_report").notNull(), // Paragraph format report
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  sentTo: jsonb("sent_to").notNull(), // Array of recipient emails
+  status: text("status").notNull().default("sent"), // 'sent', 'failed'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Location Logs table - Track technician locations over time
+export const locationLogs = pgTable("location_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: varchar("employee_id").references(() => technicians.id).notNull(),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }).notNull(),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  batteryLevel: integer("battery_level"), // Battery percentage (0-100)
+  speed: decimal("speed", { precision: 6, scale: 2 }), // Speed in km/h
+  accuracy: decimal("accuracy", { precision: 8, scale: 2 }), // GPS accuracy in meters
+  address: text("address"), // Reverse geocoded address
+  source: text("source").default("app").notNull(), // 'app', 'whatsapp', 'manual'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Finance Expenses table
 export const financeExpenses = pgTable("finance_expenses", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -715,6 +744,7 @@ export const techniciansRelations = relations(technicians, ({ one, many }) => ({
   scheduledServices: many(scheduledServices),
   feedback: many(feedback),
   trips: many(technicianTrips),
+  locationLogs: many(locationLogs),
 }));
 
 export const containersRelations = relations(containers, ({ one, many }) => ({
@@ -812,6 +842,10 @@ export const technicianTripTasksRelations = relations(technicianTripTasks, ({ on
   alert: one(alerts, { fields: [technicianTripTasks.alertId], references: [alerts.id] }),
 }));
 
+export const locationLogsRelations = relations(locationLogs, ({ one }) => ({
+  technician: one(technicians, { fields: [locationLogs.employeeId], references: [technicians.id] }),
+}));
+
 export const financeExpensesRelations = relations(financeExpenses, ({ one }) => ({
   container: one(containers, { fields: [financeExpenses.containerId], references: [containers.id] }),
   technician: one(technicians, { fields: [financeExpenses.technicianId], references: [technicians.id] }),
@@ -837,6 +871,7 @@ export const insertInventorySchema = createInsertSchema(inventory).omit({ id: tr
 export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({ id: true, createdAt: true } as any);
 export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({ id: true, createdAt: true } as any);
 export const insertManualSchema = createInsertSchema(manuals).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertLocationLogSchema = createInsertSchema(locationLogs).omit({ id: true, createdAt: true } as any);
 export const insertFinanceExpenseSchema = createInsertSchema(financeExpenses).omit({ id: true, createdAt: true } as any);
 export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true, embedding: true } as any);
 export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: true, createdAt: true } as any);
@@ -846,6 +881,7 @@ export const insertTechnicianTripCostSchema = createInsertSchema(technicianTripC
 export const insertTechnicianTripTaskSchema = createInsertSchema(technicianTripTasks).omit({ id: true, createdAt: true, updatedAt: true } as any);
 
 export const insertDailySummaryAcknowledgmentSchema = createInsertSchema(dailySummaryAcknowledgment).omit({ id: true } as any);
+export const insertWeeklySummaryReportSchema = createInsertSchema(weeklySummaryReports).omit({ id: true, createdAt: true } as any);
 
 // Service Request Remarks (immutable)
 export const serviceRequestRemarks = pgTable("service_request_remarks", {
@@ -967,3 +1003,6 @@ export type TrainingMaterial = typeof trainingMaterials.$inferSelect;
 export type InsertTrainingMaterial = z.infer<typeof insertTrainingMaterialSchema>;
 export type TrainingView = typeof trainingViews.$inferSelect;
 export type InsertTrainingView = z.infer<typeof insertTrainingViewSchema>;
+// Location Log types
+export type LocationLog = typeof locationLogs.$inferSelect;
+export type InsertLocationLog = z.infer<typeof insertLocationLogSchema>;

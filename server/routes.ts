@@ -52,6 +52,7 @@ import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceReque
 import { acknowledgeSummary } from './services/dailySummaryService';
 import technicianDocumentRoutes from './routes/technicianDocumentRoutes';
 import { getServiceSummaryScheduler } from './services/serviceSummaryScheduler';
+import { getWeeklySummaryScheduler } from './services/weeklySummaryScheduler';
 import { registerFinanceRoutes } from "./routes/finance";
 import trainingRoutes from './routes/training';
 
@@ -1042,7 +1043,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getServiceSummaryScheduler();
       await scheduler.triggerPrefetch();
       res.json({ message: "Prefetch triggered successfully" });
@@ -1058,7 +1059,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getServiceSummaryScheduler();
       await scheduler.triggerEmailSend();
       res.json({ message: "Email send triggered successfully" });
@@ -1074,7 +1075,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getServiceSummaryScheduler();
       await scheduler.triggerEscalationCheck();
       res.json({ message: "Escalation check triggered successfully" });
@@ -1090,10 +1091,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getServiceSummaryScheduler();
       scheduler.clearCache();
       res.json({ message: "Cache cleared successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Weekly CAPA Report Scheduler Endpoints
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Weekly Summary Scheduler Status
+  app.get("/api/summary/weekly/status", authenticateUser, async (req, res) => {
+    try {
+      const scheduler = getWeeklySummaryScheduler();
+      const status = scheduler.getStatus();
+      res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Manual trigger for weekly summary (admin only)
+  app.post("/api/summary/weekly/trigger", authenticateUser, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      const scheduler = getWeeklySummaryScheduler();
+      await scheduler.triggerWeeklySummary();
+      res.json({ message: "Weekly summary triggered successfully" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -4502,6 +4534,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(technician);
     } catch (error) {
       res.status(500).json({ error: "Failed to update technician status" });
+    }
+  });
+
+  // Get latest technician locations for live tracking
+  app.get("/api/technicians/locations", authenticateUser, async (req, res) => {
+    try {
+      console.log('[API] Fetching technician locations...');
+      const locations = await storage.getLatestTechnicianLocations();
+      console.log(`[API] ✅ Returning ${locations.length} technician locations to client`);
+      res.json(locations);
+    } catch (error) {
+      console.error("[API] ❌ Failed to fetch technician locations:", error);
+      res.status(500).json({ error: "Failed to fetch technician locations" });
     }
   });
 
