@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -27,6 +27,19 @@ interface Container {
   type?: string;
 }
 
+interface TechnicianLocation {
+  id: string;
+  technicianId: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  lastSeen: string;
+  batteryLevel?: number;
+  speed?: number;
+  accuracy?: number;
+  address?: string;
+}
+
 interface FleetMapProps {
   containers: Container[];
 }
@@ -34,6 +47,9 @@ interface FleetMapProps {
 export default function FleetMap({ containers }: FleetMapProps) {
   const mapRef = useRef<any>(null);
   const mapInstanceRef = useRef<any>(null);
+
+  const [activeTab, setActiveTab] = useState<'containers' | 'technicians'>('containers');
+  const [technicians, setTechnicians] = useState<TechnicianLocation[]>([]);
 
   // Calculate statistics for display
   const stats = {
@@ -80,6 +96,48 @@ export default function FleetMap({ containers }: FleetMapProps) {
       stats.offline++;
     }
   });
+
+  // Fetch technician locations
+  useEffect(() => {
+    if (activeTab === 'technicians') {
+      const fetchTechnicians = async () => {
+        try {
+          // Get auth token from localStorage
+          const token = localStorage.getItem('auth_token') || localStorage.getItem('authToken');
+
+          const headers: Record<string, string> = {};
+          if (token) {
+            headers['x-user-id'] = token;
+          }
+
+          const res = await fetch('/api/technicians/locations', {
+            headers,
+            credentials: 'include'
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            console.log(`[FleetMap] Received ${data.length} technician locations`);
+            // Ensure coordinates are numbers
+            const parsedData = data.map((t: any) => ({
+              ...t,
+              latitude: parseFloat(t.latitude),
+              longitude: parseFloat(t.longitude)
+            }));
+            setTechnicians(parsedData);
+          } else {
+            console.error(`[FleetMap] Failed to fetch technicians: ${res.status} ${res.statusText}`);
+          }
+        } catch (err) {
+          console.error("[FleetMap] Failed to fetch technicians", err);
+        }
+      };
+
+      fetchTechnicians();
+      const interval = setInterval(fetchTechnicians, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.L || !mapRef.current || !containers) return;
@@ -131,102 +189,164 @@ export default function FleetMap({ containers }: FleetMapProps) {
 
     // Clear existing markers
     mapInstanceRef.current.eachLayer((layer: any) => {
-      if (layer instanceof window.L.CircleMarker) {
+      // Clear container markers (CircleMarker) and technician markers (Marker with custom icon)
+      if (
+        layer instanceof window.L.CircleMarker ||
+        (layer instanceof window.L.Marker && layer.options?.icon?.options?.className === 'custom-tech-icon')
+      ) {
         mapInstanceRef.current.removeLayer(layer);
       }
     });
 
-    // Add container markers - check for GPS coordinates in all possible formats
-    containers.forEach((container) => {
-      // Check for GPS coordinates in multiple possible locations
-      let lat: number | null = null;
-      let lng: number | null = null;
+    if (activeTab === 'containers') {
+      renderContainers();
+    } else {
+      renderTechnicians();
+    }
 
-      // Priority order for GPS coordinates:
-      // 1. currentLocation.lat/lng (preferred)
-      if (container.currentLocation?.lat && container.currentLocation?.lng) {
-        lat = container.currentLocation.lat;
-        lng = container.currentLocation.lng;
-      }
-      // 2. locationLat/locationLng (handle both string and number)
-      else if (container.locationLat !== undefined && container.locationLng !== undefined) {
-        const latVal = container.locationLat;
-        const lngVal = container.locationLng;
+    function renderTechnicians() {
+      technicians.forEach(tech => {
+        if (!tech.latitude || !tech.longitude) return;
 
-        lat = typeof latVal === 'string' ? parseFloat(latVal) : (typeof latVal === 'number' ? latVal : null);
-        lng = typeof lngVal === 'string' ? parseFloat(lngVal) : (typeof lngVal === 'number' ? lngVal : null);
-      }
+        const marker = window.L.marker([tech.latitude, tech.longitude], {
+          icon: window.L.divIcon({
+            className: 'custom-tech-icon',
+            html: `<div class="w-8 h-8 bg-blue-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
+                      <i class="fas fa-user text-white text-xs"></i>
+                     </div>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 32]
+          })
+        }).addTo(mapInstanceRef.current);
 
-      // Only create marker if we have valid coordinates
-      if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-        // Determine status and color based on multiple factors
-        const healthScore = container.healthScore || 0;
-        const hasIot = !!container.orbcommDeviceId || container.hasIot;
-        const temperature = container.temperature;
-        const powerStatus = container.powerStatus;
+        const lastSeenDate = new Date(tech.lastSeen);
+        const timeDiff = Math.floor((new Date().getTime() - lastSeenDate.getTime()) / 60000); // minutes
+        let timeDisplay = `${timeDiff}m ago`;
+        if (timeDiff > 60) timeDisplay = `${Math.floor(timeDiff / 60)}h ago`;
+        if (timeDiff > 1440) timeDisplay = `${Math.floor(timeDiff / 1440)}d ago`;
 
-        let status = container.status || "unknown";
-        let color = "#6b7280"; // Default gray
-
-        // Priority for color coding:
-        // 1. Critical temperature (>30°C)
-        if (temperature && temperature > 30) {
-          status = "critical";
-          color = "#ef4444"; // Red
-        }
-        // 2. Power issues
-        else if (powerStatus === 'off' || powerStatus === 'offline') {
-          status = "power_issue";
-          color = "#f97316"; // Orange
-        }
-        // 3. IoT connectivity
-        else if (hasIot) {
-          status = "active";
-          color = "#10b981"; // Green
-        }
-        // 4. Health score
-        else if (healthScore >= 80) {
-          status = "active";
-          color = "#73C8D2"; // Light cyan
-        } else if (healthScore >= 60) {
-          status = "maintenance";
-          color = "#f59e0b"; // Amber
-        } else if (healthScore > 0) {
-          status = "critical";
-          color = "#ef4444"; // Red
-        }
-
-        // Performance Optimization: Use lightweight CircleMarker instead of heavy DOM markers
-        // This significantly improves rendering speed for large fleets (1000+ items)
-        const marker = window.L.circleMarker(
-          [lat, lng],
-          {
-            radius: status === 'critical' || status === 'active' ? 8 : 6,
-            fillColor: color,
-            color: "#fff",
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.8,
-            className: status === 'critical' ? 'animate-pulse-slow' : '' // Only animate critical items if needed via CSS
-          }
-        ).addTo(mapInstanceRef.current);
-
-        const statusDisplay = status.charAt(0).toUpperCase() + status.slice(1);
-        const locationDisplay = container.currentLocation?.address ||
-          `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
-
-        const temperatureDisplay = temperature ? `${temperature}°C` : 'N/A';
-        const powerDisplay = powerStatus ? powerStatus.toUpperCase() : 'N/A';
-
-        // Enhanced Popup Content
         marker.bindPopup(`
+          <div class="min-w-[200px] font-sans">
+             <div class="p-3 bg-blue-600 text-white rounded-t-lg flex items-center justify-between">
+               <span class="font-bold text-sm text-white">${tech.name}</span>
+               <span class="text-[10px] bg-white/20 px-1.5 py-0.5 rounded text-white">${timeDisplay}</span>
+             </div>
+             <div class="p-3 bg-white border border-slate-200 border-t-0 rounded-b-lg shadow-sm">
+                <div class="space-y-2 text-xs text-slate-600">
+                  <div class="flex justify-between border-b pb-1">
+                     <span>Battery</span>
+                     <span class="font-semibold ${tech.batteryLevel && tech.batteryLevel < 20 ? 'text-red-500' : 'text-green-600'}">
+                       ${tech.batteryLevel ? `${tech.batteryLevel}%` : 'N/A'}
+                     </span>
+                  </div>
+                  <div class="flex justify-between border-b pb-1">
+                     <span>Speed</span>
+                     <span class="font-semibold">${tech.speed ? `${tech.speed} km/h` : '0 km/h'}</span>
+                  </div>
+                </div>
+             </div>
+          </div>
+        `, {
+          className: 'custom-popup pointer-events-auto', // Ensure interactions work
+          closeButton: false,
+          maxWidth: 240,
+          offset: [0, -32]
+        });
+      });
+    }
+
+    function renderContainers() {
+      // Add container markers - check for GPS coordinates in all possible formats
+      containers.forEach((container) => {
+        // Check for GPS coordinates in multiple possible locations
+        let lat: number | null = null;
+        let lng: number | null = null;
+
+        // Priority order for GPS coordinates:
+        // 1. currentLocation.lat/lng (preferred)
+        if (container.currentLocation?.lat && container.currentLocation?.lng) {
+          lat = container.currentLocation.lat;
+          lng = container.currentLocation.lng;
+        }
+        // 2. locationLat/locationLng (handle both string and number)
+        else if (container.locationLat !== undefined && container.locationLng !== undefined) {
+          const latVal = container.locationLat;
+          const lngVal = container.locationLng;
+
+          lat = typeof latVal === 'string' ? parseFloat(latVal) : (typeof latVal === 'number' ? latVal : null);
+          lng = typeof lngVal === 'string' ? parseFloat(lngVal) : (typeof lngVal === 'number' ? lngVal : null);
+        }
+
+        // Only create marker if we have valid coordinates
+        if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+          // Determine status and color based on multiple factors
+          const healthScore = container.healthScore || 0;
+          const hasIot = !!container.orbcommDeviceId || container.hasIot;
+          const temperature = container.temperature;
+          const powerStatus = container.powerStatus;
+
+          let status = container.status || "unknown";
+          let color = "#6b7280"; // Default gray
+
+          // Priority for color coding:
+          // 1. Critical temperature (>30°C)
+          if (temperature && temperature > 30) {
+            status = "critical";
+            color = "#ef4444"; // Red
+          }
+          // 2. Power issues
+          else if (powerStatus === 'off' || powerStatus === 'offline') {
+            status = "power_issue";
+            color = "#f97316"; // Orange
+          }
+          // 3. IoT connectivity
+          else if (hasIot) {
+            status = "active";
+            color = "#10b981"; // Green
+          }
+          // 4. Health score
+          else if (healthScore >= 80) {
+            status = "active";
+            color = "#73C8D2"; // Light cyan
+          } else if (healthScore >= 60) {
+            status = "maintenance";
+            color = "#f59e0b"; // Amber
+          } else if (healthScore > 0) {
+            status = "critical";
+            color = "#ef4444"; // Red
+          }
+
+          // Performance Optimization: Use lightweight CircleMarker instead of heavy DOM markers
+          // This significantly improves rendering speed for large fleets (1000+ items)
+          const marker = window.L.circleMarker(
+            [lat, lng],
+            {
+              radius: status === 'critical' || status === 'active' ? 8 : 6,
+              fillColor: color,
+              color: "#fff",
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.8,
+              className: status === 'critical' ? 'animate-pulse-slow' : '' // Only animate critical items if needed via CSS
+            }
+          ).addTo(mapInstanceRef.current);
+
+          const statusDisplay = status.charAt(0).toUpperCase() + status.slice(1);
+          const locationDisplay = container.currentLocation?.address ||
+            `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+
+          const temperatureDisplay = temperature ? `${temperature}°C` : 'N/A';
+          const powerDisplay = powerStatus ? powerStatus.toUpperCase() : 'N/A';
+
+          // Enhanced Popup Content
+          marker.bindPopup(`
           <div class="min-w-[240px] font-sans">
             <div class="p-3 bg-slate-900 text-white rounded-t-lg flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <div class="w-2 h-2 rounded-full ${status === 'active' ? 'bg-green-400' :
-            status === 'critical' ? 'bg-red-400' :
-              status === 'maintenance' ? 'bg-amber-400' : 'bg-gray-400'
-          }"></div>
+              status === 'critical' ? 'bg-red-400' :
+                status === 'maintenance' ? 'bg-amber-400' : 'bg-gray-400'
+            }"></div>
                 <span class="font-bold text-sm tracking-wide">${container.containerCode || "Unknown"}</span>
               </div>
               <span class="text-[10px] px-2 py-0.5 rounded bg-white/10 border border-white/20">
@@ -261,8 +381,8 @@ export default function FleetMap({ containers }: FleetMapProps) {
                   <i class="fas fa-heartbeat mt-0.5 text-slate-400"></i>
                   <div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                     <div class="h-full rounded-full ${healthScore >= 80 ? 'bg-green-500' :
-              healthScore >= 60 ? 'bg-amber-500' : 'bg-red-500'
-            }" style="width: ${healthScore}%"></div>
+                healthScore >= 60 ? 'bg-amber-500' : 'bg-red-500'
+              }" style="width: ${healthScore}%"></div>
                   </div>
                   <span class="font-medium">${healthScore}%</span>
                 </div>
@@ -281,34 +401,16 @@ export default function FleetMap({ containers }: FleetMapProps) {
             </div>
           </div>
         `, {
-          className: 'custom-popup',
-          closeButton: false,
-          maxWidth: 280,
-          offset: [0, -10]
-        });
+            className: 'custom-popup',
+            closeButton: false,
+            maxWidth: 280,
+            offset: [0, -10]
+          });
 
-        console.log(`📍 Added marker for ${container.containerCode} at [${lat}, ${lng}] - Status: ${status}`);
-      }
-    });
-
-    // Removed auto-zoom to container bounds to maintain India view
-    // Users can manually zoom/pan to see containers, or use the India button to recenter
-    // const validContainers = containers.filter(container => {
-    //   const lat = container.currentLocation?.lat || (container.locationLat ? parseFloat(container.locationLat) : null);
-    //   const lng = container.currentLocation?.lng || (container.locationLng ? parseFloat(container.locationLng) : null);
-    //   return lat && lng && lat !== 0 && lng !== 0;
-    // });
-
-    // if (validContainers.length > 0) {
-    //   const bounds = window.L.latLngBounds(
-    //     validContainers.map(container => {
-    //       const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
-    //       const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
-    //       return [lat, lng];
-    //     })
-    //   );
-    //   mapInstanceRef.current.fitBounds(bounds, { padding: [20, 20] });
-    // }
+          console.log(`📍 Added marker for ${container.containerCode} at [${lat}, ${lng}] - Status: ${status}`);
+        }
+      });
+    }
 
     const validContainers = containers.filter(container => {
       const lat = container.currentLocation?.lat || (container.locationLat ? parseFloat(container.locationLat) : null);
@@ -317,7 +419,7 @@ export default function FleetMap({ containers }: FleetMapProps) {
     });
 
     console.log(`🗺️ Map updated: ${validContainers.length} containers with GPS coordinates displayed`);
-  }, [containers]);
+  }, [containers, activeTab, technicians]);
 
   return (
     <div className="relative z-0 bg-card border border-dashboard/20 rounded-lg p-3 lg:p-6 h-full flex flex-col">
@@ -328,9 +430,32 @@ export default function FleetMap({ containers }: FleetMapProps) {
           </div>
           <h3 className="text-sm lg:text-lg font-semibold text-foreground">Real-time Fleet Map</h3>
         </div>
+
+        {/* Tabs */}
+        <div className="flex bg-muted/20 p-1 rounded-lg items-center">
+          <button
+            onClick={() => setActiveTab('containers')}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${activeTab === 'containers'
+              ? 'bg-background shadow text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            Containers ({stats.total})
+          </button>
+          <button
+            onClick={() => setActiveTab('technicians')}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${activeTab === 'technicians'
+              ? 'bg-background shadow text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            Technicians ({technicians.length})
+          </button>
+        </div>
+
         <div className="flex items-center gap-2">
           <div className="text-[10px] lg:text-xs text-muted-foreground hidden sm:block">
-            {stats.withGps} of {stats.total} containers tracked
+            {activeTab === 'containers' ? `${stats.withGps} of ${stats.total} containers tracked` : `${technicians.length} technicians tracked`}
           </div>
           <button className="px-2 py-1 lg:px-3 lg:py-1.5 text-[10px] lg:text-xs font-medium bg-dashboard text-dashboard-foreground rounded-md hover:bg-dashboard/90 transition-smooth">
             Refresh
@@ -393,6 +518,6 @@ export default function FleetMap({ containers }: FleetMapProps) {
           }
         `}
       </style>
-    </div>
+    </div >
   );
 }

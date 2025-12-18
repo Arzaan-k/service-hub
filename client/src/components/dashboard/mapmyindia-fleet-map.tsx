@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { MapPin, RefreshCw, Globe, Filter, X } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MapPin, RefreshCw, Globe, Filter, X, User } from "lucide-react";
 import { websocket } from "@/lib/websocket";
 
 declare global {
@@ -32,6 +33,20 @@ interface Container {
   };
 }
 
+interface Technician {
+  employee_id: string;
+  first_name: string;
+  last_name: string;
+  latitude: string;
+  longitude: string;
+  last_seen: string;
+  battery_level?: number;
+  speed?: number;
+  accuracy?: number;
+  address?: string;
+  source?: string;
+}
+
 interface FleetMapProps {
   containers: Container[];
 }
@@ -51,6 +66,8 @@ export default function FleetMap({ containers }: FleetMapProps) {
   const markersRef = useRef<Map<string, any>>(new Map());
   const [scriptsLoaded, setScriptsLoaded] = useState(false);
   const [containersData, setContainersData] = useState<Container[]>(containers);
+  const [techniciansData, setTechniciansData] = useState<Technician[]>([]);
+  const [activeTab, setActiveTab] = useState<"containers" | "technicians">("containers");
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<MapFilters>({
     status: 'all',
@@ -106,6 +123,28 @@ export default function FleetMap({ containers }: FleetMapProps) {
     setContainersData(containers);
   }, [containers]);
 
+  // Fetch technician locations
+  useEffect(() => {
+    const fetchTechnicianLocations = async () => {
+      try {
+        const response = await fetch('/api/technicians/locations', {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setTechniciansData(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch technician locations:', error);
+      }
+    };
+
+    fetchTechnicianLocations();
+    // Poll for updates every 30 seconds
+    const interval = setInterval(fetchTechnicianLocations, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Listen for real-time updates
   useEffect(() => {
     const handleContainerUpdate = (data: any) => {
@@ -130,16 +169,55 @@ export default function FleetMap({ containers }: FleetMapProps) {
       }));
     };
 
+    const handleTechnicianLocationUpdate = (data: any) => {
+      console.log('📍 Received technician location update:', data);
+      setTechniciansData(prev => {
+        const existingIndex = prev.findIndex(t => t.employee_id === data.employee_id);
+        if (existingIndex >= 0) {
+          const updated = [...prev];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            latitude: data.latitude?.toString() || updated[existingIndex].latitude,
+            longitude: data.longitude?.toString() || updated[existingIndex].longitude,
+            last_seen: data.timestamp || new Date().toISOString(),
+            battery_level: data.battery_level ?? updated[existingIndex].battery_level,
+            speed: data.speed ?? updated[existingIndex].speed,
+            accuracy: data.accuracy ?? updated[existingIndex].accuracy,
+            address: data.address || updated[existingIndex].address,
+            source: data.source || updated[existingIndex].source,
+          };
+          return updated;
+        } else {
+          // Add new technician
+          return [...prev, {
+            employee_id: data.employee_id,
+            first_name: data.first_name || '',
+            last_name: data.last_name || '',
+            latitude: data.latitude?.toString() || '0',
+            longitude: data.longitude?.toString() || '0',
+            last_seen: data.timestamp || new Date().toISOString(),
+            battery_level: data.battery_level,
+            speed: data.speed,
+            accuracy: data.accuracy,
+            address: data.address,
+            source: data.source,
+          }];
+        }
+      });
+    };
+
     const handleAlertCreated = (data: any) => {
       console.log('🚨 Received alert:', data);
       // Alerts will trigger container updates through the container_update event
     };
 
     websocket.on('container_update', handleContainerUpdate);
+    websocket.on('technician_location_update', handleTechnicianLocationUpdate);
     websocket.on('alert_created', handleAlertCreated);
 
     return () => {
       websocket.off('container_update', handleContainerUpdate);
+      websocket.off('technician_location_update', handleTechnicianLocationUpdate);
       websocket.off('alert_created', handleAlertCreated);
     };
   }, []);
@@ -201,100 +279,155 @@ export default function FleetMap({ containers }: FleetMapProps) {
     markersRef.current.forEach(marker => marker.remove());
     markersRef.current.clear();
 
-    console.log('📍 Total containers received:', containersData.length);
-    console.log('📍 Filtered containers:', filteredContainers.length);
+    if (activeTab === 'containers') {
+      console.log('📍 Total containers received:', containersData.length);
+      console.log('📍 Filtered containers:', filteredContainers.length);
 
-    // Add new markers - only containers with valid GPS
-    const validContainers = filteredContainers.filter(container => {
-      const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
-      const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
-      const isValid = lat !== 0 && lng !== 0;
+      // Add new markers - only containers with valid GPS
+      const validContainers = filteredContainers.filter(container => {
+        const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
+        const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
+        return lat !== 0 && lng !== 0;
+      });
 
-      if (!isValid && container.orbcommDeviceId) {
-        console.log(`⚠️  Container ${container.containerCode} has Orbcomm device but no GPS:`, {
-          locationLat: container.locationLat,
-          locationLng: container.locationLng,
-          currentLocation: container.currentLocation
-        });
-      }
+      console.log('📍 Valid containers with GPS:', validContainers.length);
 
-      return isValid;
-    });
+      validContainers.forEach(container => {
+        const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
+        const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
 
-    console.log('📍 Valid containers with GPS:', validContainers.length);
-
-    validContainers.forEach(container => {
-      const lat = container.currentLocation?.lat || parseFloat(container.locationLat || '0');
-      const lng = container.currentLocation?.lng || parseFloat(container.locationLng || '0');
-
-      // Determine color
-      let color = '#9CA3AF'; // gray
-      if (container.orbcommDeviceId) {
-        if (container.temperature && container.temperature > 30) {
-          color = '#EF4444'; // red
-        } else if (container.powerStatus === 'off') {
-          color = '#F97316'; // orange
-        } else {
-          color = '#10B981'; // green
+        // Determine color
+        let color = '#9CA3AF'; // gray
+        if (container.orbcommDeviceId) {
+          if (container.temperature && container.temperature > 30) {
+            color = '#EF4444'; // red
+          } else if (container.powerStatus === 'off') {
+            color = '#F97316'; // orange
+          } else {
+            color = '#10B981'; // green
+          }
+        } else if (container.hasIot) {
+          color = '#3B82F6'; // blue
         }
-      } else if (container.hasIot) {
-        color = '#3B82F6'; // blue
-      }
 
-      const icon = window.L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer;"></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
-      });
+        const icon = window.L.divIcon({
+          className: 'custom-marker',
+          html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer;"></div>`,
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        });
 
-      const popupContent = `
-        <div class="p-3 min-w-[250px]">
-          <h3 class="font-bold text-base mb-2">${container.containerCode}</h3>
-          <div class="text-sm space-y-2">
-            <p><span class="text-gray-600">Type:</span> <span class="font-medium">${container.type || 'N/A'}</span></p>
-            <p><span class="text-gray-600">Status:</span> <span class="capitalize font-medium">${container.status || 'unknown'}</span></p>
-            ${container.grade ? `<p><span class="text-gray-600">Grade:</span> <span class="font-medium">${container.grade}</span></p>` : ''}
-            ${container.temperature !== undefined ? `
-              <p><span class="text-gray-600">Temperature:</span> <span class="font-medium ${container.temperature > 30 ? 'text-red-600' : 'text-gray-900'}">${container.temperature.toFixed(1)}°C</span></p>
-            ` : ''}
-            ${container.powerStatus ? `
-              <p><span class="text-gray-600">Power:</span> <span class="font-medium ${container.powerStatus === 'on' ? 'text-green-600' : 'text-red-600'} uppercase">${container.powerStatus}</span></p>
-            ` : ''}
+        const popupContent = `
+          <div class="p-3 min-w-[250px]">
+            <h3 class="font-bold text-base mb-2">${container.containerCode}</h3>
+            <div class="text-sm space-y-2">
+              <p><span class="text-gray-600">Type:</span> <span class="font-medium">${container.type || 'N/A'}</span></p>
+              <p><span class="text-gray-600">Status:</span> <span class="capitalize font-medium">${container.status || 'unknown'}</span></p>
+              ${container.grade ? `<p><span class="text-gray-600">Grade:</span> <span class="font-medium">${container.grade}</span></p>` : ''}
+              ${container.temperature !== undefined ? `
+                <p><span class="text-gray-600">Temperature:</span> <span class="font-medium ${container.temperature > 30 ? 'text-red-600' : 'text-gray-900'}">${container.temperature.toFixed(1)}°C</span></p>
+              ` : ''}
+              ${container.powerStatus ? `
+                <p><span class="text-gray-600">Power:</span> <span class="font-medium ${container.powerStatus === 'on' ? 'text-green-600' : 'text-red-600'} uppercase">${container.powerStatus}</span></p>
+              ` : ''}
+            </div>
+            <button
+              onclick="window.navigateToContainer('${container.id}')"
+              class="mt-3 w-full px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+            >
+              View Details
+            </button>
           </div>
-          <button 
-            onclick="window.navigateToContainer('${container.id}')" 
-            class="mt-3 w-full px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
-          >
-            View Details
-          </button>
-        </div>
-      `;
+        `;
 
-      const marker = window.L.marker([lat, lng], { icon });
-      marker.bindPopup(popupContent);
-      
-      // Click on marker to navigate to container detail
-      marker.on('click', () => {
-        marker.openPopup();
+        const marker = window.L.marker([lat, lng], { icon });
+        marker.bindPopup(popupContent);
+        marker.on('click', () => marker.openPopup());
+        marker.addTo(map);
+        markersRef.current.set(container.id, marker);
       });
-      
-      marker.addTo(map);
-      markersRef.current.set(container.id, marker);
-    });
 
-    // Fit bounds
-    if (validContainers.length > 0) {
-      const bounds = window.L.latLngBounds(
-        validContainers.map(c => {
-          const lat = c.currentLocation?.lat || parseFloat(c.locationLat || '0');
-          const lng = c.currentLocation?.lng || parseFloat(c.locationLng || '0');
-          return [lat, lng];
-        })
-      );
-      map.fitBounds(bounds, { padding: [50, 50] });
+      // Fit bounds
+      if (validContainers.length > 0) {
+        const bounds = window.L.latLngBounds(
+          validContainers.map(c => {
+            const lat = c.currentLocation?.lat || parseFloat(c.locationLat || '0');
+            const lng = c.currentLocation?.lng || parseFloat(c.locationLng || '0');
+            return [lat, lng];
+          })
+        );
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+    } else if (activeTab === 'technicians') {
+      console.log('👷 Total technicians received:', techniciansData.length);
+
+      // Add technician markers
+      techniciansData.forEach(tech => {
+        const lat = parseFloat(tech.latitude);
+        const lng = parseFloat(tech.longitude);
+
+        if (lat === 0 && lng === 0) return;
+
+        // Technician marker - blue user icon
+        const icon = window.L.divIcon({
+          className: 'custom-marker',
+          html: `<div style="background-color: #3B82F6; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer; display: flex; align-items: center; justify-content: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="white">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+          </div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+
+        const lastSeenDate = new Date(tech.last_seen);
+        const timeAgo = getTimeAgo(lastSeenDate);
+
+        const popupContent = `
+          <div class="p-3 min-w-[250px]">
+            <h3 class="font-bold text-base mb-2">${tech.first_name} ${tech.last_name}</h3>
+            <div class="text-sm space-y-2">
+              <p><span class="text-gray-600">Last Seen:</span> <span class="font-medium">${timeAgo}</span></p>
+              ${tech.battery_level ? `<p><span class="text-gray-600">Battery:</span> <span class="font-medium">${tech.battery_level}%</span></p>` : ''}
+              ${tech.speed ? `<p><span class="text-gray-600">Speed:</span> <span class="font-medium">${parseFloat(tech.speed.toString()).toFixed(1)} km/h</span></p>` : ''}
+              ${tech.accuracy ? `<p><span class="text-gray-600">Accuracy:</span> <span class="font-medium">${parseFloat(tech.accuracy.toString()).toFixed(0)}m</span></p>` : ''}
+              ${tech.address ? `<p><span class="text-gray-600">Location:</span> <span class="font-medium text-xs">${tech.address}</span></p>` : ''}
+            </div>
+          </div>
+        `;
+
+        const marker = window.L.marker([lat, lng], { icon });
+        marker.bindPopup(popupContent);
+        marker.on('click', () => marker.openPopup());
+        marker.addTo(map);
+        markersRef.current.set(tech.employee_id, marker);
+      });
+
+      // Fit bounds
+      if (techniciansData.length > 0) {
+        const bounds = window.L.latLngBounds(
+          techniciansData
+            .filter(t => parseFloat(t.latitude) !== 0 && parseFloat(t.longitude) !== 0)
+            .map(t => [parseFloat(t.latitude), parseFloat(t.longitude)])
+        );
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
+      }
     }
-  }, [filteredContainers, scriptsLoaded]);
+  }, [filteredContainers, techniciansData, activeTab, scriptsLoaded]);
+
+  // Helper function to format time ago
+  function getTimeAgo(date: Date): string {
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
 
   // Setup global navigation function for popup buttons
   useEffect(() => {
@@ -346,15 +479,17 @@ export default function FleetMap({ containers }: FleetMapProps) {
       <div className="relative z-10 h-full flex flex-col">
         {/* Control buttons */}
         <div className="absolute top-4 right-4 z-[400] flex gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-8 w-8 backdrop-blur shadow-sm ${showFilters ? 'bg-primary text-white' : 'bg-white/90'}`}
-            onClick={() => setShowFilters(!showFilters)}
-            title="Toggle filters"
-          >
-            <Filter className="h-4 w-4" />
-          </Button>
+          {activeTab === 'containers' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 backdrop-blur shadow-sm ${showFilters ? 'bg-primary text-white' : 'bg-white/90'}`}
+              onClick={() => setShowFilters(!showFilters)}
+              title="Toggle filters"
+            >
+              <Filter className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -440,29 +575,54 @@ export default function FleetMap({ containers }: FleetMapProps) {
           </div>
         )}
 
-        {/* Header */}
-        <div className="p-4 border-b border-border/50 flex items-center justify-between bg-white/50 backdrop-blur-sm shrink-0">
-          <div className="flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-primary" />
-            <h3 className="font-semibold text-foreground">Live Fleet Map</h3>
-            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-              {withGps} of {filteredContainers.length} on map
-            </span>
+        {/* Header with Tabs */}
+        <div className="p-4 border-b border-border/50 bg-white/50 backdrop-blur-sm shrink-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold text-foreground">Live Fleet Map</h3>
+            </div>
+            {activeTab === 'containers' && (
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                  <span>Orbcomm: <strong>{orbcommConnected}</strong></span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  <span>IoT: <strong>{iotConnected}</strong></span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-gray-500"></span>
+                  <span>Manual: <strong>{manual}</strong></span>
+                </div>
+              </div>
+            )}
+            {activeTab === 'technicians' && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Tracking <strong>{techniciansData.length}</strong> technicians</span>
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-              <span>Orbcomm: <strong>{orbcommConnected}</strong></span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-              <span>IoT: <strong>{iotConnected}</strong></span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-gray-500"></span>
-              <span>Manual: <strong>{manual}</strong></span>
-            </div>
-          </div>
+
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "containers" | "technicians")} className="w-full">
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="containers" className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Containers
+                <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                  {withGps}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="technicians" className="flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Technicians
+                <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                  {techniciansData.length}
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Map */}
