@@ -578,12 +578,37 @@ export default function ServiceRequestDetail() {
             </div>
           </div>
 
+          {/* Duplicate Container Warning */}
+          {req.isDuplicate && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-500 rounded-lg">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="h-6 w-6 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-amber-900 dark:text-amber-300">
+                    ⚠️ Duplicate Container Service Request
+                  </h3>
+                  <p className="text-sm text-amber-800 dark:text-amber-400 mt-1">
+                    This container ({container.containerCode}) has <strong>{req.duplicateCount} active service requests</strong>. Please coordinate with other technicians to avoid duplicate work.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Request Number and Basic Info */}
-          <Card>
+          <Card className={req.isDuplicate ? 'border-2 border-amber-500' : ''}>
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle className="text-2xl font-bold">{req.requestNumber}</CardTitle>
+                  <div className="flex items-center gap-3 mb-2">
+                    <CardTitle className="text-2xl font-bold">{req.requestNumber}</CardTitle>
+                    {req.isDuplicate && (
+                      <Badge className="bg-amber-500 text-white flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        Duplicate ({req.duplicateCount}x)
+                      </Badge>
+                    )}
+                  </div>
                   <CardDescription className="mt-1">
                     {req.issueDescription}
                   </CardDescription>
@@ -635,7 +660,9 @@ export default function ServiceRequestDetail() {
                           <div className="grid grid-cols-2 gap-3 text-sm">
                             <div>
                               <p className="text-muted-foreground">Container Code</p>
-                              <p className="font-mono font-medium">{cont.containerCode || "-"}</p>
+                              <p className={`font-mono font-medium ${req.isDuplicate ? 'font-bold text-amber-700 dark:text-amber-400' : ''}`}>
+                                {cont.containerCode || "-"}
+                              </p>
                             </div>
                             <div>
                               <p className="text-muted-foreground">Type</p>

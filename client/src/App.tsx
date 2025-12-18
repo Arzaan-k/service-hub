@@ -38,6 +38,8 @@ import FinanceOverview from "@/pages/finance/overview";
 import TechnicianSpend from "@/pages/finance/technician-spend";
 import Training from "@/pages/training";
 import AdminTraining from "@/pages/admin-training";
+import TechnicianSetupPassword from "@/pages/technician/setup-password";
+import TechnicianSubmitDocuments from "@/pages/technician/submit-documents";
 
 function ProtectedRoute({ component: Component, roles }: { component: () => JSX.Element; roles?: string[] }) {
   if (!isAuthenticated()) {
@@ -153,6 +155,10 @@ function Router() {
       </Route>
       <Route path="/admin/training">
         {() => <ProtectedRoute component={AdminTraining} roles={["admin", "super_admin"]} />}
+      </Route>
+      <Route path="/technician/setup-password" component={TechnicianSetupPassword} />
+      <Route path="/technician/submit-documents">
+        {() => <ProtectedRoute component={TechnicianSubmitDocuments} roles={["technician", "senior_technician"]} />}
       </Route>
     </Switch>
   );

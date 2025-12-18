@@ -112,6 +112,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Training Routes
   app.use('/api', trainingRoutes);
 
+  // Register Technician Document Routes
+  app.use('/api', technicianDocumentRoutes);
+
   // Third-party technicians helper functions (defined early for use throughout routes)
   const thirdPartyDir = path.join(process.cwd(), "server", "data");
   const thirdPartyFile = path.join(thirdPartyDir, "thirdparty-technicians.json");
@@ -2168,6 +2171,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching service requests:", error);
       res.status(500).json({ error: "Failed to fetch service requests", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // Get duplicate containers summary
+  app.get("/api/service-requests/duplicates", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const duplicates = await storage.getDuplicateContainers();
+      res.json(duplicates);
+    } catch (error: any) {
+      console.error('[API] Error fetching duplicate containers:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Debug endpoint to check container IDs
+  app.get("/api/debug/service-requests-containers", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { db } = await import('./db');
+      const { serviceRequests, containers } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      const requests = await db
+        .select({
+          id: serviceRequests.id,
+          requestNumber: serviceRequests.requestNumber,
+          jobOrder: serviceRequests.jobOrder,
+          containerId: serviceRequests.containerId,
+          status: serviceRequests.status,
+          containerCode: containers.containerCode
+        })
+        .from(serviceRequests)
+        .leftJoin(containers, eq(serviceRequests.containerId, containers.id))
+        .limit(50);
+
+      res.json(requests);
+    } catch (error: any) {
+      console.error('[API] Error fetching debug data:', error);
+      res.status(500).json({ error: error.message });
     }
   });
 

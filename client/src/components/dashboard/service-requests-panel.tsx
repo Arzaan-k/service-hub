@@ -20,6 +20,11 @@ interface ServiceRequest {
   status: string;
   priority: string;
   issueDescription: string;
+  isDuplicate?: boolean;
+  duplicateCount?: number;
+  container?: {
+    containerCode: string;
+  };
 }
 
 interface ServiceRequestsPanelProps {
@@ -256,7 +261,21 @@ export default function ServiceRequestsPanel({ requests, containers, alerts }: S
         {requests.slice(0, 5).map((request) => {
           const container = containers.find((c) => c.id === request.containerId);
           return (
-            <div key={request.id} className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+            <div key={request.id} className={`rounded-xl p-4 space-y-3 ${
+              request.isDuplicate 
+                ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-500' 
+                : 'bg-white/5 border border-white/10'
+            }`}>
+              {/* Duplicate Warning */}
+              {request.isDuplicate && (
+                <div className="flex items-center gap-2 p-2 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg">
+                  <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+                  <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                    Duplicate ({request.duplicateCount}x)
+                  </span>
+                </div>
+              )}
+              
               <div className="flex justify-between items-start">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -265,7 +284,9 @@ export default function ServiceRequestsPanel({ requests, containers, alerts }: S
                       {request.status}
                     </span>
                   </div>
-                  <div className="font-mono text-xs text-foreground/80 font-medium">
+                  <div className={`font-mono text-xs font-medium ${
+                    request.isDuplicate ? 'font-bold text-amber-700 dark:text-amber-400' : 'text-foreground/80'
+                  }`}>
                     {container?.containerCode || container?.containerId || "Unknown"}
                   </div>
                 </div>
@@ -303,9 +324,25 @@ export default function ServiceRequestsPanel({ requests, containers, alerts }: S
             {requests.slice(0, 5).map((request) => {
               const container = containers.find((c) => c.id === request.containerId);
               return (
-                <tr key={request.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                  <td className="py-3 px-4 font-mono text-xs font-medium text-primary">{request.requestNumber}</td>
-                  <td className="py-3 px-4 font-mono text-xs text-foreground/80">{container?.containerCode || container?.containerId || "Unknown"}</td>
+                <tr key={request.id} className={`border-b border-white/5 transition-colors group ${
+                  request.isDuplicate 
+                    ? 'bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30' 
+                    : 'hover:bg-white/5'
+                }`}>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-medium text-primary">{request.requestNumber}</span>
+                      {request.isDuplicate && (
+                        <Badge className="bg-amber-500 text-white text-[9px] px-1.5 py-0.5 flex items-center gap-1">
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          {request.duplicateCount}x
+                        </Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td className={`py-3 px-4 font-mono text-xs ${
+                    request.isDuplicate ? 'font-bold text-amber-700 dark:text-amber-400' : 'text-foreground/80'
+                  }`}>{container?.containerCode || container?.containerId || "Unknown"}</td>
                   <td className="py-3 px-4 text-foreground/80">{(request.issueDescription || "").substring(0, 28)}{(request.issueDescription || "").length > 28 ? "..." : ""}</td>
                   <td className="py-3 px-4">
                     <span className={`px-2.5 py-1 ${getPriorityColor(request.priority)} text-[10px] font-bold uppercase tracking-wider rounded-md`}>

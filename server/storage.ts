@@ -3,6 +3,7 @@ import {
   users,
   customers,
   technicians,
+  technicianDocuments,
   containers,
   containerMetrics,
   containerOwnershipHistory,
@@ -31,6 +32,7 @@ import {
   type Customer,
   type InsertCustomer,
   type Technician,
+  type TechnicianDocument,
   type Container,
   type Alert,
   type ServiceRequest,
@@ -56,7 +58,7 @@ import {
   type InsertTechnicianTripTask,
 } from "@shared/schema";
 import { db, pool } from "./db";
-import { eq, and, desc, asc, gte, sql, isNull, ilike, inArray, notInArray } from "drizzle-orm";
+import { eq, and, desc, asc, gte, sql, isNull, isNotNull, ilike, inArray, notInArray } from "drizzle-orm";
 import { Pool as NeonPool } from '@neondatabase/serverless';
 
 // Helper to create a pool for external database connections
@@ -727,7 +729,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllServiceRequests(): Promise<ServiceRequest[]> {
     // Select only fields that exist in the database to avoid schema mismatch errors
-    return (await db
+    const requests = (await db
       .select({
         id: serviceRequests.id,
         requestNumber: serviceRequests.requestNumber,
@@ -769,6 +771,27 @@ export class DatabaseStorage implements IStorage {
       })
       .from(serviceRequests)
       .orderBy(desc(serviceRequests.createdAt))) as any;
+
+    // Get duplicate container counts by container code
+    const duplicateCounts = await this.getDuplicateContainerCounts();
+
+    // Fetch container data for each request and add duplicate information
+    const enrichedRequests = await Promise.all(
+      requests.map(async (request: any) => {
+        // Fetch container if containerId exists
+        const container = request.containerId ? await this.getContainer(request.containerId) : null;
+        const containerCode = container?.containerCode;
+        const count = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
+        
+        return {
+          ...request,
+          isDuplicate: count > 1,
+          duplicateCount: count
+        };
+      })
+    );
+
+    return enrichedRequests;
   }
 
   async getServiceRequest(id: string): Promise<ServiceRequest | undefined> {
@@ -813,7 +836,33 @@ export class DatabaseStorage implements IStorage {
       })
       .from(serviceRequests)
       .where(eq(serviceRequests.id, id));
-    return request as any;
+    
+    if (!request) return undefined;
+
+    // Get container to access container code
+    const container = request.containerId ? await this.getContainer(request.containerId) : null;
+    
+    // Get duplicate container counts by container code
+    const duplicateCounts = await this.getDuplicateContainerCounts();
+    
+    const containerCode = container?.containerCode;
+    const count = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
+    const isDuplicate = count > 1;
+    
+    console.log(`[Storage] Service Request ${request.id}:`, {
+      containerId: request.containerId,
+      containerCode,
+      count,
+      isDuplicate,
+      requestNumber: request.requestNumber
+    });
+
+    // Add duplicate information
+    return {
+      ...request,
+      isDuplicate,
+      duplicateCount: count
+    } as any;
   }
 
   async getServiceRequestsByCustomer(customerId: string): Promise<ServiceRequest[]> {
@@ -872,45 +921,26 @@ export class DatabaseStorage implements IStorage {
         .where(and(...conditions))
         .orderBy(desc(serviceRequests.createdAt));
 
+      // Get duplicate container counts by container code
+      const duplicateCounts = await this.getDuplicateContainerCounts();
+
       // Fetch container and customer data separately to avoid join complexity
       const enrichedRows = await Promise.all(
-        rows.map(async (row) => {
-          let container = null;
-          let customer = null;
+        rows.map(async (row: any) => {
+          const [container, customer] = await Promise.all([
+            row.containerId ? this.getContainer(row.containerId) : null,
+            row.customerId ? this.getCustomer(row.customerId) : null
+          ]);
 
-          if (row.containerId) {
-            try {
-              container = await this.getContainer(row.containerId);
-            } catch (err) {
-              console.warn(`[Storage] Failed to fetch container ${row.containerId}:`, err);
-            }
-          }
-
-          if (row.customerId) {
-            try {
-              customer = await this.getCustomer(row.customerId);
-            } catch (err) {
-              console.warn(`[Storage] Failed to fetch customer ${row.customerId}:`, err);
-            }
-          }
+          const containerCode = container?.containerCode;
+          const count = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
 
           return {
             ...row,
-            container: container ? {
-              id: container.id,
-              containerCode: container.containerCode,
-              type: container.type,
-              status: container.status,
-              currentLocation: container.currentLocation
-            } : null,
-            customer: customer ? {
-              id: customer.id,
-              companyName: customer.companyName,
-              contactPerson: customer.contactPerson,
-              phone: customer.phone,
-              email: customer.email,
-              address: customer.address
-            } : null
+            container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
+            customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
+            isDuplicate: count > 1,
+            duplicateCount: count
           };
         })
       );
@@ -940,6 +970,72 @@ export class DatabaseStorage implements IStorage {
         isNull(serviceRequests.actualEndTime)
       ))
       .orderBy(desc(serviceRequests.createdAt));
+  }
+
+  // Duplicate Container Detection Methods - By Container Code
+  async getDuplicateContainerCounts(): Promise<Map<string, number>> {
+    try {
+      // Count service requests per container CODE (not ID) for active statuses
+      // This handles cases where multiple container records exist with the same code
+      const duplicateCounts = await db
+        .select({
+          containerCode: containers.containerCode,
+          count: sql<number>`COUNT(DISTINCT ${serviceRequests.id})::int`.as('count')
+        })
+        .from(serviceRequests)
+        .innerJoin(containers, eq(serviceRequests.containerId, containers.id))
+        .where(
+          and(
+            isNotNull(serviceRequests.containerId),
+            isNotNull(containers.containerCode),
+            inArray(serviceRequests.status, ['pending', 'scheduled', 'approved', 'in_progress'])
+          )
+        )
+        .groupBy(containers.containerCode);
+
+      console.log('[Storage] Duplicate container counts by code:', duplicateCounts);
+
+      // Convert to Map for easy lookup by container code
+      const countMap = new Map<string, number>();
+      duplicateCounts.forEach(item => {
+        if (item.containerCode) {
+          countMap.set(item.containerCode, item.count);
+          console.log(`[Storage] Container code ${item.containerCode} has ${item.count} active requests`);
+        }
+      });
+
+      return countMap;
+    } catch (error) {
+      console.error('[Storage] Error getting duplicate container counts:', error);
+      return new Map();
+    }
+  }
+
+  async getDuplicateContainers(): Promise<any[]> {
+    try {
+      const duplicates = await db
+        .select({
+          containerId: serviceRequests.containerId,
+          containerCode: containers.containerCode,
+          requestCount: sql<number>`COUNT(*)::int`.as('request_count'),
+          serviceRequestIds: sql<string[]>`array_agg(${serviceRequests.id})`.as('service_request_ids')
+        })
+        .from(serviceRequests)
+        .leftJoin(containers, eq(serviceRequests.containerId, containers.id))
+        .where(
+          and(
+            isNotNull(serviceRequests.containerId),
+            inArray(serviceRequests.status, ['pending', 'scheduled', 'approved', 'in_progress'])
+          )
+        )
+        .groupBy(serviceRequests.containerId, containers.containerCode)
+        .having(sql`COUNT(*) > 1`);
+
+      return duplicates;
+    } catch (error) {
+      console.error('[Storage] Error getting duplicate containers:', error);
+      return [];
+    }
   }
 
   async createServiceRequest(request: any): Promise<ServiceRequest> {
@@ -1030,6 +1126,89 @@ export class DatabaseStorage implements IStorage {
       .where(eq(technicians.id, id))
       .returning();
     return updated;
+  }
+
+  async getTechnicianDocuments(technicianId: string): Promise<TechnicianDocument[]> {
+    try {
+      const documents = await db
+        .select()
+        .from(technicianDocuments)
+        .where(eq(technicianDocuments.technicianId, technicianId))
+        .orderBy(desc(technicianDocuments.uploadedAt));
+      return documents;
+    } catch (error) {
+      console.error('[Storage] Error getting technician documents:', error);
+      return [];
+    }
+  }
+
+  async getTechnicianDocument(documentId: string): Promise<TechnicianDocument | undefined> {
+    try {
+      const [document] = await db
+        .select()
+        .from(technicianDocuments)
+        .where(eq(technicianDocuments.id, documentId));
+      return document;
+    } catch (error) {
+      console.error('[Storage] Error getting technician document:', error);
+      return undefined;
+    }
+  }
+
+  async createTechnicianDocument(data: any): Promise<TechnicianDocument> {
+    try {
+      const [document] = await db
+        .insert(technicianDocuments)
+        .values({
+          technicianId: data.technicianId,
+          documentType: data.documentType,
+          filename: data.filename,
+          fileUrl: data.fileUrl,
+          fileData: data.fileData,
+          fileSize: data.fileSize,
+          contentType: data.contentType,
+        })
+        .returning();
+      console.log(`[Storage] Created technician document: ${document.id} (${data.documentType})`);
+      return document;
+    } catch (error) {
+      console.error('[Storage] Error creating technician document:', error);
+      throw error;
+    }
+  }
+
+  async updateTechnicianDocument(documentId: string, data: any): Promise<TechnicianDocument> {
+    try {
+      const [updated] = await db
+        .update(technicianDocuments)
+        .set({
+          filename: data.filename,
+          fileUrl: data.fileUrl,
+          fileData: data.fileData,
+          fileSize: data.fileSize,
+          contentType: data.contentType,
+          updatedAt: new Date(),
+        })
+        .where(eq(technicianDocuments.id, documentId))
+        .returning();
+      console.log(`[Storage] Updated technician document: ${documentId}`);
+      return updated;
+    } catch (error) {
+      console.error('[Storage] Error updating technician document:', error);
+      throw error;
+    }
+  }
+
+  async deleteTechnicianDocument(documentId: string): Promise<void> {
+    try {
+      await db
+        .delete(technicianDocuments)
+        .where(eq(technicianDocuments.id, documentId));
+      console.log(`[Storage] Deleted technician document: ${documentId}`);
+    } catch (error) {
+      console.error('[Storage] Error deleting technician document:', error);
+      throw error;
+    }
   }
 
   async getWhatsappSession(phoneNumber: string): Promise<WhatsappSession | undefined> {
