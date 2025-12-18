@@ -691,6 +691,21 @@ export const weeklySummaryReports = pgTable("weekly_summary_reports", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Location Logs table - Track technician locations over time
+export const locationLogs = pgTable("location_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: varchar("employee_id").references(() => technicians.id).notNull(),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }).notNull(),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  batteryLevel: integer("battery_level"), // Battery percentage (0-100)
+  speed: decimal("speed", { precision: 6, scale: 2 }), // Speed in km/h
+  accuracy: decimal("accuracy", { precision: 8, scale: 2 }), // GPS accuracy in meters
+  address: text("address"), // Reverse geocoded address
+  source: text("source").default("app").notNull(), // 'app', 'whatsapp', 'manual'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Finance Expenses table
 export const financeExpenses = pgTable("finance_expenses", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -729,6 +744,7 @@ export const techniciansRelations = relations(technicians, ({ one, many }) => ({
   scheduledServices: many(scheduledServices),
   feedback: many(feedback),
   trips: many(technicianTrips),
+  locationLogs: many(locationLogs),
 }));
 
 export const containersRelations = relations(containers, ({ one, many }) => ({
@@ -826,6 +842,10 @@ export const technicianTripTasksRelations = relations(technicianTripTasks, ({ on
   alert: one(alerts, { fields: [technicianTripTasks.alertId], references: [alerts.id] }),
 }));
 
+export const locationLogsRelations = relations(locationLogs, ({ one }) => ({
+  technician: one(technicians, { fields: [locationLogs.employeeId], references: [technicians.id] }),
+}));
+
 export const financeExpensesRelations = relations(financeExpenses, ({ one }) => ({
   container: one(containers, { fields: [financeExpenses.containerId], references: [containers.id] }),
   technician: one(technicians, { fields: [financeExpenses.technicianId], references: [technicians.id] }),
@@ -851,6 +871,7 @@ export const insertInventorySchema = createInsertSchema(inventory).omit({ id: tr
 export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({ id: true, createdAt: true } as any);
 export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({ id: true, createdAt: true } as any);
 export const insertManualSchema = createInsertSchema(manuals).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertLocationLogSchema = createInsertSchema(locationLogs).omit({ id: true, createdAt: true } as any);
 export const insertFinanceExpenseSchema = createInsertSchema(financeExpenses).omit({ id: true, createdAt: true } as any);
 export const insertManualChunkSchema = createInsertSchema(manualChunks).omit({ id: true, createdAt: true, embedding: true } as any);
 export const insertRagQuerySchema = createInsertSchema(ragQueries).omit({ id: true, createdAt: true } as any);
@@ -947,3 +968,6 @@ export type ServiceRequestRemark = typeof serviceRequestRemarks.$inferSelect;
 export type InsertServiceRequestRemark = z.infer<typeof insertServiceRequestRemarkSchema>;
 export type ServiceRequestRecording = typeof serviceRequestRecordings.$inferSelect;
 export type InsertServiceRequestRecording = z.infer<typeof insertServiceRequestRecordingSchema>;
+// Location Log types
+export type LocationLog = typeof locationLogs.$inferSelect;
+export type InsertLocationLog = z.infer<typeof insertLocationLogSchema>;

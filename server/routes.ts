@@ -1035,7 +1035,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getServiceSummaryScheduler();
       await scheduler.triggerPrefetch();
       res.json({ message: "Prefetch triggered successfully" });
@@ -1051,7 +1051,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getServiceSummaryScheduler();
       await scheduler.triggerEmailSend();
       res.json({ message: "Email send triggered successfully" });
@@ -1067,7 +1067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getServiceSummaryScheduler();
       await scheduler.triggerEscalationCheck();
       res.json({ message: "Escalation check triggered successfully" });
@@ -1083,7 +1083,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getServiceSummaryScheduler();
       scheduler.clearCache();
       res.json({ message: "Cache cleared successfully" });
@@ -4486,6 +4486,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(technician);
     } catch (error) {
       res.status(500).json({ error: "Failed to update technician status" });
+    }
+  });
+
+  // Get latest technician locations for live tracking
+  app.get("/api/technicians/locations", authenticateUser, async (req, res) => {
+    try {
+      console.log('[API] Fetching technician locations...');
+      const locations = await storage.getLatestTechnicianLocations();
+      console.log(`[API] ✅ Returning ${locations.length} technician locations to client`);
+      res.json(locations);
+    } catch (error) {
+      console.error("[API] ❌ Failed to fetch technician locations:", error);
+      res.status(500).json({ error: "Failed to fetch technician locations" });
     }
   });
 
