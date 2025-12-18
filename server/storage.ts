@@ -2865,7 +2865,6 @@ export class DatabaseStorage implements IStorage {
     return results;
   }
 
-<<<<<<< HEAD
   async getClientAnalytics(range: number): Promise<any[]> {
     // Calculate date range
     const startDate = new Date();
