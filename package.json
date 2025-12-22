@@ -12,6 +12,7 @@
     "build:deploy": "npm run build",
     "db:migrate:auth": "tsx server/tools/migrate-auth.ts",
     "db:migrate:reefer": "tsx server/tools/migrate-reefer-fields.ts",
+    "build:client": "npm run build",
     "db:migrate:technicians": "tsx server/tools/migrate-technician-fields.ts",
     "import:rentals": "tsx server/tools/import-rentals.ts",
     "import:excel": "node import-excel-data.js",
