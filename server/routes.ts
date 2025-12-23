@@ -53,6 +53,7 @@ import { acknowledgeSummary } from './services/dailySummaryService';
 import { getServiceSummaryScheduler } from './services/serviceSummaryScheduler';
 import { getWeeklySummaryScheduler } from './services/weeklySummaryScheduler';
 import { registerFinanceRoutes } from "./routes/finance";
+import { authRouter } from "./routes/auth";
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -107,6 +108,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Finance Routes
   registerFinanceRoutes(app);
+
+  // Register Centralized Authentication Routes
+  app.use('/auth', authRouter);
 
   // Third-party technicians helper functions (defined early for use throughout routes)
   const thirdPartyDir = path.join(process.cwd(), "server", "data");
@@ -1114,7 +1118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getWeeklySummaryScheduler();
       await scheduler.triggerWeeklySummary();
       res.json({ message: "Weekly summary triggered successfully" });
