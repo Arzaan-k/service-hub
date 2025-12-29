@@ -1,0 +1,85 @@
+﻿[dotenv@17.2.3] injecting env (53) from .env -- tip: ≡ƒôí add observability to secrets: https://dotenvx.com/ops
+================================================================================
+WhatsApp Business API Diagnostic Tool
+================================================================================
+
+≡ƒôï STEP 1: Environment Variables Check
+--------------------------------------------------------------------------------
+WABA_ID (env):              Γ£ô SET (897376619493508)
+WA_PHONE_NUMBER_ID (env):   Γ£ô SET (895398020326880)
+CLOUD_API_ACCESS_TOKEN:     Γ£ô SET (- EAAMV6tsVqF4BQIeAN...)
+WHATSAPP_VERIFY_TOKEN:      Γ£ô SET (ab703f82d47668f0ef89a7a139d227ef)
+META_APP_ID:                Γ£ô SET 1519730032520035
+META_APP_SECRET:            Γ£ô SET (hidden)
+META_GRAPH_API_VERSION:     v20.0
+
+≡ƒöì STEP 2: Credential Comparison
+--------------------------------------------------------------------------------
+WABA_ID matches:            Γ£ô YES
+PHONE_ID matches:           Γ£ô YES
+ACCESS_TOKEN matches:       Γ£ù NO
+VERIFY_TOKEN matches:       Γ£ô YES
+
+≡ƒîÉ STEP 3: Testing WhatsApp API Connection
+--------------------------------------------------------------------------------
+Test 1: Fetching phone number details...
+Γ£ô Phone Number Details:
+  - ID: 895398020326880
+  - Verified Name: Crystal Group
+  - Display Number: +91 90826 74866
+  - Quality Rating: UNKNOWN
+  - Account Mode: LIVE
+  - Name Status: AVAILABLE_WITHOUT_REVIEW
+  - Code Verification: VERIFIED
+
+Test 2: Fetching WABA details...
+Γ£ô WABA Details:
+  - ID: 897376619493508
+  - Name: Crystal Group
+  - Timezone: 71
+  - Template Namespace: 05eceaba_00cf_408d_bb0e_6275e6c6c706
+  - Review Status: APPROVED
+
+Test 3: Fetching message templates...
+Γ£ô Found 1 message templates
+  Templates:
+  1. hello_world (APPROVED) - Language: en_US
+
+Test 4: Checking webhook subscriptions...
+Γ£ô Found 0 webhook subscriptions
+  ΓÜá∩╕Å  No webhook subscriptions found - you need to configure webhooks!
+
+================================================================================
+≡ƒôè DIAGNOSTIC SUMMARY
+================================================================================
+Γ£ô Access Token is VALID
+Γ£ô Phone Number ID is CORRECT
+Γ£ô WABA ID is CORRECT
+Γ£ô API connection is WORKING
+
+ΓÜá∩╕Å  IMPORTANT NEXT STEPS:
+
+1. UPDATE .env FILE:
+   Make sure these variables are set in your .env file:
+   WABA_ID=897376619493508
+   WA_PHONE_NUMBER_ID=895398020326880
+   CLOUD_API_ACCESS_TOKEN=EAAMV6tsVqF4BQIeANyhUQ48CrubIv2y8zXBkgfr5BKtci5rELtrEGQupdq39MjYRCy8lUGRwZB1JyzvOc3bLOZBrRktWDzlDEA1jQlObg8gUWJTD3nQicGUooLIP3akH8yfOwffApupIUTNbR2G8pBglknZCjK14ZCsUvALSrtOh2oAhZBwGrYi2fDkTHjCYwCwZDZD
+   WHATSAPP_VERIFY_TOKEN=ab703f82d47668f0ef89a7a139d227ef
+
+2. CONFIGURE WEBHOOK:
+   - Go to Meta App Dashboard: https://developers.facebook.com/apps
+   - Navigate to WhatsApp > Configuration
+   - Set Webhook URL to: https://your-domain.com/api/whatsapp/webhook
+   - Set Verify Token to: ab703f82d47668f0ef89a7a139d227ef
+   - Subscribe to: messages, message_status
+
+3. TEST MESSAGE SENDING:
+   To test sending a message, run:
+   node test-send-message.mjs YOUR_PHONE_NUMBER
+   (Phone number format: 919876543210)
+
+4. CHECK WEBHOOK LOGS:
+   Monitor your server logs to see if incoming messages are being received
+   Check: server/routes.ts - /api/whatsapp/webhook endpoint
+
+================================================================================
