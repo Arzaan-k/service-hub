@@ -1,0 +1,68 @@
+﻿[dotenv@17.2.3] injecting env (53) from .env -- tip: ≡ƒöä add secrets lifecycle management: https://dotenvx.com/ops
+================================================================================
+WhatsApp Webhook Verification Tool
+================================================================================
+
+≡ƒîÉ Webhook URL: https://service.crystalgroup.in/api/whatsapp/webhook
+≡ƒöæ Verify Token: ab703f82d47668f0ef89a7a139d227ef
+
+≡ƒôï TEST 1: Checking webhook endpoint accessibility...
+--------------------------------------------------------------------------------
+Testing URL: https://service.crystalgroup.in/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=ab703f82d47668f0ef89a7a139d227ef&hub.challenge=test123
+Γ£ô Webhook endpoint is accessible
+  Status: 200
+  Response: test123
+Γ£à Webhook verification endpoint is working correctly!
+
+≡ƒôï TEST 2: Checking Meta webhook subscriptions...
+--------------------------------------------------------------------------------
+Found 0 webhook subscription(s)
+Γ¥î No webhook subscriptions found in Meta
+
+ΓÜá∩╕Å  ACTION REQUIRED:
+   You need to subscribe the webhook in Meta App Dashboard:
+   1. Go to: https://developers.facebook.com/apps
+   2. Select your app
+   3. Navigate to WhatsApp ΓåÆ Configuration
+   4. Click "Edit" on Webhook
+   5. Enter:
+      - Callback URL: https://service.crystalgroup.in/api/whatsapp/webhook
+      - Verify Token: ab703f82d47668f0ef89a7a139d227ef
+   6. Click "Verify and Save"
+   7. Subscribe to "messages" field
+
+≡ƒôï TEST 3: Sending test webhook payload...
+--------------------------------------------------------------------------------
+Sending test payload to webhook...
+Γ£ô Webhook received the test payload
+  Status: 200
+  Response: {
+  "status": "ok",
+  "result": {
+    "status": "ok",
+    "processed": true
+  }
+}
+Γ£à Webhook is processing messages correctly!
+
+================================================================================
+≡ƒôè VERIFICATION SUMMARY
+================================================================================
+
+Next Steps:
+1. If webhook endpoint is accessible but no subscriptions found:
+   ΓåÆ Configure webhook in Meta App Dashboard
+
+2. If webhook is subscribed but messages not arriving:
+   ΓåÆ Check server logs for incoming webhook requests
+   ΓåÆ Ensure server is running and accessible
+
+3. Test by sending a real message:
+   ΓåÆ Send "hi" to +91 90826 74866 from WhatsApp
+   ΓåÆ Check server logs for webhook POST request
+
+4. Monitor server logs:
+   ΓåÆ Look for: "≡ƒô▒ [WEBHOOK] POST request received"
+   ΓåÆ Look for: "Γ£à [WEBHOOK] Processed successfully"
+
+================================================================================

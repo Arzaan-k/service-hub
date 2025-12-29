@@ -8,6 +8,7 @@ const WHATSAPP_PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID || "";
 const WHATSAPP_TOKEN = process.env.CLOUD_API_ACCESS_TOKEN || "";
 const WHATSAPP_MESSAGES_URL = `https://graph.facebook.com/${GRAPH_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
+
 function ensureWhatsAppConfig() {
   if (!WHATSAPP_PHONE_NUMBER_ID) {
     throw new Error('WA_PHONE_NUMBER_ID is not configured');
@@ -44,7 +45,7 @@ export async function sendTextMessage(to: string, text: string): Promise<any> {
   ensureWhatsAppConfig();
   const cleanedPhone = cleanPhone(to);
   const sanitizedText = sanitizeContent(text);
-  
+
   console.log(`📤 Attempting to send WhatsApp message to: ${to} Text: ${text.substring(0, 50)}...`);
 
   try {
@@ -283,35 +284,35 @@ export async function updateWhatsAppTemplate(templateName: string, content: any)
 
 export async function handleWebhook(body: any): Promise<any> {
   console.log('[WhatsApp Webhook] Received:', JSON.stringify(body, null, 2));
-  
+
   try {
     // WhatsApp sends webhook data in this format
     const entry = body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
-    
+
     if (!value) {
       console.log('[WhatsApp Webhook] No value in webhook body');
       return { status: 'ok', message: 'No value' };
     }
-    
+
     // Handle incoming messages
     if (value.messages && value.messages.length > 0) {
       const message = value.messages[0];
       const from = message.from;
-      
+
       console.log(`[WhatsApp Webhook] Processing message from ${from}:`, message);
-      
+
       // Import the main message processor from whatsapp.ts
       const { processIncomingMessage } = await import('./whatsapp');
       await processIncomingMessage(message, from);
     }
-    
+
     // Handle status updates
     if (value.statuses && value.statuses.length > 0) {
       console.log('[WhatsApp Webhook] Status update:', value.statuses[0]);
     }
-    
+
     return { status: 'ok', processed: true };
   } catch (error: any) {
     console.error('[WhatsApp Webhook] Error:', error);
@@ -331,15 +332,15 @@ export function formatAlertMessage(alert: any, container: any): string {
   const cont = container?.containerCode || 'Unknown Container';
   const loc = container?.currentLocation?.address || container?.currentLocation?.city || 'Unknown Location';
   return `🚨 ${severity} Alert: ${title}\n\n` +
-         `📦 Container: ${cont}\n` +
-         `📍 Location: ${loc}\n` +
-         `🆔 Code: ${code}\n\n` +
-         `📝 ${desc}`;
+    `📦 Container: ${cont}\n` +
+    `📍 Location: ${loc}\n` +
+    `🆔 Code: ${code}\n\n` +
+    `📝 ${desc}`;
 }
 
 export function formatCriticalAlertMessage(alert: any, container: any): string {
   return `🛑 CRITICAL ALERT\n\n${formatAlertMessage(alert, container)}\n\n` +
-         `Please take immediate action.`;
+    `Please take immediate action.`;
 }
 
 export function formatServiceScheduleMessage(technician: any, services: any[] = []): string {
@@ -412,18 +413,18 @@ export function formatInvoiceMessage(invoice: any, customer: any): string {
   const due = invoice?.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A';
   const cust = customer?.companyName || 'Customer';
   return `🧾 Invoice ${no}\n\n` +
-         `👤 ${cust}\n` +
-         `💰 Total: ${total}\n` +
-         `📅 Due: ${due}`;
+    `👤 ${cust}\n` +
+    `💰 Total: ${total}\n` +
+    `📅 Due: ${due}`;
 }
 
 export function formatFeedbackRequestMessage(serviceRequest: any, customer: any): string {
   const req = serviceRequest?.requestNumber || 'Service Request';
   const cust = customer?.companyName || 'Customer';
   return `💬 Feedback Request\n\n` +
-         `👤 ${cust}\n` +
-         `🆔 ${req}\n\n` +
-         `Please rate your service experience.`;
+    `👤 ${cust}\n` +
+    `🆔 ${req}\n\n` +
+    `Please rate your service experience.`;
 }
 
 export async function sendMediaMessage(to: string, mediaUrl: string, caption = ''): Promise<any> {
