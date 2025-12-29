@@ -4564,6 +4564,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Expense History Routes
+  app.get("/api/technicians/expenses", authenticateUser, async (req, res) => {
+    try {
+      const { year, month, technicianId } = req.query;
+      
+      if (!year) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Year is required' 
+        });
+      }
+      
+      const expenses = await storage.getTechnicianExpenseHistory({
+        year: parseInt(year as string),
+        month: month ? parseInt(month as string) : undefined,
+        technicianId: technicianId as string
+      });
+      
+      // Calculate totals
+      const totals = {
+        totalDaysWorked: expenses.reduce((sum, e) => sum + e.daysWorked, 0),
+        totalServicesCompleted: expenses.reduce((sum, e) => sum + e.servicesCompleted, 0),
+        totalCost: expenses.reduce((sum, e) => sum + e.totalCost, 0),
+        totalWages: expenses.reduce((sum, e) => sum + e.totalWages, 0),
+        totalAllowances: expenses.reduce((sum, e) => sum + e.totalAllowances, 0)
+      };
+      
+      res.json({
+        success: true,
+        expenses,
+        totals
+      });
+    } catch (error) {
+      console.error('Error fetching expense history:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch expenses' });
+    }
+  });
+
+  app.get("/api/technicians/expenses/yearly", authenticateUser, async (req, res) => {
+    try {
+      const { year } = req.query;
+      
+      if (!year) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Year is required' 
+        });
+      }
+      
+      const summary = await storage.getTechnicianYearlySummary(parseInt(year as string));
+      
+      res.json({
+        success: true,
+        summary,
+        totalCost: summary.reduce((sum, s) => sum + s.totalCost, 0)
+      });
+    } catch (error) {
+      console.error('Error fetching yearly summary:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch summary' });
+    }
+  });
+
+  app.get("/api/technicians/:id/expenses/monthly", authenticateUser, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { year } = req.query;
+      
+      if (!year) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Year is required' 
+        });
+      }
+      
+      const breakdown = await storage.getTechnicianMonthlyBreakdown(
+        id, 
+        parseInt(year as string)
+      );
+      
+      res.json({
+        success: true,
+        breakdown,
+        totalCost: breakdown.reduce((sum, b) => sum + b.totalCost, 0)
+      });
+    } catch (error) {
+      console.error('Error fetching monthly breakdown:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch breakdown' });
+    }
+  });
+
   // Database Analysis Endpoint
   app.get("/api/debug/analyze-db", authenticateUser, async (req, res) => {
     try {

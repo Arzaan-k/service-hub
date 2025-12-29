@@ -159,15 +159,6 @@ app.use((req, res, next) => {
     // Don't fail server startup for schema issues
   }
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    console.error('[SERVER] Error handler caught:', err);
-    res.status(status).json({ message });
-    // Don't throw here - error is already handled
-  });
-
   // Initialize Orbcomm Production connection
   console.log('[SERVER] Checking Orbcomm initialization conditions:');
   console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
@@ -236,13 +227,29 @@ app.use((req, res, next) => {
 
   if (useVite) {
     console.log('[SERVER] Setting up Vite development server');
-    await setupVite(app, server);
+    try {
+      await setupVite(app, server);
+      console.log('[SERVER] ✅ Vite development server setup complete');
+    } catch (error) {
+      console.error('[SERVER] ❌ Error setting up Vite:', error);
+      console.error('[SERVER] Falling back to static file serving');
+      serveStatic(app);
+    }
   } else if (process.env.NODE_ENV === "development") {
     console.log('[SERVER] Serving static files in development mode for testing');
     serveStatic(app);
   } else {
     serveStatic(app);
   }
+
+  // Error handler - MUST be after Vite setup so Vite can handle frontend routes
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+
+    console.error('[SERVER] Error handler caught:', err);
+    res.status(status).json({ message });
+  });
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.

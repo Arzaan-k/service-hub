@@ -235,6 +235,11 @@ export interface IStorage {
   
   // Location operations
   getLatestTechnicianLocations(): Promise<any[]>;
+  
+  // Expense History operations
+  getTechnicianExpenseHistory(filters: { year: number; month?: number; technicianId?: string }): Promise<any[]>;
+  getTechnicianYearlySummary(year: number): Promise<any[]>;
+  getTechnicianMonthlyBreakdown(technicianId: string, year: number): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3289,6 +3294,249 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('[Storage] ❌ Error fetching local technicians:', error);
       return [];
+    }
+  }
+
+  // Expense History Methods
+  async getTechnicianExpenseHistory(filters: { year: number; month?: number; technicianId?: string }): Promise<any[]> {
+    try {
+      const { year, month, technicianId } = filters;
+      
+      console.log(`[Storage] Fetching expense history for year: ${year}, month: ${month || 'all'}, technicianId: ${technicianId || 'all'}`);
+      
+      // Build conditions
+      const conditions = [
+        eq(serviceRequests.status, 'completed'),
+        sql`EXTRACT(YEAR FROM ${serviceRequests.scheduledDate}) = ${year}`
+      ];
+      
+      if (month) {
+        conditions.push(sql`EXTRACT(MONTH FROM ${serviceRequests.scheduledDate}) = ${month}`);
+      }
+      
+      if (technicianId) {
+        conditions.push(eq(serviceRequests.assignedTechnicianId, technicianId));
+      }
+      
+      // Get all technicians
+      const allTechnicians = await this.getAllTechnicians();
+      
+      // Calculate expenses for each technician
+      const expenses = await Promise.all(
+        allTechnicians.map(async (tech) => {
+          // Get user details for name
+          const user = await this.getUser(tech.userId);
+          
+          // Get completed service requests for this technician in the period
+          const techServiceRequests = await db
+            .select({
+              id: serviceRequests.id,
+              scheduledDate: serviceRequests.scheduledDate
+            })
+            .from(serviceRequests)
+            .where(
+              and(
+                eq(serviceRequests.assignedTechnicianId, tech.id),
+                ...conditions
+              )
+            );
+          
+          // Count unique days worked
+          const uniqueDates = new Set(
+            techServiceRequests
+              .filter(sr => sr.scheduledDate)
+              .map(sr => new Date(sr.scheduledDate!).toISOString().split('T')[0])
+          );
+          const daysWorked = uniqueDates.size;
+          const servicesCompleted = techServiceRequests.length;
+          
+          // Get wage breakdown from technician profile
+          const dailyWage = Number(tech.grade) || 0;
+          const hotelAllowance = Number(tech.hotelAllowance) || 0;
+          const foodAllowance = Number(tech.foodAllowance) || 0;
+          const localTravelAllowance = Number(tech.localTravelAllowance) || 0;
+          const personalAllowance = Number(tech.personalAllowance) || 0;
+          
+          // Calculate totals
+          const totalWages = daysWorked * dailyWage;
+          const dailyAllowances = hotelAllowance + foodAllowance + localTravelAllowance + personalAllowance;
+          const totalAllowances = daysWorked * dailyAllowances;
+          const totalCost = totalWages + totalAllowances;
+          
+          return {
+            technicianId: tech.id,
+            technicianName: user?.name || tech.employeeCode || 'Unknown',
+            designation: tech.designation || 'N/A',
+            employeeCode: tech.employeeCode,
+            year,
+            month: month || null,
+            daysWorked,
+            servicesCompleted,
+            dailyWage,
+            totalWages,
+            totalAllowances,
+            totalCost,
+            breakdown: {
+              hotelAllowance: hotelAllowance * daysWorked,
+              foodAllowance: foodAllowance * daysWorked,
+              localTravelAllowance: localTravelAllowance * daysWorked,
+              personalAllowance: personalAllowance * daysWorked
+            }
+          };
+        })
+      );
+      
+      // Filter out technicians with no activity if filtering by specific period
+      const filteredExpenses = expenses.filter(e => e.daysWorked > 0 || !technicianId);
+      
+      console.log(`[Storage] Found ${filteredExpenses.length} technician expense records`);
+      return filteredExpenses;
+    } catch (error) {
+      console.error('[Storage] Error fetching technician expense history:', error);
+      throw error;
+    }
+  }
+
+  async getTechnicianYearlySummary(year: number): Promise<any[]> {
+    try {
+      console.log(`[Storage] Fetching yearly summary for year: ${year}`);
+      
+      const allTechnicians = await this.getAllTechnicians();
+      
+      const summary = await Promise.all(
+        allTechnicians.map(async (tech) => {
+          const user = await this.getUser(tech.userId);
+          
+          // Get all completed service requests for the year
+          const techServiceRequests = await db
+            .select({
+              id: serviceRequests.id,
+              scheduledDate: serviceRequests.scheduledDate
+            })
+            .from(serviceRequests)
+            .where(
+              and(
+                eq(serviceRequests.assignedTechnicianId, tech.id),
+                eq(serviceRequests.status, 'completed'),
+                sql`EXTRACT(YEAR FROM ${serviceRequests.scheduledDate}) = ${year}`
+              )
+            );
+          
+          // Count unique days worked
+          const uniqueDates = new Set(
+            techServiceRequests
+              .filter(sr => sr.scheduledDate)
+              .map(sr => new Date(sr.scheduledDate!).toISOString().split('T')[0])
+          );
+          const totalDaysWorked = uniqueDates.size;
+          const totalServicesCompleted = techServiceRequests.length;
+          
+          // Calculate total cost
+          const dailyWage = Number(tech.grade) || 0;
+          const dailyAllowances = 
+            (Number(tech.hotelAllowance) || 0) +
+            (Number(tech.foodAllowance) || 0) +
+            (Number(tech.localTravelAllowance) || 0) +
+            (Number(tech.personalAllowance) || 0);
+          
+          const totalCost = totalDaysWorked * (dailyWage + dailyAllowances);
+          
+          return {
+            technicianId: tech.id,
+            technicianName: user?.name || tech.employeeCode || 'Unknown',
+            designation: tech.designation || 'N/A',
+            totalDaysWorked,
+            totalServicesCompleted,
+            totalCost
+          };
+        })
+      );
+      
+      console.log(`[Storage] Generated yearly summary for ${summary.length} technicians`);
+      return summary;
+    } catch (error) {
+      console.error('[Storage] Error fetching yearly summary:', error);
+      throw error;
+    }
+  }
+
+  async getTechnicianMonthlyBreakdown(technicianId: string, year: number): Promise<any[]> {
+    try {
+      console.log(`[Storage] Fetching monthly breakdown for technician: ${technicianId}, year: ${year}`);
+      
+      const technician = await this.getTechnician(technicianId);
+      if (!technician) {
+        throw new Error('Technician not found');
+      }
+      
+      // Get wage breakdown
+      const dailyWage = Number(technician.grade) || 0;
+      const dailyAllowances = 
+        (Number(technician.hotelAllowance) || 0) +
+        (Number(technician.foodAllowance) || 0) +
+        (Number(technician.localTravelAllowance) || 0) +
+        (Number(technician.personalAllowance) || 0);
+      
+      // Get all completed service requests for the year
+      const serviceRequestsForYear = await db
+        .select({
+          id: serviceRequests.id,
+          scheduledDate: serviceRequests.scheduledDate
+        })
+        .from(serviceRequests)
+        .where(
+          and(
+            eq(serviceRequests.assignedTechnicianId, technicianId),
+            eq(serviceRequests.status, 'completed'),
+            sql`EXTRACT(YEAR FROM ${serviceRequests.scheduledDate}) = ${year}`
+          )
+        );
+      
+      // Group by month
+      const monthlyData: Record<number, { dates: Set<string>; count: number }> = {};
+      
+      serviceRequestsForYear.forEach(sr => {
+        if (sr.scheduledDate) {
+          const date = new Date(sr.scheduledDate);
+          const month = date.getMonth() + 1; // 1-12
+          const dateStr = date.toISOString().split('T')[0];
+          
+          if (!monthlyData[month]) {
+            monthlyData[month] = { dates: new Set(), count: 0 };
+          }
+          
+          monthlyData[month].dates.add(dateStr);
+          monthlyData[month].count++;
+        }
+      });
+      
+      // Create breakdown for all 12 months
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      
+      const breakdown = monthNames.map((monthName, index) => {
+        const month = index + 1;
+        const data = monthlyData[month] || { dates: new Set(), count: 0 };
+        const daysWorked = data.dates.size;
+        const servicesCompleted = data.count;
+        const totalCost = daysWorked * (dailyWage + dailyAllowances);
+        
+        return {
+          month,
+          monthName,
+          daysWorked,
+          servicesCompleted,
+          totalCost
+        };
+      });
+      
+      console.log(`[Storage] Generated monthly breakdown for technician ${technicianId}`);
+      return breakdown;
+    } catch (error) {
+      console.error('[Storage] Error fetching monthly breakdown:', error);
+      throw error;
     }
   }
 }
