@@ -1114,7 +1114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getWeeklySummaryScheduler();
       await scheduler.triggerWeeklySummary();
       res.json({ message: "Weekly summary triggered successfully" });
@@ -3678,6 +3678,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         error: "Failed to fetch technician location overview",
+        details: error?.message,
+      });
+    }
+  });
+
+  // GET /api/technicians/live-locations - Get live technician locations from location_logs
+  // Used by the TechnicianMap component to display live tracking data
+  app.get("/api/technicians/live-locations", authenticateUser, requireRole("admin", "coordinator", "super_admin"), async (_req, res) => {
+    try {
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+
+      // Get latest location for each technician from location_logs
+      const result = await db.execute(sql`
+        SELECT DISTINCT ON (l.employee_id)
+          l.employee_id as technician_id,
+          t.user_id,
+          u.name,
+          u.email,
+          l.latitude,
+          l.longitude,
+          l.speed,
+          l.battery_level,
+          l.accuracy,
+          l.address,
+          l.timestamp as last_seen,
+          CASE 
+            WHEN l.timestamp > NOW() - INTERVAL '5 minutes' THEN 'online'
+            WHEN l.timestamp > NOW() - INTERVAL '30 minutes' THEN 'idle'
+            ELSE 'offline'
+          END as status
+        FROM location_logs l
+        JOIN technicians t ON l.employee_id = t.id
+        JOIN users u ON t.user_id = u.id
+        WHERE u.is_active = true
+          AND u.role IN ('technician', 'senior_technician')
+        ORDER BY l.employee_id, l.timestamp DESC
+      `);
+
+      const technicians = (result.rows as any[])
+        .filter(row => row.latitude && row.longitude)
+        .map(row => ({
+          technicianId: row.technician_id,
+          userId: row.user_id,
+          name: row.name || 'Unknown',
+          email: row.email,
+          latitude: parseFloat(row.latitude),
+          longitude: parseFloat(row.longitude),
+          speed: row.speed ? Math.round(parseFloat(row.speed) * 3.6) : 0, // Convert m/s to km/h
+          batteryLevel: row.battery_level || null,
+          accuracy: row.accuracy ? Math.round(parseFloat(row.accuracy)) : null,
+          address: row.address || null,
+          lastSeen: row.last_seen || new Date().toISOString(),
+          status: row.status || 'offline'
+        }));
+
+      res.json(technicians);
+    } catch (error: any) {
+      console.error("[API] Error fetching technician live locations:", error);
+      res.status(500).json({
+        error: "Failed to fetch technician locations",
         details: error?.message,
       });
     }
