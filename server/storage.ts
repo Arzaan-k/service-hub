@@ -1243,8 +1243,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createWhatsappMessage(message: any): Promise<any> {
-    const [newMessage] = await db.insert(whatsappMessages).values(message).returning();
-    return newMessage;
+    // Check if message with this whatsappMessageId already exists
+    // WhatsApp can send duplicate messages, so we need to handle this gracefully
+    if (message.whatsappMessageId) {
+      const existing = await this.getWhatsAppMessageById(message.whatsappMessageId);
+      if (existing) {
+        console.log(`[Storage] Message ${message.whatsappMessageId} already exists, skipping duplicate`);
+        return existing;
+      }
+    }
+
+    try {
+      const [newMessage] = await db.insert(whatsappMessages).values(message).returning();
+      return newMessage;
+    } catch (error: any) {
+      // If we still get a duplicate key error (race condition), fetch and return the existing message
+      if (error.code === '23505' && error.constraint === 'whatsapp_messages_whatsapp_message_id_unique') {
+        console.log(`[Storage] Duplicate message detected (race condition), fetching existing message`);
+        const existing = await this.getWhatsAppMessageById(message.whatsappMessageId);
+        if (existing) {
+          return existing;
+        }
+      }
+      // Re-throw other errors
+      throw error;
+    }
   }
 
   async getWhatsAppMessageById(messageId: string): Promise<any | undefined> {
