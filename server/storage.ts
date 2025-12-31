@@ -489,6 +489,64 @@ export class DatabaseStorage implements IStorage {
     return rows.map((row: any) => this.parseContainerData(row as any));
   }
 
+  async getContainersPaginated(limit: number, offset: number): Promise<{ containers: any[], total: number }> {
+    // Get total count first
+    const countResult: any = await db.execute(sql`SELECT COUNT(*) as count FROM containers`);
+    const totalRows = Array.isArray(countResult) ? countResult : (countResult?.rows || []);
+    const total = parseInt(totalRows[0]?.count || '0');
+
+    // Get paginated results
+    const result: any = await db.execute(
+      sql`SELECT * FROM containers ORDER BY id LIMIT ${limit} OFFSET ${offset}`
+    );
+    const rows: any[] = Array.isArray(result) ? result : (result?.rows || []);
+    const containers = rows.map((row: any) => this.parseContainerData(row as any));
+
+    return { containers, total };
+  }
+
+  async getContainerStats(): Promise<{
+    total: number;
+    deployed: number;
+    stock: number;
+    sold: number;
+    maintenance: number;
+    avgGrade: number;
+  }> {
+    // Use aggregation query to get stats efficiently
+    const statsQuery = sql`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN inventory_status = 'DEPLOYED' THEN 1 ELSE 0 END) as deployed,
+        SUM(CASE WHEN inventory_status IN ('STOCK', 'SALE') THEN 1 ELSE 0 END) as stock,
+        SUM(CASE WHEN inventory_status = 'SOLD' THEN 1 ELSE 0 END) as sold,
+        SUM(CASE WHEN status = 'maintenance' OR inventory_status = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
+        AVG(
+          CASE grade
+            WHEN 'A' THEN 4
+            WHEN 'B' THEN 3
+            WHEN 'C' THEN 2
+            WHEN 'D' THEN 1
+            ELSE 0
+          END
+        ) as avg_grade
+      FROM containers
+    `;
+
+    const result: any = await db.execute(statsQuery);
+    const rows = Array.isArray(result) ? result : (result?.rows || []);
+    const stats = rows[0] || {};
+
+    return {
+      total: parseInt(stats.total || '0'),
+      deployed: parseInt(stats.deployed || '0'),
+      stock: parseInt(stats.stock || '0'),
+      sold: parseInt(stats.sold || '0'),
+      maintenance: parseInt(stats.maintenance || '0'),
+      avgGrade: parseFloat(stats.avg_grade || '0'),
+    };
+  }
+
   // Helper function to parse decimal fields and ensure currentLocation
   private parseContainerData(container: Container): Container {
     if (!container) return container;

@@ -1331,14 +1331,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isPrivileged = ["admin", "coordinator", "super_admin"].includes(role);
       console.log('[SERVER] /api/containers isPrivileged:', isPrivileged, 'role:', role);
 
-      // Fetch all containers
+      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+      console.log('[SERVER] /api/containers hasLimit:', hasLimit, 'hasOffset:', hasOffset);
+
+      // For privileged users with pagination, use optimized paginated query
+      if (isPrivileged && (hasLimit || hasOffset)) {
+        const { limit, offset } = paginationSchema.parse(req.query);
+        console.log('[SERVER] /api/containers applying server-side pagination - limit:', limit, 'offset:', offset);
+
+        const { containers: paginatedContainers, total } = await storage.getContainersPaginated(limit, offset);
+
+        // Apply role-based filtering if needed
+        let filteredContainers = paginatedContainers;
+        if (role === 'senior_technician' || role === 'amc') {
+          filteredContainers = filterContainersByRole(paginatedContainers, role);
+        }
+
+        // Sanitize container data based on role
+        const sanitizedContainers = filteredContainers.map(c => sanitizeContainerForRole(c, role));
+
+        res.setHeader('x-total-count', String(total));
+        console.log('[SERVER] /api/containers returning paginated result length:', sanitizedContainers.length, 'of total:', total);
+        return res.json(sanitizedContainers);
+      }
+
+      // For non-privileged users or when no pagination is requested, fetch all and filter
       let containers = await storage.getAllContainers();
       console.log('[SERVER] /api/containers total containers before filtering:', containers.length);
 
       // Apply role-based filtering
-      // Senior Technician: Only reefer (refrigerated) containers with IoT enabled (deployed)
-      // AMC: Only sold containers
-      // Client: Their assigned containers
       if (role === 'senior_technician' || role === 'amc') {
         containers = filterContainersByRole(containers, role);
         console.log('[SERVER] /api/containers after role filtering (' + role + '):', containers.length);
@@ -1353,17 +1375,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Sanitize container data based on role (AMC gets limited fields)
+      // Sanitize container data based on role
       containers = containers.map(c => sanitizeContainerForRole(c, role));
 
-      // Optional pagination: only apply if query includes limit or offset
-      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
-      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
-      console.log('[SERVER] /api/containers hasLimit:', hasLimit, 'hasOffset:', hasOffset);
-
+      // Apply client-side pagination if requested
       if (hasLimit || hasOffset) {
         const { limit, offset } = paginationSchema.parse(req.query);
-        console.log('[SERVER] /api/containers applying pagination - limit:', limit, 'offset:', offset);
+        console.log('[SERVER] /api/containers applying client-side pagination - limit:', limit, 'offset:', offset);
         res.setHeader('x-total-count', String(containers.length));
         const paginatedResult = containers.slice(offset, offset + limit);
         console.log('[SERVER] /api/containers returning paginated result length:', paginatedResult.length);
@@ -1376,6 +1394,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching containers:", error);
       res.status(500).json({ error: "Failed to fetch containers", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // Get container statistics (lightweight endpoint for dashboard)
+  app.get("/api/containers/stats", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const stats = await storage.getContainerStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching container stats:", error);
+      res.status(500).json({ error: "Failed to fetch container stats" });
     }
   });
 
