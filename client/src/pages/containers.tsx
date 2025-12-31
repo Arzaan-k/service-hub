@@ -80,17 +80,17 @@ export default function Containers() {
   const isClient = user?.role === 'client';
   const containersEndpoint = isClient ? "/api/customers/me/containers" : "/api/containers";
 
-  // Query for summary statistics (always fetch all containers for stats)
-  const { data: allContainers = [] } = useQuery({
-    queryKey: ["/api/containers", "stats"],
+  // Query for summary statistics (using lightweight stats endpoint)
+  const { data: containerStats } = useQuery({
+    queryKey: ["/api/containers/stats"],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/containers");
+      const response = await apiRequest("GET", "/api/containers/stats");
       const data = await response.json();
-      return Array.isArray(data) ? data : [];
+      return data;
     },
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
-    enabled: !isClient, // Only fetch all containers for non-clients (for stats)
+    enabled: !isClient, // Only fetch stats for non-clients
   });
 
   const { data: containersData, isLoading, error } = useQuery({
@@ -139,15 +139,15 @@ export default function Containers() {
   });
 
   // Handle different response formats
-  const containers = containersData?.containers || (Array.isArray(containersData) ? containersData : []) || allContainers;
-  const totalCount = containersData?.totalCount || (Array.isArray(containersData) ? containersData.length : 0) || allContainers.length;
+  const containers = containersData?.containers || (Array.isArray(containersData) ? containersData : []);
+  const totalCount = containersData?.totalCount || (Array.isArray(containersData) ? containersData.length : 0);
   const isUsingPagination = containersData?.isPaginated || false;
 
   // Get unique size types for filter
   const uniqueSizeTypes = useMemo(() => {
     const types = new Set<string>();
-    // Use allContainers if available (for admins), otherwise use current containers (for clients)
-    const source = isClient ? containers : allContainers;
+    // Use current containers for size type extraction
+    const source = containers;
 
     if (Array.isArray(source)) {
       source.forEach((c: any) => {
@@ -156,7 +156,7 @@ export default function Containers() {
       });
     }
     return Array.from(types).sort();
-  }, [containers, allContainers, isClient]);
+  }, [containers]);
 
   const filteredAndSortedContainers = useMemo(() => {
     if (!Array.isArray(containers)) {
@@ -343,7 +343,9 @@ export default function Containers() {
                   <Package className="h-5 w-5 text-blue-500" />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-foreground mb-1">{containers.length}</div>
+              <div className="text-3xl font-bold text-foreground mb-1">
+                {isClient ? containers.length : (containerStats?.total || containers.length)}
+              </div>
               <p className="text-xs text-muted-foreground">All containers in fleet</p>
             </AnimatedCard>
 
@@ -355,7 +357,10 @@ export default function Containers() {
                 </div>
               </div>
               <div className="text-3xl font-bold text-foreground mb-1">
-                {containers.filter((c: Container) => c.excelMetadata?.status === "DEPLOYED").length}
+                {isClient
+                  ? containers.filter((c: Container) => c.excelMetadata?.status === "DEPLOYED").length
+                  : (containerStats?.deployed || 0)
+                }
               </div>
               <p className="text-xs text-muted-foreground">Active in transit</p>
             </AnimatedCard>
@@ -368,7 +373,10 @@ export default function Containers() {
                 </div>
               </div>
               <div className="text-3xl font-bold text-foreground mb-1">
-                {containers.filter((c: Container) => (c.excelMetadata?.status === "STOCK" || c.excelMetadata?.status === "SALE")).length}
+                {isClient
+                  ? containers.filter((c: Container) => (c.excelMetadata?.status === "STOCK" || c.excelMetadata?.status === "SALE")).length
+                  : (containerStats?.stock || 0)
+                }
               </div>
               <p className="text-xs text-muted-foreground">Available inventory</p>
             </AnimatedCard>
@@ -381,11 +389,11 @@ export default function Containers() {
                 </div>
               </div>
               <div className="text-3xl font-bold text-foreground mb-1">
-                {(() => {
+                {isClient ? (() => {
                   const grades = containers.map((c: Container) => c.excelMetadata?.grade).filter(Boolean);
                   const gradeValues = grades.map(g => g === 'A' ? 4 : g === 'B' ? 3 : g === 'C' ? 2 : 1);
                   return gradeValues.length > 0 ? (gradeValues.reduce((a, b) => a + b, 0) / gradeValues.length).toFixed(1) : 'N/A';
-                })()}
+                })() : (containerStats?.avgGrade ? containerStats.avgGrade.toFixed(1) : 'N/A')}
               </div>
               <p className="text-xs text-muted-foreground">Quality rating</p>
             </AnimatedCard>
