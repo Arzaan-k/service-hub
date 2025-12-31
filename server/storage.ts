@@ -547,6 +547,15 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  async getContainerByDeviceId(deviceId: string): Promise<any | null> {
+    // Optimized query to find container by Orbcomm device ID without loading all containers
+    const result: any = await db.execute(
+      sql`SELECT * FROM containers WHERE orbcomm_device_id = ${deviceId} OR orbcommDeviceId = ${deviceId} LIMIT 1`
+    );
+    const rows: any[] = Array.isArray(result) ? result : (result?.rows || []);
+    return rows.length > 0 ? this.parseContainerData(rows[0]) : null;
+  }
+
   // Helper function to parse decimal fields and ensure currentLocation
   private parseContainerData(container: Container): Container {
     if (!container) return container;

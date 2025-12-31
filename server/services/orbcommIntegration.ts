@@ -252,15 +252,9 @@ class OrbcommIntegrationService {
    */
   private async findContainerByDeviceId(deviceId: string): Promise<any | null> {
     try {
-      // Query containers with matching Orbcomm device ID
-      const containers = await storage.getAllContainers();
-      const container = containers.find((c: any) =>
-        c.orbcommDeviceId === deviceId ||
-        c.orbcomm_device_id === deviceId
-      );
-
+      // Use optimized query instead of loading all containers
+      const container = await storage.getContainerByDeviceId(deviceId);
       return container || null;
-
     } catch (error) {
       console.error('❌ Error finding container:', error);
       return null;
