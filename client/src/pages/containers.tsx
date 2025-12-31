@@ -94,24 +94,10 @@ export default function Containers() {
   });
 
   const { data: containersData, isLoading, error } = useQuery({
-    queryKey: hasActiveFilters
-      ? [containersEndpoint, "all"] // Fetch all for filtering
-      : [containersEndpoint, "paginated", currentPage, itemsPerPage], // Use pagination
+    queryKey: [containersEndpoint, "paginated", currentPage, itemsPerPage, hasActiveFilters],
     queryFn: async () => {
-      if (hasActiveFilters) {
-        // Fetch all containers for client-side filtering
-        const response = await apiRequest("GET", containersEndpoint);
-        const data = await response.json();
-        return {
-          containers: Array.isArray(data) ? data : [],
-          totalCount: Array.isArray(data) ? data.length : 0,
-          isPaginated: false
-        };
-      }
-
-      // Use server-side pagination (only for non-clients)
+      // For clients, fetch all containers (they likely have fewer containers)
       if (isClient) {
-        // For clients, fetch all containers (they likely have fewer containers)
         const response = await apiRequest("GET", containersEndpoint);
         const data = await response.json();
         return {
@@ -121,7 +107,21 @@ export default function Containers() {
         };
       }
 
-      // For admins/coordinators/technicians, use pagination
+      // For admins with filters, load more items (up to 500) for better filtering
+      // This is a compromise: not all 1765, but enough for meaningful filtering
+      if (hasActiveFilters) {
+        const url = `/api/containers?limit=500&offset=0`;
+        const response = await apiRequest("GET", url);
+        const data = await response.json();
+        const totalCount = parseInt(response.headers.get('x-total-count') || '0');
+        return {
+          containers: Array.isArray(data) ? data : [],
+          totalCount,
+          isPaginated: false // Use client-side pagination for filtered results
+        };
+      }
+
+      // For admins without filters, use normal pagination
       const offset = (currentPage - 1) * itemsPerPage;
       const url = `/api/containers?limit=${itemsPerPage}&offset=${offset}`;
       const response = await apiRequest("GET", url);
