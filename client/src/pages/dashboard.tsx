@@ -57,10 +57,13 @@ export default function Dashboard() {
   const isClient = user?.role === 'client';
   const containersEndpoint = isClient ? "/api/customers/me/containers" : "/api/containers";
 
+  // For dashboard, load first 100 containers with pagination to reduce memory
   const { data: containers = [] } = useQuery<any[]>({
-    queryKey: [containersEndpoint],
+    queryKey: [containersEndpoint, "dashboard"],
     queryFn: async () => {
-      const response = await apiRequest("GET", containersEndpoint);
+      // For non-clients, use pagination to limit initial load
+      const url = isClient ? containersEndpoint : `${containersEndpoint}?limit=100&offset=0`;
+      const response = await apiRequest("GET", url);
       const data = await response.json();
       return Array.isArray(data) ? data : [];
     },

@@ -87,5 +87,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Use dumb-init for proper signal handling (graceful shutdown)
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the application with increased heap memory (1GB)
-CMD ["node", "--max-old-space-size=1024", "dist/index.js"]
+# Start the application with memory optimized for 512MB RAM environment
+# Leaving ~200MB for OS and other processes, allocate ~300MB to Node heap
+CMD ["node", "--max-old-space-size=300", "dist/index.js"]
