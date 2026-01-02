@@ -2309,6 +2309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           created_at as requested_at
         FROM service_history
         ORDER BY complaint_attended_date DESC NULLS LAST, created_at DESC
+        LIMIT 100
       `);
 
       res.json(result.rows);

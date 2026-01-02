@@ -751,7 +751,7 @@ export class DatabaseStorage implements IStorage {
 
 
   async getAllAlerts(): Promise<Alert[]> {
-    return await db.select().from(alerts).orderBy(desc(alerts.detectedAt)).limit(200);
+    return await db.select().from(alerts).orderBy(desc(alerts.detectedAt)).limit(50);
   }
 
   async getAlertsPaginated(limit: number, offset: number): Promise<{ alerts: Alert[], total: number }> {
@@ -777,7 +777,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAlertsByContainer(containerId: string): Promise<Alert[]> {
-    return await db.select().from(alerts).where(eq(alerts.containerId, containerId)).orderBy(desc(alerts.detectedAt));
+    return await db.select().from(alerts).where(eq(alerts.containerId, containerId)).orderBy(desc(alerts.detectedAt)).limit(50);
   }
 
   async getOpenAlerts(): Promise<Alert[]> {
@@ -785,7 +785,8 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(alerts)
       .where(isNull(alerts.resolvedAt))
-      .orderBy(desc(alerts.detectedAt));
+      .orderBy(desc(alerts.detectedAt))
+      .limit(50);
   }
 
   async createAlert(alert: any): Promise<Alert> {
@@ -841,7 +842,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(serviceRequests)
       .orderBy(desc(serviceRequests.createdAt))
-      .limit(200); // Limit to prevent memory overflow
+      .limit(50); // Memory optimization: reduced from 200 to prevent OOM
   }
 
   async getServiceRequestsPaginated(limit: number, offset: number): Promise<{ requests: ServiceRequest[], total: number }> {
@@ -996,7 +997,8 @@ export class DatabaseStorage implements IStorage {
         })
         .from(serviceRequests)
         .where(and(...conditions))
-        .orderBy(desc(serviceRequests.createdAt));
+        .orderBy(desc(serviceRequests.createdAt))
+        .limit(50); // Memory optimization: limit results to prevent OOM on free tier
 
       // Fetch container and customer data separately to avoid join complexity
       const enrichedRows = await Promise.all(
