@@ -25,6 +25,7 @@
     "start": "NODE_ENV=production node --max-old-space-size=300 --expose-gc --optimize-for-size dist/index.js",
     "check": "tsc",
     "clear:orbcomm-alerts": "tsx server/tools/clear-orbcomm-alerts.ts",
+    "cleanup:alerts": "tsx server/tools/cleanup-orbcomm-alerts.ts",
     "clear:service-requests": "tsx server/tools/clear-all-service-requests.ts",
     "clear:travel-data": "tsx server/tools/clear-travel-data.ts",
     "clear:auto-pm": "tsx server/tools/clear-auto-pm-data.ts",
