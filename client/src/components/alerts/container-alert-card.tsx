@@ -33,6 +33,11 @@ export function ContainerAlertCard({ container, alerts, allAlerts, onViewAll, on
     const [isOpen, setIsOpen] = useState(false);
     const [showAnalytics, setShowAnalytics] = useState(false);
 
+    // Early return if no valid data - prevents crashes on undefined container/alerts
+    if (!alerts || !Array.isArray(alerts) || alerts.length === 0) {
+        return null;
+    }
+
     // Smart Deduplication and Grouping Logic
     const groupedAlerts = useMemo(() => {
         const groups: Record<string, {
@@ -206,8 +211,8 @@ export function ContainerAlertCard({ container, alerts, allAlerts, onViewAll, on
                             {/* Left: Container Info & Summary */}
                             <div className="flex items-center gap-4">
                                 <div className={`w-1 h-12 rounded-full ${stats.critical > 0 ? 'bg-red-500' :
-                                        stats.high > 0 ? 'bg-orange-500' :
-                                            stats.medium > 0 ? 'bg-yellow-500' : 'bg-blue-500'
+                                    stats.high > 0 ? 'bg-orange-500' :
+                                        stats.medium > 0 ? 'bg-yellow-500' : 'bg-blue-500'
                                     }`} />
 
                                 <div>
@@ -321,7 +326,7 @@ export function ContainerAlertCard({ container, alerts, allAlerts, onViewAll, on
                                         variant="outline"
                                         size="sm"
                                         className="gap-2 text-xs"
-                                        onClick={() => onViewAll(container.id)}
+                                        onClick={() => container?.id && onViewAll(container.id)}
                                     >
                                         View Full History
                                         <ExternalLink className="h-3 w-3" />

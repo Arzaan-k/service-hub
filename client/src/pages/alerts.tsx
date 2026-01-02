@@ -111,9 +111,13 @@ export default function Alerts() {
 
     filteredAlerts.forEach(alert => {
       const containerId = alert.containerId;
+      if (!containerId) return; // Skip alerts without containerId
+
       if (!groups[containerId]) {
+        const foundContainer = containers.find((c: any) => c.id === containerId);
         groups[containerId] = {
-          container: containers.find((c: any) => c.id === containerId),
+          // Provide fallback container if not found to prevent crashes
+          container: foundContainer || { id: containerId, containerCode: 'Unknown', type: 'unknown' },
           alerts: [],
           score: 0,
           lastAlert: alert.createdAt

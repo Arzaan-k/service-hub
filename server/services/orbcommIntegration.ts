@@ -571,7 +571,7 @@ class OrbcommIntegrationService {
             deviceId: alert.deviceId,
             latitude: alert.latitude,
             longitude: alert.longitude,
-            rawData: alert.rawData,
+            // rawData removed for memory optimization - was causing massive JSON responses
           },
         });
 

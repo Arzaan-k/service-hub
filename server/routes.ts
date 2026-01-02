@@ -1114,7 +1114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getWeeklySummaryScheduler();
       await scheduler.triggerWeeklySummary();
       res.json({ message: "Weekly summary triggered successfully" });
@@ -1634,6 +1634,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Alert routes
+  // Helper to strip rawData from alert metadata to reduce response size
+  const sanitizeAlerts = (alertsList: any[]) => {
+    return alertsList.map(alert => {
+      if (alert.metadata && typeof alert.metadata === 'object') {
+        const { rawData, ...cleanMetadata } = alert.metadata as any;
+        return { ...alert, metadata: cleanMetadata };
+      }
+      return alert;
+    });
+  };
+
   app.get("/api/alerts", authenticateUser, async (req: any, res) => {
     try {
       const role = (req.user?.role || '').toLowerCase();
@@ -1654,11 +1665,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const containerIds = new Set(containers.map((c) => c.id));
           const filteredAlerts = paginatedAlerts.filter((a) => containerIds.has(a.containerId));
           res.setHeader('x-total-count', String(filteredAlerts.length));
-          return res.json(filteredAlerts);
+          return res.json(sanitizeAlerts(filteredAlerts));
         }
 
         res.setHeader('x-total-count', String(total));
-        return res.json(paginatedAlerts);
+        return res.json(sanitizeAlerts(paginatedAlerts));
       }
 
       // Legacy behavior: return all (limited to 200)
@@ -1668,10 +1679,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const containers = await storage.getContainersByCustomer(customer.id);
         const containerIds = new Set(containers.map((c) => c.id));
         const alerts = await storage.getAllAlerts();
-        return res.json(alerts.filter((a) => containerIds.has(a.containerId)));
+        return res.json(sanitizeAlerts(alerts.filter((a) => containerIds.has(a.containerId))));
       }
       const alerts = await storage.getAllAlerts();
-      res.json(alerts);
+      res.json(sanitizeAlerts(alerts));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch alerts" });
     }
@@ -1686,9 +1697,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!customer) return res.json([]);
         const containers = await storage.getContainersByCustomer(customer.id);
         const containerIds = new Set(containers.map((c) => c.id));
-        return res.json(open.filter((a) => containerIds.has(a.containerId)));
+        return res.json(sanitizeAlerts(open.filter((a) => containerIds.has(a.containerId))));
       }
-      res.json(open);
+      res.json(sanitizeAlerts(open));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch open alerts" });
     }
@@ -1794,7 +1805,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/alerts/container/:containerId", authenticateUser, async (req, res) => {
     try {
       const alerts = await storage.getAlertsByContainer(req.params.containerId);
-      res.json(alerts);
+      res.json(sanitizeAlerts(alerts));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch container alerts" });
     }
