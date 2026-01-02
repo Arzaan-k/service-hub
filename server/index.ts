@@ -147,14 +147,18 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  // Initialize vector store for RAG functionality
-  console.log('[SERVER] Initializing vector store for RAG...');
-  try {
-    await vectorStore.initializeCollection();
-    console.log('✅ Vector store initialized successfully');
-  } catch (error) {
-    console.error('❌ Error initializing vector store:', error);
-    // Don't fail server startup for vector store issues
+  // Initialize vector store for RAG functionality (can be disabled for memory constraints)
+  if (process.env.DISABLE_VECTOR_STORE !== 'true') {
+    console.log('[SERVER] Initializing vector store for RAG...');
+    try {
+      await vectorStore.initializeCollection();
+      console.log('✅ Vector store initialized successfully');
+    } catch (error) {
+      console.error('❌ Error initializing vector store:', error);
+      // Don't fail server startup for vector store issues
+    }
+  } else {
+    console.log('⏭️ Vector store DISABLED (DISABLE_VECTOR_STORE=true)');
   }
 
   // Ensure database schema is up to date
@@ -212,22 +216,28 @@ app.use((req, res, next) => {
     console.log('⏭️ Skipping Orbcomm initialization in development mode');
   }
 
-  // Daily Service Summary Scheduler (env-based timing with caching)
-  // Runs in BOTH development and production modes
-  console.log('[SERVER] Starting Service Summary Scheduler...');
-  startServiceSummaryScheduler();
-  console.log('✅ Service Summary Scheduler started (uses env variables for timing)');
+  // Background schedulers (can be disabled for memory-constrained environments)
+  const disableSchedulers = process.env.DISABLE_SCHEDULERS === 'true';
 
-  // Weekly CAPA Report Scheduler (Friday 1:00 PM IST by default)
-  // Sends detailed weekly summary to CEO and Senior Technician
-  console.log('[SERVER] Starting Weekly Summary Scheduler...');
-  startWeeklySummaryScheduler();
-  console.log('✅ Weekly Summary Scheduler started (WEEKLY_SUMMARY_TIME, WEEKLY_SUMMARY_DAY env vars)');
+  if (disableSchedulers) {
+    console.log('⏭️ Background schedulers DISABLED (DISABLE_SCHEDULERS=true)');
+    console.log('   Service Summary, Weekly Summary, and Password Reminder schedulers skipped');
+  } else {
+    // Daily Service Summary Scheduler (env-based timing with caching)
+    console.log('[SERVER] Starting Service Summary Scheduler...');
+    startServiceSummaryScheduler();
+    console.log('✅ Service Summary Scheduler started');
 
-  // Start password reminder scheduler (runs every hour in both dev and production)
-  console.log('[SERVER] Starting password reminder scheduler...');
-  startPasswordReminderScheduler();
-  console.log('✅ Password reminder scheduler started successfully');
+    // Weekly CAPA Report Scheduler
+    console.log('[SERVER] Starting Weekly Summary Scheduler...');
+    startWeeklySummaryScheduler();
+    console.log('✅ Weekly Summary Scheduler started');
+
+    // Password reminder scheduler
+    console.log('[SERVER] Starting password reminder scheduler...');
+    startPasswordReminderScheduler();
+    console.log('✅ Password reminder scheduler started');
+  }
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
