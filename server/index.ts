@@ -172,25 +172,18 @@ app.use((req, res, next) => {
   console.log('[SERVER] Checking Orbcomm initialization conditions:');
   console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
   console.log('[SERVER] ENABLE_ORBCOMM_DEV:', process.env.ENABLE_ORBCOMM_DEV);
+  console.log('[SERVER] DISABLE_ORBCOMM:', process.env.DISABLE_ORBCOMM);
 
-  // Temporarily disabled Orbcomm in dev to fix stability
-  if (process.env.NODE_ENV !== 'development') { // || process.env.ENABLE_ORBCOMM_DEV === 'true' || process.env.FORCE_ORBCOMM_DEV === 'true') {
-    // console.log('[SERVER] Initializing Orbcomm connection...');
-    // try {
-    //   await initializeOrbcommConnection();
-    //
-    //   // Populate database with production devices
-    //   setTimeout(async () => {
-    //     try {
-    //       await populateOrbcommDevices();
-    //     } catch (error) {
-    //       console.error('❌ Error populating Orbcomm devices:', error);
-    //     }
-    //   }, 5000); // Wait 5 seconds after server start
-    // } catch (error) {
-    //   console.error('❌ Error initializing Orbcomm connection:', error);
-    // }
+  // Log initial memory usage
+  const memUsage = process.memoryUsage();
+  console.log(`[SERVER] Memory Usage: Heap ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB, RSS: ${Math.round(memUsage.rss / 1024 / 1024)}MB`);
 
+  // Check if Orbcomm should be disabled (for memory-constrained environments like Render free tier)
+  const disableOrbcomm = process.env.DISABLE_ORBCOMM === 'true';
+
+  if (disableOrbcomm) {
+    console.log('⏭️ Orbcomm integration DISABLED via DISABLE_ORBCOMM env variable (memory optimization)');
+  } else if (process.env.NODE_ENV !== 'development') {
     // Initialize Orbcomm CDH WebSocket Integration
     console.log('[SERVER] Initializing Orbcomm CDH WebSocket integration...');
     try {
@@ -260,7 +253,30 @@ app.use((req, res, next) => {
     console.log(`[SERVER] NODE_ENV: ${process.env.NODE_ENV}`);
   });
 
+  // ===========================================================================
+  // Memory Monitoring for Render Free Tier (512MB limit)
+  // ===========================================================================
+  const MEMORY_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
+  const MEMORY_WARNING_THRESHOLD = 250 * 1024 * 1024; // 250MB - trigger GC hint
 
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+    const rssMB = Math.round(mem.rss / 1024 / 1024);
+
+    console.log(`[MEMORY] Heap: ${heapUsedMB}MB/${heapTotalMB}MB, RSS: ${rssMB}MB`);
+
+    // If memory is high, try to trigger garbage collection
+    if (mem.heapUsed > MEMORY_WARNING_THRESHOLD) {
+      console.log('[MEMORY] ⚠️ High memory usage detected, requesting GC...');
+      if (global.gc) {
+        global.gc();
+        const afterGC = process.memoryUsage();
+        console.log(`[MEMORY] After GC: Heap ${Math.round(afterGC.heapUsed / 1024 / 1024)}MB`);
+      }
+    }
+  }, MEMORY_CHECK_INTERVAL);
 
   // Add error handling for the server
   server.on('error', (err) => {
