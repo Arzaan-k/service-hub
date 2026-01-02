@@ -782,7 +782,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllServiceRequests(): Promise<ServiceRequest[]> {
-    // Select only fields that exist in the database to avoid schema mismatch errors
+    // DEPRECATED: Use getServiceRequestsPaginated for better memory efficiency
+    // Limit to 200 most recent to prevent memory issues
     return await db
       .select({
         id: serviceRequests.id,
@@ -820,11 +821,63 @@ export class DatabaseStorage implements IStorage {
         createdBy: serviceRequests.createdBy,
         createdAt: serviceRequests.createdAt,
         updatedAt: serviceRequests.updatedAt,
-        // Skip fields that don't exist in DB yet
-        // workType, clientType, jobType, billingType, callStatus, month, year, excelData will be added later
       })
       .from(serviceRequests)
-      .orderBy(desc(serviceRequests.createdAt));
+      .orderBy(desc(serviceRequests.createdAt))
+      .limit(200); // Limit to prevent memory overflow
+  }
+
+  async getServiceRequestsPaginated(limit: number, offset: number): Promise<{ requests: ServiceRequest[], total: number }> {
+    // Get total count
+    const countResult: any = await db.execute(sql`SELECT COUNT(*) as count FROM service_requests`);
+    const totalRows = Array.isArray(countResult) ? countResult : (countResult?.rows || []);
+    const total = parseInt(totalRows[0]?.count || '0');
+
+    // Get paginated results
+    const requests = await db
+      .select({
+        id: serviceRequests.id,
+        requestNumber: serviceRequests.requestNumber,
+        jobOrder: serviceRequests.jobOrder,
+        containerId: serviceRequests.containerId,
+        customerId: serviceRequests.customerId,
+        alertId: serviceRequests.alertId,
+        assignedTechnicianId: serviceRequests.assignedTechnicianId,
+        priority: serviceRequests.priority,
+        status: serviceRequests.status,
+        issueDescription: serviceRequests.issueDescription,
+        requiredParts: serviceRequests.requiredParts,
+        estimatedDuration: serviceRequests.estimatedDuration,
+        requestedAt: serviceRequests.requestedAt,
+        approvedAt: serviceRequests.approvedAt,
+        scheduledDate: serviceRequests.scheduledDate,
+        scheduledTimeWindow: serviceRequests.scheduledTimeWindow,
+        actualStartTime: serviceRequests.actualStartTime,
+        actualEndTime: serviceRequests.actualEndTime,
+        serviceDuration: serviceRequests.serviceDuration,
+        resolutionNotes: serviceRequests.resolutionNotes,
+        usedParts: serviceRequests.usedParts,
+        totalCost: serviceRequests.totalCost,
+        invoiceId: serviceRequests.invoiceId,
+        customerFeedbackId: serviceRequests.customerFeedbackId,
+        beforePhotos: serviceRequests.beforePhotos,
+        afterPhotos: serviceRequests.afterPhotos,
+        clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
+        clientUploadedVideos: serviceRequests.clientUploadedVideos,
+        videos: serviceRequests.videos,
+        locationProofPhotos: serviceRequests.locationProofPhotos,
+        clientApprovalRequired: serviceRequests.clientApprovalRequired,
+        clientApprovedAt: serviceRequests.clientApprovedAt,
+        createdBy: serviceRequests.createdBy,
+        createdAt: serviceRequests.createdAt,
+        updatedAt: serviceRequests.updatedAt,
+      })
+      .from(serviceRequests)
+      .orderBy(desc(serviceRequests.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { requests, total };
   }
 
   async getServiceRequest(id: string): Promise<ServiceRequest | undefined> {

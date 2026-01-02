@@ -2198,6 +2198,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         return res.json(list);
       }
+      // Check if pagination is requested
+      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+
+      // For admins/coordinators with pagination, use optimized query
+      if (hasLimit || hasOffset) {
+        const { limit, offset } = paginationSchema.parse(req.query);
+        const { requests: paginatedRequests, total } = await storage.getServiceRequestsPaginated(limit, offset);
+
+        // Apply filters if provided
+        let filteredRequests = paginatedRequests;
+        const customerId = req.query.customerId as string;
+        const technicianId = req.query.technicianId as string;
+
+        if (customerId) {
+          filteredRequests = filteredRequests.filter(r => r.customerId === customerId);
+        }
+
+        if (technicianId) {
+          filteredRequests = filteredRequests.filter(r => r.assignedTechnicianId === technicianId);
+        }
+
+        res.setHeader('x-total-count', String(total));
+        return res.json(filteredRequests);
+      }
+
+      // No pagination - return limited results (200 most recent)
       const requests = await storage.getAllServiceRequests();
 
       // Apply filters if provided
@@ -2213,13 +2240,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filteredRequests = filteredRequests.filter(r => r.assignedTechnicianId === technicianId);
       }
 
-      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
-      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
-      if (hasLimit || hasOffset) {
-        const { limit, offset } = paginationSchema.parse(req.query);
-        res.setHeader('x-total-count', String(filteredRequests.length));
-        return res.json(filteredRequests.slice(offset, offset + limit));
-      }
       res.json(filteredRequests);
     } catch (error) {
       console.error("Error fetching service requests:", error);
