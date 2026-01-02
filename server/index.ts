@@ -2,6 +2,14 @@ import { config } from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 
+// Startup banner for debugging
+console.log('================================================');
+console.log('[SERVER] Starting Service Hub application...');
+console.log(`[SERVER] Node.js version: ${process.version}`);
+console.log(`[SERVER] Platform: ${process.platform} (${process.arch})`);
+console.log(`[SERVER] Initial memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
+console.log('================================================');
+
 // Load environment variables from .env file first, then .env.development to override
 const envPath = path.join(process.cwd(), '.env');
 const envDevPath = path.join(process.cwd(), '.env.development');
@@ -178,11 +186,13 @@ app.use((req, res, next) => {
   const memUsage = process.memoryUsage();
   console.log(`[SERVER] Memory Usage: Heap ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB, RSS: ${Math.round(memUsage.rss / 1024 / 1024)}MB`);
 
-  // Check if Orbcomm should be disabled (for memory-constrained environments like Render free tier)
-  const disableOrbcomm = process.env.DISABLE_ORBCOMM === 'true';
+  // Orbcomm is DISABLED by default to conserve memory on free tier (512MB limit)
+  // Set ENABLE_ORBCOMM=true to explicitly enable it
+  const enableOrbcomm = process.env.ENABLE_ORBCOMM === 'true';
 
-  if (disableOrbcomm) {
-    console.log('⏭️ Orbcomm integration DISABLED via DISABLE_ORBCOMM env variable (memory optimization)');
+  if (!enableOrbcomm) {
+    console.log('⏭️ Orbcomm integration DISABLED (default for memory optimization)');
+    console.log('   Set ENABLE_ORBCOMM=true to enable Orbcomm polling');
   } else if (process.env.NODE_ENV !== 'development') {
     // Initialize Orbcomm CDH WebSocket Integration
     console.log('[SERVER] Initializing Orbcomm CDH WebSocket integration...');

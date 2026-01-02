@@ -22,7 +22,7 @@
     "report:reefer-columns": "node report-reefer-master-columns.js",
     "db:push": "echo 'Database migrations should be run manually with proper DATABASE_URL'",
     "db:deploy": "echo 'Database migrations should be run manually in production'",
-    "start": "NODE_ENV=production node --max-old-space-size=350 --expose-gc --optimize-for-size dist/index.js",
+    "start": "NODE_ENV=production node --max-old-space-size=300 --expose-gc --optimize-for-size dist/index.js",
     "check": "tsc",
     "clear:orbcomm-alerts": "tsx server/tools/clear-orbcomm-alerts.ts",
     "clear:service-requests": "tsx server/tools/clear-all-service-requests.ts",
