@@ -751,7 +751,24 @@ export class DatabaseStorage implements IStorage {
 
 
   async getAllAlerts(): Promise<Alert[]> {
-    return await db.select().from(alerts).orderBy(desc(alerts.detectedAt));
+    return await db.select().from(alerts).orderBy(desc(alerts.detectedAt)).limit(200);
+  }
+
+  async getAlertsPaginated(limit: number, offset: number): Promise<{ alerts: Alert[], total: number }> {
+    // Get total count
+    const countResult: any = await db.execute(sql`SELECT COUNT(*) as count FROM alerts`);
+    const totalRows = Array.isArray(countResult) ? countResult : (countResult?.rows || []);
+    const total = parseInt(totalRows[0]?.count || '0');
+
+    // Get paginated results
+    const paginatedAlerts = await db
+      .select()
+      .from(alerts)
+      .orderBy(desc(alerts.detectedAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { alerts: paginatedAlerts, total };
   }
 
   async getAlert(id: string): Promise<Alert | undefined> {

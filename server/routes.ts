@@ -1637,6 +1637,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/alerts", authenticateUser, async (req: any, res) => {
     try {
       const role = (req.user?.role || '').toLowerCase();
+
+      // Check if pagination is requested
+      const hasLimit = req.query.limit !== undefined;
+      const hasOffset = req.query.offset !== undefined;
+
+      if (hasLimit || hasOffset) {
+        const { limit, offset } = paginationSchema.parse(req.query);
+        const { alerts: paginatedAlerts, total } = await storage.getAlertsPaginated(limit, offset);
+
+        // Filter for clients
+        if (role === 'client') {
+          const customer = await storage.getCustomerByUserId(req.user.id);
+          if (!customer) return res.json([]);
+          const containers = await storage.getContainersByCustomer(customer.id);
+          const containerIds = new Set(containers.map((c) => c.id));
+          const filteredAlerts = paginatedAlerts.filter((a) => containerIds.has(a.containerId));
+          res.setHeader('x-total-count', String(filteredAlerts.length));
+          return res.json(filteredAlerts);
+        }
+
+        res.setHeader('x-total-count', String(total));
+        return res.json(paginatedAlerts);
+      }
+
+      // Legacy behavior: return all (limited to 200)
       if (role === 'client') {
         const customer = await storage.getCustomerByUserId(req.user.id);
         if (!customer) return res.json([]);

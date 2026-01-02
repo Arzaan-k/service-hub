@@ -88,5 +88,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 ENTRYPOINT ["dumb-init", "--"]
 
 # Start the application with memory optimized for 512MB RAM environment
-# Leaving ~200MB for OS and other processes, allocate ~300MB to Node heap
-CMD ["node", "--max-old-space-size=300", "dist/index.js"]
+# Allocate 400MB to Node heap (tight but necessary for the application)
+CMD ["node", "--max-old-space-size=400", "dist/index.js"]
