@@ -57,10 +57,13 @@ export default function Dashboard() {
   const isClient = user?.role === 'client';
   const containersEndpoint = isClient ? "/api/customers/me/containers" : "/api/containers";
 
+  // For dashboard, load first 100 containers with pagination to reduce memory
   const { data: containers = [] } = useQuery<any[]>({
-    queryKey: [containersEndpoint],
+    queryKey: [containersEndpoint, "dashboard"],
     queryFn: async () => {
-      const response = await apiRequest("GET", containersEndpoint);
+      // For non-clients, use pagination to limit initial load
+      const url = isClient ? containersEndpoint : `${containersEndpoint}?limit=100&offset=0`;
+      const response = await apiRequest("GET", url);
       const data = await response.json();
       return Array.isArray(data) ? data : [];
     },
@@ -69,9 +72,10 @@ export default function Dashboard() {
   });
 
   const { data: alerts = [] } = useQuery<any[]>({
-    queryKey: ["/api/alerts"],
+    queryKey: ["/api/alerts", "dashboard"],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/alerts");
+      // Limit to 100 most recent alerts for dashboard to reduce memory
+      const response = await apiRequest("GET", "/api/alerts?limit=100&offset=0");
       return response.json();
     },
     staleTime: 30000, // 30 seconds
@@ -79,9 +83,10 @@ export default function Dashboard() {
   });
 
   const { data: serviceRequests = [] } = useQuery<any[]>({
-    queryKey: ["/api/service-requests"],
+    queryKey: ["/api/service-requests", "dashboard"],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/service-requests");
+      // Limit to 100 most recent service requests for dashboard to reduce memory
+      const response = await apiRequest("GET", "/api/service-requests?limit=100&offset=0");
       return response.json();
     },
     staleTime: 30000, // 30 seconds
@@ -91,6 +96,7 @@ export default function Dashboard() {
   const { data: technicians = [] } = useQuery<any[]>({
     queryKey: ["/api/technicians"],
     queryFn: async () => {
+      // Technicians are typically fewer, fetch all
       const response = await apiRequest("GET", "/api/technicians");
       return response.json();
     },

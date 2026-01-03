@@ -1122,7 +1122,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'superadmin', 'ceo'].includes(user.role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
+
       const scheduler = getWeeklySummaryScheduler();
       await scheduler.triggerWeeklySummary();
       res.json({ message: "Weekly summary triggered successfully" });
@@ -1339,14 +1339,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isPrivileged = ["admin", "coordinator", "super_admin"].includes(role);
       console.log('[SERVER] /api/containers isPrivileged:', isPrivileged, 'role:', role);
 
-      // Fetch all containers
+      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+      console.log('[SERVER] /api/containers hasLimit:', hasLimit, 'hasOffset:', hasOffset);
+
+      // For privileged users with pagination, use optimized paginated query
+      if (isPrivileged && (hasLimit || hasOffset)) {
+        const { limit, offset } = paginationSchema.parse(req.query);
+        console.log('[SERVER] /api/containers applying server-side pagination - limit:', limit, 'offset:', offset);
+
+        const { containers: paginatedContainers, total } = await storage.getContainersPaginated(limit, offset);
+
+        // Apply role-based filtering if needed
+        let filteredContainers = paginatedContainers;
+        if (role === 'senior_technician' || role === 'amc') {
+          filteredContainers = filterContainersByRole(paginatedContainers, role);
+        }
+
+        // Sanitize container data based on role
+        const sanitizedContainers = filteredContainers.map(c => sanitizeContainerForRole(c, role));
+
+        res.setHeader('x-total-count', String(total));
+        console.log('[SERVER] /api/containers returning paginated result length:', sanitizedContainers.length, 'of total:', total);
+        return res.json(sanitizedContainers);
+      }
+
+      // For non-privileged users or when no pagination is requested, fetch all and filter
       let containers = await storage.getAllContainers();
       console.log('[SERVER] /api/containers total containers before filtering:', containers.length);
 
       // Apply role-based filtering
-      // Senior Technician: Only reefer (refrigerated) containers with IoT enabled (deployed)
-      // AMC: Only sold containers
-      // Client: Their assigned containers
       if (role === 'senior_technician' || role === 'amc') {
         containers = filterContainersByRole(containers, role);
         console.log('[SERVER] /api/containers after role filtering (' + role + '):', containers.length);
@@ -1361,17 +1383,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Sanitize container data based on role (AMC gets limited fields)
+      // Sanitize container data based on role
       containers = containers.map(c => sanitizeContainerForRole(c, role));
 
-      // Optional pagination: only apply if query includes limit or offset
-      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
-      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
-      console.log('[SERVER] /api/containers hasLimit:', hasLimit, 'hasOffset:', hasOffset);
-
+      // Apply client-side pagination if requested
       if (hasLimit || hasOffset) {
         const { limit, offset } = paginationSchema.parse(req.query);
-        console.log('[SERVER] /api/containers applying pagination - limit:', limit, 'offset:', offset);
+        console.log('[SERVER] /api/containers applying client-side pagination - limit:', limit, 'offset:', offset);
         res.setHeader('x-total-count', String(containers.length));
         const paginatedResult = containers.slice(offset, offset + limit);
         console.log('[SERVER] /api/containers returning paginated result length:', paginatedResult.length);
@@ -1384,6 +1402,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching containers:", error);
       res.status(500).json({ error: "Failed to fetch containers", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // Get container statistics (lightweight endpoint for dashboard)
+  app.get("/api/containers/stats", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const stats = await storage.getContainerStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching container stats:", error);
+      res.status(500).json({ error: "Failed to fetch container stats" });
     }
   });
 
@@ -1613,19 +1642,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Alert routes
+  // Helper to strip rawData from alert metadata to reduce response size
+  const sanitizeAlerts = (alertsList: any[]) => {
+    return alertsList.map(alert => {
+      if (alert.metadata && typeof alert.metadata === 'object') {
+        const { rawData, ...cleanMetadata } = alert.metadata as any;
+        return { ...alert, metadata: cleanMetadata };
+      }
+      return alert;
+    });
+  };
+
   app.get("/api/alerts", authenticateUser, async (req: any, res) => {
     try {
       const role = (req.user?.role || '').toLowerCase();
+
+      // Check if pagination is requested
+      const hasLimit = req.query.limit !== undefined;
+      const hasOffset = req.query.offset !== undefined;
+
+      if (hasLimit || hasOffset) {
+        const { limit, offset } = paginationSchema.parse(req.query);
+        const { alerts: paginatedAlerts, total } = await storage.getAlertsPaginated(limit, offset);
+
+        // Filter for clients
+        if (role === 'client') {
+          const customer = await storage.getCustomerByUserId(req.user.id);
+          if (!customer) return res.json([]);
+          const containers = await storage.getContainersByCustomer(customer.id);
+          const containerIds = new Set(containers.map((c) => c.id));
+          const filteredAlerts = paginatedAlerts.filter((a) => containerIds.has(a.containerId));
+          res.setHeader('x-total-count', String(filteredAlerts.length));
+          return res.json(sanitizeAlerts(filteredAlerts));
+        }
+
+        res.setHeader('x-total-count', String(total));
+        return res.json(sanitizeAlerts(paginatedAlerts));
+      }
+
+      // Legacy behavior: return all (limited to 200)
       if (role === 'client') {
         const customer = await storage.getCustomerByUserId(req.user.id);
         if (!customer) return res.json([]);
         const containers = await storage.getContainersByCustomer(customer.id);
         const containerIds = new Set(containers.map((c) => c.id));
         const alerts = await storage.getAllAlerts();
-        return res.json(alerts.filter((a) => containerIds.has(a.containerId)));
+        return res.json(sanitizeAlerts(alerts.filter((a) => containerIds.has(a.containerId))));
       }
       const alerts = await storage.getAllAlerts();
-      res.json(alerts);
+      res.json(sanitizeAlerts(alerts));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch alerts" });
     }
@@ -1640,9 +1705,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!customer) return res.json([]);
         const containers = await storage.getContainersByCustomer(customer.id);
         const containerIds = new Set(containers.map((c) => c.id));
-        return res.json(open.filter((a) => containerIds.has(a.containerId)));
+        return res.json(sanitizeAlerts(open.filter((a) => containerIds.has(a.containerId))));
       }
-      res.json(open);
+      res.json(sanitizeAlerts(open));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch open alerts" });
     }
@@ -1748,7 +1813,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/alerts/container/:containerId", authenticateUser, async (req, res) => {
     try {
       const alerts = await storage.getAlertsByContainer(req.params.containerId);
-      res.json(alerts);
+      res.json(sanitizeAlerts(alerts));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch container alerts" });
     }
@@ -2177,6 +2242,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         return res.json(list);
       }
+      // Check if pagination is requested
+      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
+
+      // For admins/coordinators with pagination, use optimized query
+      if (hasLimit || hasOffset) {
+        const { limit, offset } = paginationSchema.parse(req.query);
+        const { requests: paginatedRequests, total } = await storage.getServiceRequestsPaginated(limit, offset);
+
+        // Apply filters if provided
+        let filteredRequests = paginatedRequests;
+        const customerId = req.query.customerId as string;
+        const technicianId = req.query.technicianId as string;
+
+        if (customerId) {
+          filteredRequests = filteredRequests.filter(r => r.customerId === customerId);
+        }
+
+        if (technicianId) {
+          filteredRequests = filteredRequests.filter(r => r.assignedTechnicianId === technicianId);
+        }
+
+        res.setHeader('x-total-count', String(total));
+        return res.json(filteredRequests);
+      }
+
+      // No pagination - return limited results (200 most recent)
       const requests = await storage.getAllServiceRequests();
 
       // Apply filters if provided
@@ -2192,13 +2284,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filteredRequests = filteredRequests.filter(r => r.assignedTechnicianId === technicianId);
       }
 
-      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
-      const hasOffset = Object.prototype.hasOwnProperty.call(req.query, 'offset');
-      if (hasLimit || hasOffset) {
-        const { limit, offset } = paginationSchema.parse(req.query);
-        res.setHeader('x-total-count', String(filteredRequests.length));
-        return res.json(filteredRequests.slice(offset, offset + limit));
-      }
       res.json(filteredRequests);
     } catch (error) {
       console.error("Error fetching service requests:", error);
@@ -2270,6 +2355,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           created_at as requested_at
         FROM service_history
         ORDER BY complaint_attended_date DESC NULLS LAST, created_at DESC
+        LIMIT 100
       `);
 
       res.json(result.rows);

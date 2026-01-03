@@ -511,6 +511,73 @@ export class DatabaseStorage implements IStorage {
     return rows.map((row: any) => this.parseContainerData(row as any));
   }
 
+  async getContainersPaginated(limit: number, offset: number): Promise<{ containers: any[], total: number }> {
+    // Get total count first
+    const countResult: any = await db.execute(sql`SELECT COUNT(*) as count FROM containers`);
+    const totalRows = Array.isArray(countResult) ? countResult : (countResult?.rows || []);
+    const total = parseInt(totalRows[0]?.count || '0');
+
+    // Get paginated results
+    const result: any = await db.execute(
+      sql`SELECT * FROM containers ORDER BY id LIMIT ${limit} OFFSET ${offset}`
+    );
+    const rows: any[] = Array.isArray(result) ? result : (result?.rows || []);
+    const containers = rows.map((row: any) => this.parseContainerData(row as any));
+
+    return { containers, total };
+  }
+
+  async getContainerStats(): Promise<{
+    total: number;
+    deployed: number;
+    stock: number;
+    sold: number;
+    maintenance: number;
+    avgGrade: number;
+  }> {
+    // Use aggregation query to get stats efficiently
+    const statsQuery = sql`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN inventory_status = 'DEPLOYED' THEN 1 ELSE 0 END) as deployed,
+        SUM(CASE WHEN inventory_status IN ('STOCK', 'SALE') THEN 1 ELSE 0 END) as stock,
+        SUM(CASE WHEN inventory_status = 'SOLD' THEN 1 ELSE 0 END) as sold,
+        SUM(CASE WHEN status = 'maintenance' OR inventory_status = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
+        AVG(
+          CASE grade
+            WHEN 'A' THEN 4
+            WHEN 'B' THEN 3
+            WHEN 'C' THEN 2
+            WHEN 'D' THEN 1
+            ELSE 0
+          END
+        ) as avg_grade
+      FROM containers
+    `;
+
+    const result: any = await db.execute(statsQuery);
+    const rows = Array.isArray(result) ? result : (result?.rows || []);
+    const stats = rows[0] || {};
+
+    return {
+      total: parseInt(stats.total || '0'),
+      deployed: parseInt(stats.deployed || '0'),
+      stock: parseInt(stats.stock || '0'),
+      sold: parseInt(stats.sold || '0'),
+      maintenance: parseInt(stats.maintenance || '0'),
+      avgGrade: parseFloat(stats.avg_grade || '0'),
+    };
+  }
+
+  async getContainerByDeviceId(deviceId: string): Promise<any | null> {
+    // Optimized query to find container by Orbcomm device ID without loading all containers
+    const result: any = await db.execute(
+      sql`SELECT * FROM containers WHERE orbcomm_device_id = ${deviceId} OR orbcommDeviceId = ${deviceId} LIMIT 1`
+    );
+    const rows: any[] = Array.isArray(result) ? result : (result?.rows || []);
+    return rows.length > 0 ? this.parseContainerData(rows[0]) : null;
+  }
+
   // Helper function to parse decimal fields and ensure currentLocation
   private parseContainerData(container: Container): Container {
     if (!container) return container;
@@ -706,7 +773,24 @@ export class DatabaseStorage implements IStorage {
 
 
   async getAllAlerts(): Promise<Alert[]> {
-    return await db.select().from(alerts).orderBy(desc(alerts.detectedAt));
+    return await db.select().from(alerts).orderBy(desc(alerts.detectedAt)).limit(50);
+  }
+
+  async getAlertsPaginated(limit: number, offset: number): Promise<{ alerts: Alert[], total: number }> {
+    // Get total count
+    const countResult: any = await db.execute(sql`SELECT COUNT(*) as count FROM alerts`);
+    const totalRows = Array.isArray(countResult) ? countResult : (countResult?.rows || []);
+    const total = parseInt(totalRows[0]?.count || '0');
+
+    // Get paginated results
+    const paginatedAlerts = await db
+      .select()
+      .from(alerts)
+      .orderBy(desc(alerts.detectedAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { alerts: paginatedAlerts, total };
   }
 
   async getAlert(id: string): Promise<Alert | undefined> {
@@ -715,7 +799,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAlertsByContainer(containerId: string): Promise<Alert[]> {
-    return await db.select().from(alerts).where(eq(alerts.containerId, containerId)).orderBy(desc(alerts.detectedAt));
+    return await db.select().from(alerts).where(eq(alerts.containerId, containerId)).orderBy(desc(alerts.detectedAt)).limit(50);
   }
 
   async getOpenAlerts(): Promise<Alert[]> {
@@ -723,7 +807,8 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(alerts)
       .where(isNull(alerts.resolvedAt))
-      .orderBy(desc(alerts.detectedAt));
+      .orderBy(desc(alerts.detectedAt))
+      .limit(50);
   }
 
   async createAlert(alert: any): Promise<Alert> {
@@ -737,9 +822,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllServiceRequests(): Promise<ServiceRequest[]> {
-    // Select only fields that exist in the database to avoid schema mismatch errors
-    // Removed the expensive enrichment loop that was causing 67MB response size errors
-    const requests = (await db
+    // DEPRECATED: Use getServiceRequestsPaginated for better memory efficiency
+    // Removed expensive enrichment loop that was causing 67MB response size errors
+    // Limit to 50 most recent to prevent memory issues
+    return await db
       .select({
         id: serviceRequests.id,
         requestNumber: serviceRequests.requestNumber,
@@ -776,19 +862,63 @@ export class DatabaseStorage implements IStorage {
         createdBy: serviceRequests.createdBy,
         createdAt: serviceRequests.createdAt,
         updatedAt: serviceRequests.updatedAt,
-        // Skip fields that don't exist in DB yet
-        // workType, clientType, jobType, billingType, callStatus, month, year, excelData will be added later
       })
       .from(serviceRequests)
-      .orderBy(desc(serviceRequests.createdAt))) as any;
+      .orderBy(desc(serviceRequests.createdAt))
+      .limit(50); // Memory optimization: reduced from 200 to prevent OOM
+  }
 
-    // Return requests without enrichment to avoid 67MB response size error
-    // Duplicate count logic can be computed on-demand for individual requests if needed
-    return requests.map((request: any) => ({
-      ...request,
-      isDuplicate: false,
-      duplicateCount: 1
-    }));
+  async getServiceRequestsPaginated(limit: number, offset: number): Promise<{ requests: ServiceRequest[], total: number }> {
+    // Get total count
+    const countResult: any = await db.execute(sql`SELECT COUNT(*) as count FROM service_requests`);
+    const totalRows = Array.isArray(countResult) ? countResult : (countResult?.rows || []);
+    const total = parseInt(totalRows[0]?.count || '0');
+
+    // Get paginated results
+    const requests = await db
+      .select({
+        id: serviceRequests.id,
+        requestNumber: serviceRequests.requestNumber,
+        jobOrder: serviceRequests.jobOrder,
+        containerId: serviceRequests.containerId,
+        customerId: serviceRequests.customerId,
+        alertId: serviceRequests.alertId,
+        assignedTechnicianId: serviceRequests.assignedTechnicianId,
+        priority: serviceRequests.priority,
+        status: serviceRequests.status,
+        issueDescription: serviceRequests.issueDescription,
+        requiredParts: serviceRequests.requiredParts,
+        estimatedDuration: serviceRequests.estimatedDuration,
+        requestedAt: serviceRequests.requestedAt,
+        approvedAt: serviceRequests.approvedAt,
+        scheduledDate: serviceRequests.scheduledDate,
+        scheduledTimeWindow: serviceRequests.scheduledTimeWindow,
+        actualStartTime: serviceRequests.actualStartTime,
+        actualEndTime: serviceRequests.actualEndTime,
+        serviceDuration: serviceRequests.serviceDuration,
+        resolutionNotes: serviceRequests.resolutionNotes,
+        usedParts: serviceRequests.usedParts,
+        totalCost: serviceRequests.totalCost,
+        invoiceId: serviceRequests.invoiceId,
+        customerFeedbackId: serviceRequests.customerFeedbackId,
+        beforePhotos: serviceRequests.beforePhotos,
+        afterPhotos: serviceRequests.afterPhotos,
+        clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
+        clientUploadedVideos: serviceRequests.clientUploadedVideos,
+        videos: serviceRequests.videos,
+        locationProofPhotos: serviceRequests.locationProofPhotos,
+        clientApprovalRequired: serviceRequests.clientApprovalRequired,
+        clientApprovedAt: serviceRequests.clientApprovedAt,
+        createdBy: serviceRequests.createdBy,
+        createdAt: serviceRequests.createdAt,
+        updatedAt: serviceRequests.updatedAt,
+      })
+      .from(serviceRequests)
+      .orderBy(desc(serviceRequests.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { requests, total };
   }
 
   async getServiceRequest(id: string): Promise<ServiceRequest | undefined> {
@@ -916,7 +1046,8 @@ export class DatabaseStorage implements IStorage {
         })
         .from(serviceRequests)
         .where(and(...conditions))
-        .orderBy(desc(serviceRequests.createdAt));
+        .orderBy(desc(serviceRequests.createdAt))
+        .limit(50); // Memory optimization: limit results to prevent OOM on free tier
 
       // Get duplicate container counts by container code
       const duplicateCounts = await this.getDuplicateContainerCounts();

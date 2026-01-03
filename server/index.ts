@@ -2,6 +2,14 @@ import { config } from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 
+// Startup banner for debugging
+console.log('================================================');
+console.log('[SERVER] Starting Service Hub application...');
+console.log(`[SERVER] Node.js version: ${process.version}`);
+console.log(`[SERVER] Platform: ${process.platform} (${process.arch})`);
+console.log(`[SERVER] Initial memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS`);
+console.log('================================================');
+
 // Load environment variables from .env file first, then .env.development to override
 const envPath = path.join(process.cwd(), '.env');
 const envDevPath = path.join(process.cwd(), '.env.development');
@@ -139,14 +147,18 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  // Initialize vector store for RAG functionality
-  console.log('[SERVER] Initializing vector store for RAG...');
-  try {
-    await vectorStore.initializeCollection();
-    console.log('✅ Vector store initialized successfully');
-  } catch (error) {
-    console.error('❌ Error initializing vector store:', error);
-    // Don't fail server startup for vector store issues
+  // Initialize vector store for RAG functionality (can be disabled for memory constraints)
+  if (process.env.DISABLE_VECTOR_STORE !== 'true') {
+    console.log('[SERVER] Initializing vector store for RAG...');
+    try {
+      await vectorStore.initializeCollection();
+      console.log('✅ Vector store initialized successfully');
+    } catch (error) {
+      console.error('❌ Error initializing vector store:', error);
+      // Don't fail server startup for vector store issues
+    }
+  } else {
+    console.log('⏭️ Vector store DISABLED (DISABLE_VECTOR_STORE=true)');
   }
 
   // Ensure database schema is up to date
@@ -163,25 +175,20 @@ app.use((req, res, next) => {
   console.log('[SERVER] Checking Orbcomm initialization conditions:');
   console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
   console.log('[SERVER] ENABLE_ORBCOMM_DEV:', process.env.ENABLE_ORBCOMM_DEV);
+  console.log('[SERVER] DISABLE_ORBCOMM:', process.env.DISABLE_ORBCOMM);
 
-  // Temporarily disabled Orbcomm in dev to fix stability
-  if (process.env.NODE_ENV !== 'development') { // || process.env.ENABLE_ORBCOMM_DEV === 'true' || process.env.FORCE_ORBCOMM_DEV === 'true') {
-    // console.log('[SERVER] Initializing Orbcomm connection...');
-    // try {
-    //   await initializeOrbcommConnection();
-    //
-    //   // Populate database with production devices
-    //   setTimeout(async () => {
-    //     try {
-    //       await populateOrbcommDevices();
-    //     } catch (error) {
-    //       console.error('❌ Error populating Orbcomm devices:', error);
-    //     }
-    //   }, 5000); // Wait 5 seconds after server start
-    // } catch (error) {
-    //   console.error('❌ Error initializing Orbcomm connection:', error);
-    // }
+  // Log initial memory usage
+  const memUsage = process.memoryUsage();
+  console.log(`[SERVER] Memory Usage: Heap ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB, RSS: ${Math.round(memUsage.rss / 1024 / 1024)}MB`);
 
+  // Orbcomm is DISABLED by default to conserve memory on free tier (512MB limit)
+  // Set ENABLE_ORBCOMM=true to explicitly enable it
+  const enableOrbcomm = process.env.ENABLE_ORBCOMM === 'true';
+
+  if (!enableOrbcomm) {
+    console.log('⏭️ Orbcomm integration DISABLED (default for memory optimization)');
+    console.log('   Set ENABLE_ORBCOMM=true to enable Orbcomm polling');
+  } else if (process.env.NODE_ENV !== 'development') {
     // Initialize Orbcomm CDH WebSocket Integration
     console.log('[SERVER] Initializing Orbcomm CDH WebSocket integration...');
     try {
@@ -200,22 +207,28 @@ app.use((req, res, next) => {
     console.log('⏭️ Skipping Orbcomm initialization in development mode');
   }
 
-  // Daily Service Summary Scheduler (env-based timing with caching)
-  // Runs in BOTH development and production modes
-  console.log('[SERVER] Starting Service Summary Scheduler...');
-  startServiceSummaryScheduler();
-  console.log('✅ Service Summary Scheduler started (uses env variables for timing)');
+  // Background schedulers (can be disabled for memory-constrained environments)
+  const disableSchedulers = process.env.DISABLE_SCHEDULERS === 'true';
 
-  // Weekly CAPA Report Scheduler (Friday 1:00 PM IST by default)
-  // Sends detailed weekly summary to CEO and Senior Technician
-  console.log('[SERVER] Starting Weekly Summary Scheduler...');
-  startWeeklySummaryScheduler();
-  console.log('✅ Weekly Summary Scheduler started (WEEKLY_SUMMARY_TIME, WEEKLY_SUMMARY_DAY env vars)');
+  if (disableSchedulers) {
+    console.log('⏭️ Background schedulers DISABLED (DISABLE_SCHEDULERS=true)');
+    console.log('   Service Summary, Weekly Summary, and Password Reminder schedulers skipped');
+  } else {
+    // Daily Service Summary Scheduler (env-based timing with caching)
+    console.log('[SERVER] Starting Service Summary Scheduler...');
+    startServiceSummaryScheduler();
+    console.log('✅ Service Summary Scheduler started');
 
-  // Start password reminder scheduler (runs every hour in both dev and production)
-  console.log('[SERVER] Starting password reminder scheduler...');
-  startPasswordReminderScheduler();
-  console.log('✅ Password reminder scheduler started successfully');
+    // Weekly CAPA Report Scheduler
+    console.log('[SERVER] Starting Weekly Summary Scheduler...');
+    startWeeklySummaryScheduler();
+    console.log('✅ Weekly Summary Scheduler started');
+
+    // Password reminder scheduler
+    console.log('[SERVER] Starting password reminder scheduler...');
+    startPasswordReminderScheduler();
+    console.log('✅ Password reminder scheduler started');
+  }
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
@@ -267,7 +280,30 @@ app.use((req, res, next) => {
     console.log(`[SERVER] NODE_ENV: ${process.env.NODE_ENV}`);
   });
 
+  // ===========================================================================
+  // Memory Monitoring for Render Free Tier (512MB limit)
+  // ===========================================================================
+  const MEMORY_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
+  const MEMORY_WARNING_THRESHOLD = 250 * 1024 * 1024; // 250MB - trigger GC hint
 
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+    const rssMB = Math.round(mem.rss / 1024 / 1024);
+
+    console.log(`[MEMORY] Heap: ${heapUsedMB}MB/${heapTotalMB}MB, RSS: ${rssMB}MB`);
+
+    // If memory is high, try to trigger garbage collection
+    if (mem.heapUsed > MEMORY_WARNING_THRESHOLD) {
+      console.log('[MEMORY] ⚠️ High memory usage detected, requesting GC...');
+      if (global.gc) {
+        global.gc();
+        const afterGC = process.memoryUsage();
+        console.log(`[MEMORY] After GC: Heap ${Math.round(afterGC.heapUsed / 1024 / 1024)}MB`);
+      }
+    }
+  }, MEMORY_CHECK_INTERVAL);
 
   // Add error handling for the server
   server.on('error', (err) => {

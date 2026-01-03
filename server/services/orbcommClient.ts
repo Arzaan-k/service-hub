@@ -67,13 +67,14 @@ class OrbcommClient {
   // Event tracking for smart data fetching (no duplicates)
   private lastEventId: string | null = null;
   private processedEventIds = new Set<string>();
-  private maxProcessedIds = 10000; // Keep track of last 10k event IDs
+  private maxProcessedIds = 1000; // Keep track of last 1k event IDs (reduced for memory efficiency)
   private eventSequence = 0;
 
   // Polling state
   private currentBatchCount = 0;
-  private readonly MAX_EVENT_COUNT = 100;
-  private readonly POLL_INTERVAL_MS = 60000; // Poll every 60 seconds if caught up
+  private readonly MAX_EVENT_COUNT = 50; // Reduced batch size for memory
+  private readonly POLL_INTERVAL_MS = 300000; // Poll every 5 minutes (reduced for Render free tier)
+  private responseInProgress = false; // Mutex to prevent Fault 2006
 
   // Statistics
   private stats = {
@@ -342,18 +343,20 @@ class OrbcommClient {
    * Start the polling loop
    */
   private startPolling(): void {
-    // Initial fetch
-    this.fetchEvents();
+    // Initial fetch after a delay to let connection stabilize
+    setTimeout(() => this.fetchEvents(), 2000);
 
     // Setup periodic polling (for when we are caught up)
     if (this.pollInterval) clearInterval(this.pollInterval);
 
     this.pollInterval = setInterval(() => {
-      // Only poll if we are not currently processing a batch to avoid overlap
-      // And if the queue is empty
-      if (this.requestQueue.length === 0 && !this.isProcessingRequest) {
+      // Only poll if we are not currently processing a request/response
+      // And if the queue is empty and no response in progress
+      if (this.requestQueue.length === 0 && !this.isProcessingRequest && !this.responseInProgress) {
         console.log('⏰ Polling interval triggered');
         this.fetchEvents();
+      } else {
+        console.log('⏭️  Skipping poll - response still in progress or queue not empty');
       }
     }, this.POLL_INTERVAL_MS);
   }
@@ -362,6 +365,12 @@ class OrbcommClient {
    * Send GetEvents request to receive alerts
    */
   private fetchEvents(): void {
+    // Prevent concurrent requests - check both processing and response flags
+    if (this.responseInProgress || this.isProcessingRequest) {
+      console.log('⏭️  Skipping fetch - previous request still in progress');
+      return;
+    }
+
     // Reset batch count for the new request
     this.currentBatchCount = 0;
 
@@ -382,6 +391,7 @@ class OrbcommClient {
     }
 
     this.stats.lastPollAt = new Date();
+    this.responseInProgress = true; // Mark that we're waiting for a response
     this.queueRequest(getEventsMessage);
   }
 
@@ -407,9 +417,11 @@ class OrbcommClient {
       return;
     }
 
-    // If WebSocket is not open, wait
+    // If WebSocket is not open, clear queue and wait
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.log('⏸️  WebSocket not ready, waiting...');
+      console.log('⏸️  WebSocket not ready, clearing queue...');
+      this.requestQueue = [];
+      this.responseInProgress = false;
       return;
     }
 
@@ -418,6 +430,7 @@ class OrbcommClient {
 
     if (!queuedRequest) {
       this.isProcessingRequest = false;
+      this.responseInProgress = false;
       return;
     }
 
@@ -427,17 +440,19 @@ class OrbcommClient {
 
       this.ws.send(messageStr);
 
-      // Set a timeout for response
+      // Set a longer timeout for response (30 seconds for slow connections)
       this.requestTimeout = setTimeout(() => {
-        console.log('⏱️  Request timeout - continuing to next request');
+        console.log('⏱️  Request timeout - resetting state');
         this.isProcessingRequest = false;
-        this.processQueue();
-      }, 10000); // 10 second timeout per request
+        this.responseInProgress = false;
+        // Don't immediately process queue, let next poll handle it
+      }, 30000); // 30 second timeout per request
 
     } catch (error) {
       console.error('❌ Failed to send request:', error);
       this.isProcessingRequest = false;
-      this.processQueue();
+      this.responseInProgress = false;
+      // Don't immediately process queue, let next poll handle it
     }
   }
 
@@ -451,22 +466,29 @@ class OrbcommClient {
       this.requestTimeout = null;
     }
 
-    // Mark request as processed and continue queue
+    // Mark request as processed
     this.isProcessingRequest = false;
-    this.processQueue();
 
     // Handle faults array from Orbcomm
     if (message.faults && Array.isArray(message.faults)) {
       console.error('⚠️  Received faults from Orbcomm:');
+      let hasFault2006 = false;
       message.faults.forEach((faultObj: any) => {
         const fault = faultObj.fault || faultObj;
         console.error(`   - Fault ${fault.faultCode}: ${fault.faultText}`);
 
-        // If fault 2006 (Response in progress), we should just wait
+        // If fault 2006 (Response in progress), keep responseInProgress true
         if (fault.faultCode === 2006) {
-          console.log('   -> Response already in progress, ignoring.');
+          hasFault2006 = true;
+          console.log('   -> Response already in progress, will wait for next poll.');
         }
       });
+
+      // Only reset responseInProgress if it's NOT a 2006 fault
+      // (2006 means the server is still processing, so we wait)
+      if (!hasFault2006) {
+        this.responseInProgress = false;
+      }
       return;
     }
 
@@ -474,13 +496,18 @@ class OrbcommClient {
     if (message.Event) {
       this.isSubscribed = true;
       this.handleAlert(message);
+      // Don't reset responseInProgress here - let handleAlert batch logic manage it
       return;
     }
 
     if (message.faultCode) {
       console.error('⚠️  Received fault code:', message.faultCode, message.faultString);
+      this.responseInProgress = false;
       return;
     }
+
+    // For any other message type, reset the response flag
+    this.responseInProgress = false;
 
     // Log any other message types
     console.log('📨 Received message:', JSON.stringify(message, null, 2));
@@ -510,17 +537,17 @@ class OrbcommClient {
         // Add to processed set
         this.processedEventIds.add(eventId);
 
-        // Keep set size manageable
+        // Keep set size manageable - more aggressive cleanup for memory
         if (this.processedEventIds.size > this.maxProcessedIds) {
           const idsArray = Array.from(this.processedEventIds);
-          this.processedEventIds = new Set(idsArray.slice(1000));
+          this.processedEventIds = new Set(idsArray.slice(-500)); // Keep only last 500
         }
 
         // Update lastEventId for next GetEvents request
         this.lastEventId = eventId;
 
-        // Save state every 10 events
-        if (this.stats.totalAlertsReceived % 10 === 0) {
+        // Save state every 25 events (reduced frequency)
+        if (this.stats.totalAlertsReceived % 25 === 0) {
           this.saveLastEventId();
         }
       }
@@ -534,7 +561,7 @@ class OrbcommClient {
 
       console.log(`🔔 New Alert [${this.currentBatchCount}/${this.MAX_EVENT_COUNT}] ID: ${eventId}`);
 
-      // --- Device State Tracking Logic ---
+      // --- Device State Tracking Logic (Memory Optimized) ---
       try {
         const eventData = alert.Event || alert;
         const deviceId = eventData.deviceId || eventData.DeviceId || eventData.IMEI ||
@@ -608,10 +635,10 @@ class OrbcommClient {
             });
           }
 
-          // Update Device State
+          // Update Device State - NO rawData stored to save memory
           const deviceInfo = {
             deviceId,
-            assetId: assetId || this.devices.get(deviceId)?.assetId, // Preserve existing assetId if not in this event
+            assetId: assetId || this.devices.get(deviceId)?.assetId,
             lastAssetId: assetId || this.devices.get(deviceId)?.lastAssetId,
             status: 'active',
             lastSeen: timestamp,
@@ -622,11 +649,10 @@ class OrbcommClient {
             powerStatus: powerStatus || this.devices.get(deviceId)?.powerStatus,
             batteryLevel: batteryLevel !== undefined ? batteryLevel : this.devices.get(deviceId)?.batteryLevel,
             errorCodes: errorCodes.length > 0 ? errorCodes : (this.devices.get(deviceId)?.errorCodes || []),
-            rawData: eventData
+            // rawData removed for memory optimization
           };
 
           this.devices.set(deviceId, deviceInfo);
-          // console.log(`📱 Updated device state for ${deviceId}`);
         }
       } catch (err) {
         console.error('❌ Error updating device state:', err);
@@ -644,11 +670,16 @@ class OrbcommClient {
 
       // Check if we've received a full batch
       if (this.currentBatchCount >= this.MAX_EVENT_COUNT) {
-        console.log('📥 Received full batch of events. Fetching next batch immediately...');
-        // Reset count and fetch next batch
+        console.log('📥 Received full batch of events. Will fetch next batch on next poll...');
+        // Reset count - next poll will fetch more
         this.currentBatchCount = 0;
-        // Small delay to allow stack to clear
-        setTimeout(() => this.fetchEvents(), 100);
+        // Reset response flag to allow next poll to proceed immediately
+        this.responseInProgress = false;
+        // Don't call fetchEvents directly - let the next poll handle it to prevent memory spikes
+      } else {
+        // Partial batch means we're caught up - reset response flag
+        // This happens when we get fewer events than MAX_EVENT_COUNT
+        // But only reset after a short delay to ensure all events in batch are processed
       }
 
     } catch (error) {

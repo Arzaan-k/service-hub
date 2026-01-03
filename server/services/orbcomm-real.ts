@@ -625,7 +625,7 @@ class OrbcommAPIClient {
 
                   if (!container) {
                     console.log(`❌ No container found with exact container ID ${lastAssetId} - skipping ORBCOMM alert creation for device ${deviceId}`);
-                    console.log(`📋 Available container IDs in database:`, (await storage.getAllContainers()).map(c => c.containerCode));
+                    // Removed expensive getAllContainers() call for memory optimization
                     return;
                   }
 
