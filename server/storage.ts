@@ -824,7 +824,8 @@ export class DatabaseStorage implements IStorage {
   async getAllServiceRequests(): Promise<ServiceRequest[]> {
     // DEPRECATED: Use getServiceRequestsPaginated for better memory efficiency
     // Removed expensive enrichment loop that was causing 67MB response size errors
-    // Limit to 50 most recent to prevent memory issues
+    // Excluded large fields (photos, videos, text descriptions) to prevent payload size issues
+    // Limit to 30 most recent to prevent 67MB response size error
     return await db
       .select({
         id: serviceRequests.id,
@@ -836,8 +837,7 @@ export class DatabaseStorage implements IStorage {
         assignedTechnicianId: serviceRequests.assignedTechnicianId,
         priority: serviceRequests.priority,
         status: serviceRequests.status,
-        issueDescription: serviceRequests.issueDescription,
-        requiredParts: serviceRequests.requiredParts,
+        // Exclude large text fields: issueDescription, requiredParts, resolutionNotes, usedParts
         estimatedDuration: serviceRequests.estimatedDuration,
         requestedAt: serviceRequests.requestedAt,
         approvedAt: serviceRequests.approvedAt,
@@ -846,17 +846,13 @@ export class DatabaseStorage implements IStorage {
         actualStartTime: serviceRequests.actualStartTime,
         actualEndTime: serviceRequests.actualEndTime,
         serviceDuration: serviceRequests.serviceDuration,
-        resolutionNotes: serviceRequests.resolutionNotes,
-        usedParts: serviceRequests.usedParts,
         totalCost: serviceRequests.totalCost,
         invoiceId: serviceRequests.invoiceId,
         customerFeedbackId: serviceRequests.customerFeedbackId,
-        beforePhotos: serviceRequests.beforePhotos,
-        afterPhotos: serviceRequests.afterPhotos,
-        clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
-        clientUploadedVideos: serviceRequests.clientUploadedVideos,
-        videos: serviceRequests.videos,
-        locationProofPhotos: serviceRequests.locationProofPhotos,
+        // Exclude large binary/array fields to prevent "response is too large" errors:
+        // beforePhotos, afterPhotos, clientUploadedPhotos, clientUploadedVideos, videos, locationProofPhotos
+        // issueDescription, requiredParts, resolutionNotes, usedParts
+        // These can be fetched individually when viewing a specific service request
         clientApprovalRequired: serviceRequests.clientApprovalRequired,
         clientApprovedAt: serviceRequests.clientApprovedAt,
         createdBy: serviceRequests.createdBy,
@@ -865,7 +861,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(serviceRequests)
       .orderBy(desc(serviceRequests.createdAt))
-      .limit(50); // Memory optimization: reduced from 200 to prevent OOM
+      .limit(30); // Memory optimization: limit to 30 to prevent 67MB response size error
   }
 
   async getServiceRequestsPaginated(limit: number, offset: number): Promise<{ requests: ServiceRequest[], total: number }> {
@@ -874,7 +870,7 @@ export class DatabaseStorage implements IStorage {
     const totalRows = Array.isArray(countResult) ? countResult : (countResult?.rows || []);
     const total = parseInt(totalRows[0]?.count || '0');
 
-    // Get paginated results
+    // Get paginated results - exclude large fields to prevent payload size issues
     const requests = await db
       .select({
         id: serviceRequests.id,
@@ -886,8 +882,7 @@ export class DatabaseStorage implements IStorage {
         assignedTechnicianId: serviceRequests.assignedTechnicianId,
         priority: serviceRequests.priority,
         status: serviceRequests.status,
-        issueDescription: serviceRequests.issueDescription,
-        requiredParts: serviceRequests.requiredParts,
+        // Exclude large text fields: issueDescription, requiredParts, resolutionNotes, usedParts
         estimatedDuration: serviceRequests.estimatedDuration,
         requestedAt: serviceRequests.requestedAt,
         approvedAt: serviceRequests.approvedAt,
@@ -896,17 +891,12 @@ export class DatabaseStorage implements IStorage {
         actualStartTime: serviceRequests.actualStartTime,
         actualEndTime: serviceRequests.actualEndTime,
         serviceDuration: serviceRequests.serviceDuration,
-        resolutionNotes: serviceRequests.resolutionNotes,
-        usedParts: serviceRequests.usedParts,
         totalCost: serviceRequests.totalCost,
         invoiceId: serviceRequests.invoiceId,
         customerFeedbackId: serviceRequests.customerFeedbackId,
-        beforePhotos: serviceRequests.beforePhotos,
-        afterPhotos: serviceRequests.afterPhotos,
-        clientUploadedPhotos: serviceRequests.clientUploadedPhotos,
-        clientUploadedVideos: serviceRequests.clientUploadedVideos,
-        videos: serviceRequests.videos,
-        locationProofPhotos: serviceRequests.locationProofPhotos,
+        // Exclude large binary/array and text fields to prevent "response is too large" errors:
+        // beforePhotos, afterPhotos, clientUploadedPhotos, clientUploadedVideos, videos, locationProofPhotos
+        // issueDescription, requiredParts, resolutionNotes, usedParts
         clientApprovalRequired: serviceRequests.clientApprovalRequired,
         clientApprovedAt: serviceRequests.clientApprovedAt,
         createdBy: serviceRequests.createdBy,

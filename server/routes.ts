@@ -2268,11 +2268,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(filteredRequests);
       }
 
-      // No pagination - return limited results (200 most recent)
+      // No pagination - return limited results (30 most recent)
       const requests = await storage.getAllServiceRequests();
 
+      // Get duplicate container counts for highlighting
+      const duplicateCounts = await storage.getDuplicateContainerCounts();
+
+      // Enrich requests with duplicate detection info
+      const enrichedRequests = await Promise.all(requests.map(async (request: any) => {
+        let containerCode = null;
+        if (request.containerId) {
+          const container = await storage.getContainer(request.containerId);
+          containerCode = container?.containerCode;
+        }
+        
+        const duplicateCount = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
+        return {
+          ...request,
+          isDuplicate: duplicateCount > 1,
+          duplicateCount
+        };
+      }));
+
       // Apply filters if provided
-      let filteredRequests = requests;
+      let filteredRequests = enrichedRequests;
       const customerId = req.query.customerId as string;
       const technicianId = req.query.technicianId as string;
 

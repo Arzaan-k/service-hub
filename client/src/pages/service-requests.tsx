@@ -496,14 +496,14 @@ export default function ServiceRequests() {
 
                 return (
                 <Card key={(request as any)?._id || request.id} className={`card-surface hover:shadow-soft transition-all overflow-visible ${
-                  request.isDuplicate 
-                    ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-500' 
-                    : request.status === 'completed' 
-                      ? 'bg-green-50/80 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+                  request.status === 'completed' 
+                    ? 'bg-green-50/80 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+                    : request.isDuplicate 
+                      ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-500' 
                       : ''
                 }`}>
                   <CardContent className="p-6">
-                    {/* Duplicate Warning Banner */}
+                    {/* Duplicate Warning Banner - show on all duplicate requests including completed ones */}
                     {request.isDuplicate && (
                       <div className="mb-4 p-3 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center gap-2">
                         <AlertCircle className="h-5 w-5 text-amber-700 dark:text-amber-400 flex-shrink-0" />
@@ -519,7 +519,7 @@ export default function ServiceRequests() {
                           <h3 className="text-lg font-semibold font-mono">
                             <Link to={`/service-requests/${request.id}`}>{request.requestNumber}</Link>
                           </h3>
-                          {request.isDuplicate && (
+                          {request.isDuplicate && request.status !== 'completed' && (
                             <Badge className="bg-amber-500 text-white flex items-center gap-1">
                               <AlertCircle className="h-3 w-3" />
                               Duplicate ({request.duplicateCount}x)
@@ -546,7 +546,7 @@ export default function ServiceRequests() {
                           <div className="flex items-center gap-2 text-sm">
                             <Package className="h-4 w-4 text-muted-foreground" />
                             <span className="font-medium">Container:</span>
-                            <span className={`font-mono ${request.isDuplicate ? 'font-bold text-amber-700 dark:text-amber-400' : ''}`}>
+                            <span className={`font-mono ${request.isDuplicate && request.status !== 'completed' ? 'font-bold text-amber-700 dark:text-amber-400' : ''}`}>
                               {request.container.containerCode}
                             </span>
                           </div>
