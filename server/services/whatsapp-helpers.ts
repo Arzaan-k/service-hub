@@ -22,13 +22,13 @@ function cleanPhone(number: string): string {
   return String(number || '').replace(/\D/g, '');
 }
 
-const EMOJI_REGEX = /[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu;
-
 function sanitizeContent(input?: string | null, options: { trim?: boolean } = {}): string {
   if (!input) {
     return '';
   }
-  let sanitized = input.replace(EMOJI_REGEX, '');
+  // Keep emojis - WhatsApp fully supports them
+  let sanitized = input;
+  // Clean up excessive whitespace
   sanitized = sanitized.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n');
   sanitized = sanitized.replace(/^\s+/, '');
   return options.trim ? sanitized.trim() : sanitized;

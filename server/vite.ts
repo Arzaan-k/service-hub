@@ -61,9 +61,12 @@ export async function setupVite(app: Express, server: Server) {
    */
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
+    
+    console.log("[VITE] Catch-all middleware triggered for:", url);
 
     // Skip API routes
     if (url.startsWith("/api/")) {
+      console.log("[VITE] Skipping API route:", url);
       return next();
     }
 

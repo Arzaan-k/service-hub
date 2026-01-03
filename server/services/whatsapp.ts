@@ -1,4 +1,4 @@
-import { config } from "dotenv";
+﻿import { config } from "dotenv";
 config(); // Load environment variables
 
 import axios from "axios";
@@ -919,10 +919,13 @@ async function handlePhotoUpload(mediaId: string, from: string, user: any, sessi
       }
     });
 
-    await sendTextMessage(
-      from,
-      `✅ Photo ${beforePhotos.length} received.\n\nSend more photos or type *DONE* to continue.`
-    );
+    // Only send confirmation for the first photo to avoid spam
+    if (beforePhotos.length === 1) {
+      await sendTextMessage(
+        from,
+        `Photo received.\n\nSend more photos or type *DONE* to continue.`
+      );
+    }
   } catch (error) {
     console.error('[WhatsApp] Error in handlePhotoUpload:', error);
     await sendTextMessage(from, '❌ Error processing photo. Please try again.');
@@ -957,10 +960,13 @@ async function handleVideoUpload(mediaId: string, from: string, user: any, sessi
       }
     });
 
-    await sendTextMessage(
-      from,
-      `✅ Video ${videos.length} received.\n\nSend more videos or type *DONE* to submit the request.`
-    );
+    // Only send confirmation for the first video to avoid spam
+    if (videos.length === 1) {
+      await sendTextMessage(
+        from,
+        `Video received.\n\nSend more videos or type *DONE* to submit the request.`
+      );
+    }
   } catch (error) {
     console.error('[WhatsApp] Error in handleVideoUpload:', error);
     await sendTextMessage(from, '❌ Error processing video. Please try again.');
@@ -4743,10 +4749,27 @@ function normalizePhoneNumber(phone: string): string[] {
   return Array.from(variations);
 }
 
+// Message deduplication cache
+const processedMessageIds = new Set<string>();
+const MESSAGE_ID_EXPIRY = 5 * 60 * 1000; // 5 minutes
+
 export async function processIncomingMessage(message: any, from: string): Promise<void> {
   const { storage } = await import('../storage');
 
   try {
+    // Check if we've already processed this message (WhatsApp can send duplicates)
+    const messageId = message.id;
+    if (messageId && processedMessageIds.has(messageId)) {
+      console.log(`[WhatsApp] ⚠️ Skipping duplicate message ${messageId} from ${from}`);
+      return;
+    }
+    
+    // Add to processed set and schedule removal
+    if (messageId) {
+      processedMessageIds.add(messageId);
+      setTimeout(() => processedMessageIds.delete(messageId), MESSAGE_ID_EXPIRY);
+    }
+
     console.log(`[WhatsApp] Processing message from ${from}`);
 
     // Get or create user and session

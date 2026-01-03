@@ -2380,7 +2380,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const { customerCommunicationService } = await import('./services/whatsapp');
         const statusChanged = previousRequest && previousRequest.status !== request.status;
-        const updateType = statusChanged ? 'status_changed' : 'updated';
+        
+        // Determine specific notification type based on status change
+        let updateType: 'assigned' | 'started' | 'completed' | 'status_changed' | 'updated' = 'updated';
+        if (statusChanged) {
+          if (request.status === 'in_progress') {
+            updateType = 'started';
+          } else if (request.status === 'completed') {
+            updateType = 'completed';
+          } else {
+            updateType = 'status_changed';
+          }
+        }
+        
         await customerCommunicationService.notifyServiceRequestUpdate(request.id, updateType, previousRequest);
       } catch (notifError) {
         console.error('Failed to send WhatsApp notification:', notifError);

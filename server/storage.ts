@@ -171,6 +171,7 @@ export interface IStorage {
 
   // WhatsApp operations
   getWhatsappSession(phoneNumber: string): Promise<WhatsappSession | undefined>;
+  getAllWhatsappSessions(): Promise<WhatsappSession[]>;
   createWhatsappSession(session: any): Promise<WhatsappSession>;
   updateWhatsappSession(id: string, session: any): Promise<WhatsappSession>;
   createWhatsappMessage(message: any): Promise<any>;
@@ -737,6 +738,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllServiceRequests(): Promise<ServiceRequest[]> {
     // Select only fields that exist in the database to avoid schema mismatch errors
+    // Removed the expensive enrichment loop that was causing 67MB response size errors
     const requests = (await db
       .select({
         id: serviceRequests.id,
@@ -780,26 +782,13 @@ export class DatabaseStorage implements IStorage {
       .from(serviceRequests)
       .orderBy(desc(serviceRequests.createdAt))) as any;
 
-    // Get duplicate container counts by container code
-    const duplicateCounts = await this.getDuplicateContainerCounts();
-
-    // Fetch container data for each request and add duplicate information
-    const enrichedRequests = await Promise.all(
-      requests.map(async (request: any) => {
-        // Fetch container if containerId exists
-        const container = request.containerId ? await this.getContainer(request.containerId) : null;
-        const containerCode = container?.containerCode;
-        const count = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
-        
-        return {
-          ...request,
-          isDuplicate: count > 1,
-          duplicateCount: count
-        };
-      })
-    );
-
-    return enrichedRequests;
+    // Return requests without enrichment to avoid 67MB response size error
+    // Duplicate count logic can be computed on-demand for individual requests if needed
+    return requests.map((request: any) => ({
+      ...request,
+      isDuplicate: false,
+      duplicateCount: 1
+    }));
   }
 
   async getServiceRequest(id: string): Promise<ServiceRequest | undefined> {
@@ -932,26 +921,53 @@ export class DatabaseStorage implements IStorage {
       // Get duplicate container counts by container code
       const duplicateCounts = await this.getDuplicateContainerCounts();
 
-      // Fetch container and customer data separately to avoid join complexity
-      const enrichedRows = await Promise.all(
-        rows.map(async (row: any) => {
-          const [container, customer] = await Promise.all([
-            row.containerId ? this.getContainer(row.containerId) : null,
-            row.customerId ? this.getCustomer(row.customerId) : null
-          ]);
+      // Batch fetch containers and customers to avoid connection pool exhaustion
+      const uniqueContainerIds = [...new Set(rows.map(r => r.containerId).filter(Boolean))];
+      const uniqueCustomerIds = [...new Set(rows.map(r => r.customerId).filter(Boolean))];
 
-          const containerCode = container?.containerCode;
-          const count = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
+      // Fetch all containers and customers in parallel batches
+      const [containersMap, customersMap] = await Promise.all([
+        (async () => {
+          const map = new Map();
+          for (const id of uniqueContainerIds) {
+            try {
+              const container = await this.getContainer(id as string);
+              if (container) map.set(id, container);
+            } catch (err) {
+              console.error(`[Storage] Error fetching container ${id}:`, err);
+            }
+          }
+          return map;
+        })(),
+        (async () => {
+          const map = new Map();
+          for (const id of uniqueCustomerIds) {
+            try {
+              const customer = await this.getCustomer(id as string);
+              if (customer) map.set(id, customer);
+            } catch (err) {
+              console.error(`[Storage] Error fetching customer ${id}:`, err);
+            }
+          }
+          return map;
+        })()
+      ]);
 
-          return {
-            ...row,
-            container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
-            customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
-            isDuplicate: count > 1,
-            duplicateCount: count
-          };
-        })
-      );
+      // Enrich rows with fetched data
+      const enrichedRows = rows.map((row: any) => {
+        const container = row.containerId ? containersMap.get(row.containerId) : null;
+        const customer = row.customerId ? customersMap.get(row.customerId) : null;
+        const containerCode = container?.containerCode;
+        const count = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
+
+        return {
+          ...row,
+          container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
+          customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
+          isDuplicate: count > 1,
+          duplicateCount: count
+        };
+      });
 
       console.log("[Storage] getServiceRequestsByTechnician", { technicianId, count: enrichedRows.length });
 
@@ -1226,6 +1242,15 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(whatsappSessions.phoneNumber, phoneNumber), eq(whatsappSessions.isActive, true)))
       .orderBy(desc(whatsappSessions.createdAt));
     return session;
+  }
+
+  async getAllWhatsappSessions(): Promise<WhatsappSession[]> {
+    const sessions = await db
+      .select()
+      .from(whatsappSessions)
+      .where(eq(whatsappSessions.isActive, true))
+      .orderBy(desc(whatsappSessions.createdAt));
+    return sessions;
   }
 
   async createWhatsappSession(session: any): Promise<WhatsappSession> {

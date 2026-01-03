@@ -97,14 +97,17 @@ export default function ServiceRequests() {
     queryFn: async () => (await apiRequest("GET", "/api/technicians")).json()
   });
 
+  // Only load containers when dialog is open (lazy loading for performance)
   const { data: allContainers } = useQuery<any[]>({
     queryKey: ["/api/containers"],
-    queryFn: async () => (await apiRequest("GET", "/api/containers")).json()
+    queryFn: async () => (await apiRequest("GET", "/api/containers")).json(),
+    enabled: newDialogOpen // Only fetch when creating new service request
   });
 
   const { data: allCustomers } = useQuery<any[]>({
     queryKey: ["/api/customers"],
-    queryFn: async () => (await apiRequest("GET", "/api/customers")).json()
+    queryFn: async () => (await apiRequest("GET", "/api/customers")).json(),
+    enabled: newDialogOpen // Only fetch when creating new service request
   });
 
   // Dependent filtering: when container is selected, show only its customer; when customer selected, filter containers

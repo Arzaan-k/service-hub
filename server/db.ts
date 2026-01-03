@@ -1,13 +1,12 @@
 import 'dotenv/config';
-import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
-import { drizzle as drizzleNeon } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
 import * as schema from "@shared/schema";
 
 // =============================================================================
 // Database Connection Configuration
 // =============================================================================
-// Currently uses Neon Serverless driver (cloud deployment)
+// Uses Neon HTTP driver (more stable than WebSocket for Node.js v22)
 // For Docker/local PostgreSQL, set USE_STANDARD_PG=true and the application
 // will need to be started with the pg driver variant
 // =============================================================================
@@ -18,16 +17,20 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Configure Neon to use WebSocket
-neonConfig.webSocketConstructor = ws;
+// Create HTTP-based Neon connection (more stable than WebSocket)
+const sql = neon(process.env.DATABASE_URL);
 
-// Create connection pool
-export const pool = new NeonPool({ connectionString: process.env.DATABASE_URL });
+// Create Drizzle instance with HTTP client
+export const db = drizzle(sql, { schema });
 
-// Create Drizzle instance
-export const db = drizzleNeon({ client: pool, schema });
+// For backward compatibility, export a dummy pool object
+export const pool = {
+  end: async () => {
+    console.log('[DATABASE] HTTP connection closed');
+  }
+};
 
-console.log('[DATABASE] ✅ Neon serverless connection configured');
+console.log('[DATABASE] ✅ Neon HTTP connection configured');
 
 // =============================================================================
 // Graceful Shutdown Helper
