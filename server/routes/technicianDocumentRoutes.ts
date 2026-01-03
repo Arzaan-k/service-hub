@@ -138,6 +138,35 @@ router.get('/technician/documents/:id/file', async (req: any, res) => {
   }
 });
 
+// Alternative route for serving documents (matches the URL pattern used in frontend)
+router.get('/technicians/documents/:id', authenticateUser, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`[TECHNICIAN DOCUMENTS] Serving document ${id}`);
+    
+    const document = await storage.getTechnicianDocument(id);
+
+    if (!document) {
+      console.error(`[TECHNICIAN DOCUMENTS] Document not found: ${id}`);
+      return res.status(404).send('File not found');
+    }
+
+    if (!document.fileData) {
+      console.error(`[TECHNICIAN DOCUMENTS] Document has no file data: ${id}`);
+      return res.status(404).send('File data not found');
+    }
+
+    console.log(`[TECHNICIAN DOCUMENTS] Serving ${document.filename} (${document.contentType})`);
+    
+    res.setHeader('Content-Type', document.contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${document.filename}"`);
+    res.send(document.fileData);
+  } catch (error) {
+    console.error('[TECHNICIAN DOCUMENTS] Error serving file:', error);
+    res.status(500).send('Error serving file');
+  }
+});
+
 /**
  * TECHNICIAN ROUTES (Requires technician authentication)
  * Note: You'll need to add authenticateTechnician middleware

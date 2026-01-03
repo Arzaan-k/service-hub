@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,15 +24,15 @@ export default function SubmitDocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, UploadedFile>>({});
   const [submitting, setSubmitting] = useState(false);
-  const navigate = useNavigate();
+  const [, setLocation] = useLocation();
   
   useEffect(() => {
     // Check if user is authenticated
     const token = localStorage.getItem('token');
     if (!token) {
-      navigate('/login');
+      setLocation('/login');
     }
-  }, [navigate]);
+  }, [setLocation]);
 
   const handleFileSelect = async (docId: string, file: File) => {
     if (!file) return;
@@ -124,7 +124,7 @@ export default function SubmitDocumentsPage() {
         
         // Navigate to dashboard
         setTimeout(() => {
-          navigate('/technician/dashboard');
+          setLocation('/technician/dashboard');
         }, 1500);
       } else {
         toast.error(data.message || 'Submission failed');
@@ -139,7 +139,7 @@ export default function SubmitDocumentsPage() {
   const handleSkip = () => {
     // Allow skipping but show warning
     if (confirm('You can upload documents later from your profile. Continue to dashboard?')) {
-      navigate('/technician/dashboard');
+      setLocation('/technician/dashboard');
     }
   };
   

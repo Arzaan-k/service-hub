@@ -3,6 +3,7 @@ import {
   users,
   customers,
   technicians,
+  technicianDocuments,
   containers,
   containerMetrics,
   containerOwnershipHistory,
@@ -24,11 +25,14 @@ import {
   ragQueries,
   financeExpenses,
   locationMultipliers,
+  trainingMaterials,
+  trainingViews,
   type User,
   type InsertUser,
   type Customer,
   type InsertCustomer,
   type Technician,
+  type TechnicianDocument,
   type Container,
   type Alert,
   type ServiceRequest,
@@ -54,7 +58,7 @@ import {
   type InsertTechnicianTripTask,
 } from "@shared/schema";
 import { db, pool } from "./db";
-import { eq, and, desc, asc, gte, sql, isNull, ilike, inArray, notInArray } from "drizzle-orm";
+import { eq, and, desc, asc, gte, sql, isNull, isNotNull, ilike, inArray, notInArray } from "drizzle-orm";
 import { Pool as NeonPool } from '@neondatabase/serverless';
 
 // Helper to create a pool for external database connections
@@ -167,6 +171,7 @@ export interface IStorage {
 
   // WhatsApp operations
   getWhatsappSession(phoneNumber: string): Promise<WhatsappSession | undefined>;
+  getAllWhatsappSessions(): Promise<WhatsappSession[]>;
   createWhatsappSession(session: any): Promise<WhatsappSession>;
   updateWhatsappSession(id: string, session: any): Promise<WhatsappSession>;
   createWhatsappMessage(message: any): Promise<any>;
@@ -214,11 +219,28 @@ export interface IStorage {
   createTechnicianTripTask(task: any): Promise<any>;
   updateTechnicianTripTask(id: string, task: any): Promise<any>;
   getLocationMultiplier(city: string): Promise<number>;
-
+  
   // Analytics operations
   getClientAnalytics(range: number): Promise<any[]>;
   getTechnicianAnalytics(range: number): Promise<any[]>;
+  
+  // Training operations
+  createTrainingMaterial(data: any): Promise<any>;
+  getTrainingMaterialsForRole(userRole: string, userId: string): Promise<any[]>;
+  getUnreadTrainingCount(userId: string, userRole: string): Promise<number>;
+  markTrainingAsViewed(materialId: string, userId: string, userRole: string): Promise<void>;
+  getTrainingMaterialFile(materialId: string): Promise<any>;
+  getAllTrainingMaterials(): Promise<any[]>;
+  deleteTrainingMaterial(materialId: string): Promise<void>;
+  updateTrainingMaterial(materialId: string, data: any): Promise<any>;
+  
+  // Location operations
   getLatestTechnicianLocations(): Promise<any[]>;
+  
+  // Expense History operations
+  getTechnicianExpenseHistory(filters: { year: number; month?: number; technicianId?: string }): Promise<any[]>;
+  getTechnicianYearlySummary(year: number): Promise<any[]>;
+  getTechnicianMonthlyBreakdown(technicianId: string, year: number): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -801,7 +823,8 @@ export class DatabaseStorage implements IStorage {
 
   async getAllServiceRequests(): Promise<ServiceRequest[]> {
     // DEPRECATED: Use getServiceRequestsPaginated for better memory efficiency
-    // Limit to 200 most recent to prevent memory issues
+    // Removed expensive enrichment loop that was causing 67MB response size errors
+    // Limit to 50 most recent to prevent memory issues
     return await db
       .select({
         id: serviceRequests.id,
@@ -940,7 +963,33 @@ export class DatabaseStorage implements IStorage {
       })
       .from(serviceRequests)
       .where(eq(serviceRequests.id, id));
-    return request;
+    
+    if (!request) return undefined;
+
+    // Get container to access container code
+    const container = request.containerId ? await this.getContainer(request.containerId) : null;
+    
+    // Get duplicate container counts by container code
+    const duplicateCounts = await this.getDuplicateContainerCounts();
+    
+    const containerCode = container?.containerCode;
+    const count = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
+    const isDuplicate = count > 1;
+    
+    console.log(`[Storage] Service Request ${request.id}:`, {
+      containerId: request.containerId,
+      containerCode,
+      count,
+      isDuplicate,
+      requestNumber: request.requestNumber
+    });
+
+    // Add duplicate information
+    return {
+      ...request,
+      isDuplicate,
+      duplicateCount: count
+    } as any;
   }
 
   async getServiceRequestsByCustomer(customerId: string): Promise<ServiceRequest[]> {
@@ -966,8 +1015,8 @@ export class DatabaseStorage implements IStorage {
 
       // If activeOnly is true, filter by active statuses
       if (activeOnly) {
-        const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'];
-        conditions.push(inArray(serviceRequests.status, activeStatuses));
+        const activeStatuses = ['pending', 'scheduled', 'approved', 'in_progress', 'assigned'] as const;
+        conditions.push(inArray(serviceRequests.status, activeStatuses as any));
       }
 
       // Clean, simple select without nested objects to avoid orderSelectedFields issues
@@ -1000,48 +1049,56 @@ export class DatabaseStorage implements IStorage {
         .orderBy(desc(serviceRequests.createdAt))
         .limit(50); // Memory optimization: limit results to prevent OOM on free tier
 
-      // Fetch container and customer data separately to avoid join complexity
-      const enrichedRows = await Promise.all(
-        rows.map(async (row) => {
-          let container = null;
-          let customer = null;
+      // Get duplicate container counts by container code
+      const duplicateCounts = await this.getDuplicateContainerCounts();
 
-          if (row.containerId) {
+      // Batch fetch containers and customers to avoid connection pool exhaustion
+      const uniqueContainerIds = [...new Set(rows.map(r => r.containerId).filter(Boolean))];
+      const uniqueCustomerIds = [...new Set(rows.map(r => r.customerId).filter(Boolean))];
+
+      // Fetch all containers and customers in parallel batches
+      const [containersMap, customersMap] = await Promise.all([
+        (async () => {
+          const map = new Map();
+          for (const id of uniqueContainerIds) {
             try {
-              container = await this.getContainer(row.containerId);
+              const container = await this.getContainer(id as string);
+              if (container) map.set(id, container);
             } catch (err) {
-              console.warn(`[Storage] Failed to fetch container ${row.containerId}:`, err);
+              console.error(`[Storage] Error fetching container ${id}:`, err);
             }
           }
-
-          if (row.customerId) {
+          return map;
+        })(),
+        (async () => {
+          const map = new Map();
+          for (const id of uniqueCustomerIds) {
             try {
-              customer = await this.getCustomer(row.customerId);
+              const customer = await this.getCustomer(id as string);
+              if (customer) map.set(id, customer);
             } catch (err) {
-              console.warn(`[Storage] Failed to fetch customer ${row.customerId}:`, err);
+              console.error(`[Storage] Error fetching customer ${id}:`, err);
             }
           }
+          return map;
+        })()
+      ]);
 
-          return {
-            ...row,
-            container: container ? {
-              id: container.id,
-              containerCode: container.containerCode,
-              type: container.type,
-              status: container.status,
-              currentLocation: container.currentLocation
-            } : null,
-            customer: customer ? {
-              id: customer.id,
-              companyName: customer.companyName,
-              contactPerson: customer.contactPerson,
-              phone: customer.phone,
-              email: customer.email,
-              address: customer.address
-            } : null
-          };
-        })
-      );
+      // Enrich rows with fetched data
+      const enrichedRows = rows.map((row: any) => {
+        const container = row.containerId ? containersMap.get(row.containerId) : null;
+        const customer = row.customerId ? customersMap.get(row.customerId) : null;
+        const containerCode = container?.containerCode;
+        const count = containerCode ? (duplicateCounts.get(containerCode) || 1) : 1;
+
+        return {
+          ...row,
+          container: container ? { id: container.id, containerCode: container.containerCode, currentLocation: container.currentLocation } : undefined,
+          customer: customer ? { id: customer.id, companyName: customer.companyName } : undefined,
+          isDuplicate: count > 1,
+          duplicateCount: count
+        };
+      });
 
       console.log("[Storage] getServiceRequestsByTechnician", { technicianId, count: enrichedRows.length });
 
@@ -1068,6 +1125,72 @@ export class DatabaseStorage implements IStorage {
         isNull(serviceRequests.actualEndTime)
       ))
       .orderBy(desc(serviceRequests.createdAt));
+  }
+
+  // Duplicate Container Detection Methods - By Container Code
+  async getDuplicateContainerCounts(): Promise<Map<string, number>> {
+    try {
+      // Count service requests per container CODE (not ID) for active statuses
+      // This handles cases where multiple container records exist with the same code
+      const duplicateCounts = await db
+        .select({
+          containerCode: containers.containerCode,
+          count: sql<number>`COUNT(DISTINCT ${serviceRequests.id})::int`.as('count')
+        })
+        .from(serviceRequests)
+        .innerJoin(containers, eq(serviceRequests.containerId, containers.id))
+        .where(
+          and(
+            isNotNull(serviceRequests.containerId),
+            isNotNull(containers.containerCode),
+            inArray(serviceRequests.status, ['pending', 'scheduled', 'approved', 'in_progress'])
+          )
+        )
+        .groupBy(containers.containerCode);
+
+      console.log('[Storage] Duplicate container counts by code:', duplicateCounts);
+
+      // Convert to Map for easy lookup by container code
+      const countMap = new Map<string, number>();
+      duplicateCounts.forEach(item => {
+        if (item.containerCode) {
+          countMap.set(item.containerCode, item.count);
+          console.log(`[Storage] Container code ${item.containerCode} has ${item.count} active requests`);
+        }
+      });
+
+      return countMap;
+    } catch (error) {
+      console.error('[Storage] Error getting duplicate container counts:', error);
+      return new Map();
+    }
+  }
+
+  async getDuplicateContainers(): Promise<any[]> {
+    try {
+      const duplicates = await db
+        .select({
+          containerId: serviceRequests.containerId,
+          containerCode: containers.containerCode,
+          requestCount: sql<number>`COUNT(*)::int`.as('request_count'),
+          serviceRequestIds: sql<string[]>`array_agg(${serviceRequests.id})`.as('service_request_ids')
+        })
+        .from(serviceRequests)
+        .leftJoin(containers, eq(serviceRequests.containerId, containers.id))
+        .where(
+          and(
+            isNotNull(serviceRequests.containerId),
+            inArray(serviceRequests.status, ['pending', 'scheduled', 'approved', 'in_progress'])
+          )
+        )
+        .groupBy(serviceRequests.containerId, containers.containerCode)
+        .having(sql`COUNT(*) > 1`);
+
+      return duplicates;
+    } catch (error) {
+      console.error('[Storage] Error getting duplicate containers:', error);
+      return [];
+    }
   }
 
   async createServiceRequest(request: any): Promise<ServiceRequest> {
@@ -1160,6 +1283,89 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async getTechnicianDocuments(technicianId: string): Promise<TechnicianDocument[]> {
+    try {
+      const documents = await db
+        .select()
+        .from(technicianDocuments)
+        .where(eq(technicianDocuments.technicianId, technicianId))
+        .orderBy(desc(technicianDocuments.uploadedAt));
+      return documents;
+    } catch (error) {
+      console.error('[Storage] Error getting technician documents:', error);
+      return [];
+    }
+  }
+
+  async getTechnicianDocument(documentId: string): Promise<TechnicianDocument | undefined> {
+    try {
+      const [document] = await db
+        .select()
+        .from(technicianDocuments)
+        .where(eq(technicianDocuments.id, documentId));
+      return document;
+    } catch (error) {
+      console.error('[Storage] Error getting technician document:', error);
+      return undefined;
+    }
+  }
+
+  async createTechnicianDocument(data: any): Promise<TechnicianDocument> {
+    try {
+      const [document] = await db
+        .insert(technicianDocuments)
+        .values({
+          technicianId: data.technicianId,
+          documentType: data.documentType,
+          filename: data.filename,
+          fileUrl: data.fileUrl,
+          fileData: data.fileData,
+          fileSize: data.fileSize,
+          contentType: data.contentType,
+        })
+        .returning();
+      console.log(`[Storage] Created technician document: ${document.id} (${data.documentType})`);
+      return document;
+    } catch (error) {
+      console.error('[Storage] Error creating technician document:', error);
+      throw error;
+    }
+  }
+
+  async updateTechnicianDocument(documentId: string, data: any): Promise<TechnicianDocument> {
+    try {
+      const [updated] = await db
+        .update(technicianDocuments)
+        .set({
+          filename: data.filename,
+          fileUrl: data.fileUrl,
+          fileData: data.fileData,
+          fileSize: data.fileSize,
+          contentType: data.contentType,
+          updatedAt: new Date(),
+        })
+        .where(eq(technicianDocuments.id, documentId))
+        .returning();
+      console.log(`[Storage] Updated technician document: ${documentId}`);
+      return updated;
+    } catch (error) {
+      console.error('[Storage] Error updating technician document:', error);
+      throw error;
+    }
+  }
+
+  async deleteTechnicianDocument(documentId: string): Promise<void> {
+    try {
+      await db
+        .delete(technicianDocuments)
+        .where(eq(technicianDocuments.id, documentId));
+      console.log(`[Storage] Deleted technician document: ${documentId}`);
+    } catch (error) {
+      console.error('[Storage] Error deleting technician document:', error);
+      throw error;
+    }
+  }
+
   async getWhatsappSession(phoneNumber: string): Promise<WhatsappSession | undefined> {
     const [session] = await db
       .select()
@@ -1167,6 +1373,15 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(whatsappSessions.phoneNumber, phoneNumber), eq(whatsappSessions.isActive, true)))
       .orderBy(desc(whatsappSessions.createdAt));
     return session;
+  }
+
+  async getAllWhatsappSessions(): Promise<WhatsappSession[]> {
+    const sessions = await db
+      .select()
+      .from(whatsappSessions)
+      .where(eq(whatsappSessions.isActive, true))
+      .orderBy(desc(whatsappSessions.createdAt));
+    return sessions;
   }
 
   async createWhatsappSession(session: any): Promise<WhatsappSession> {
@@ -1917,7 +2132,12 @@ export class DatabaseStorage implements IStorage {
   async createCourierShipment(shipment: InsertCourierShipment): Promise<CourierShipment> {
     const [newShipment] = await db
       .insert(courierShipments)
-      .values(shipment)
+      .values({
+        ...shipment,
+        id: shipment.id || crypto.randomUUID(),
+        createdAt: shipment.createdAt || new Date(),
+        updatedAt: shipment.updatedAt || new Date()
+      })
       .returning();
     return newShipment;
   }
@@ -2258,7 +2478,7 @@ export class DatabaseStorage implements IStorage {
         const externalPool = await createExternalPool(externalUrl);
         try {
           const res = await externalPool.query(queryText);
-          rows = res.rows as any[];
+          rows = res.rows;
         } finally {
           await externalPool.end();
         }
@@ -2338,16 +2558,15 @@ export class DatabaseStorage implements IStorage {
   async getInventoryTransactions(itemId?: string, limit: number = 100): Promise<any[]> {
     let query = db
       .select()
-      .from(inventoryTransactions)
-      .where(sql`1=1`) // Always true condition to satisfy where requirement
-      .orderBy(desc(inventoryTransactions.timestamp))
-      .limit(limit);
+      .from(inventoryTransactions);
 
     if (itemId) {
       query = query.where(eq(inventoryTransactions.itemId, itemId));
     }
 
-    return await query;
+    return await query
+      .orderBy(desc(inventoryTransactions.timestamp))
+      .limit(limit);
   }
 
   async createInventoryTransaction(transactionData: any): Promise<any> {
@@ -2438,11 +2657,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getScheduledServicesByTechnician(technicianId: string, date?: string): Promise<ScheduledService[]> {
-    let query = db
-      .select()
-      .from(scheduledServices)
-      .where(eq(scheduledServices.technicianId, technicianId))
-      .orderBy(scheduledServices.sequenceNumber);
+    const conditions: any[] = [eq(scheduledServices.technicianId, technicianId)];
 
     if (date) {
       const startOfDay = new Date(date);
@@ -2450,13 +2665,17 @@ export class DatabaseStorage implements IStorage {
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
-      query = query.where(and(
+      conditions.push(
         sql`${scheduledServices.scheduledDate} >= ${startOfDay}`,
         sql`${scheduledServices.scheduledDate} <= ${endOfDay}`
-      ));
+      );
     }
 
-    return await query;
+    return await db
+      .select()
+      .from(scheduledServices)
+      .where(and(...conditions))
+      .orderBy(scheduledServices.sequenceNumber);
   }
 
   async createScheduledService(service: any): Promise<ScheduledService> {
@@ -2830,6 +3049,301 @@ export class DatabaseStorage implements IStorage {
     return results;
   }
 
+  async getClientAnalytics(range: number): Promise<any[]> {
+    // Calculate date range
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - range);
+
+    // Fetch all customers
+    const allCustomers = await this.getAllCustomers();
+
+    // For each customer, gather stats
+    const results = await Promise.all(allCustomers.map(async (customer) => {
+      // Get containers
+      const customerContainers = await this.getContainersByCustomer(customer.id);
+
+      // Get service requests
+      const customerSRs = await this.getServiceRequestsByCustomer(customer.id);
+
+      const completedSRs = customerSRs.filter(sr =>
+        sr.status === 'completed' &&
+        sr.actualEndTime && new Date(sr.actualEndTime) >= startDate
+      );
+
+      const pendingSRs = customerSRs.filter(sr =>
+        ['pending', 'approved', 'scheduled', 'in_progress'].includes(sr.status)
+      );
+
+      const overdueSRs = customerSRs.filter(sr =>
+        sr.status !== 'completed' &&
+        sr.status !== 'cancelled' &&
+        sr.scheduledDate && new Date(sr.scheduledDate) < new Date()
+      );
+
+      const totalPMs = customerSRs.length;
+
+      // Compliance: (Completed / (Completed + Overdue)) * 100
+      // If no completed or overdue, 100% compliance? Or 0?
+      // Let's use a simple metric: Completed / (Completed + Overdue + Pending)
+      const totalActive = completedSRs.length + overdueSRs.length + pendingSRs.length;
+      const compliance = totalActive > 0 ? (completedSRs.length / totalActive) * 100 : 100;
+
+      // Last activity
+      const lastActivity = customerSRs.length > 0 ? customerSRs[0].updatedAt : null;
+
+      return {
+        client_id: customer.id,
+        client_name: customer.companyName,
+        container_count: customerContainers.length,
+        total_pms: totalPMs,
+        completed: completedSRs.length,
+        pending: pendingSRs.length,
+        overdue: overdueSRs.length,
+        never: 0, // Placeholder
+        compliance_percentage: Math.round(compliance * 10) / 10,
+        last_activity: lastActivity ? new Date(lastActivity).toISOString().split('T')[0] : null
+      };
+    }));
+
+    return results;
+  }
+
+  async getTechnicianAnalytics(range: number): Promise<any[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - range);
+
+    const allTechnicians = await this.getAllTechnicians();
+
+    const results = await Promise.all(allTechnicians.map(async (tech) => {
+      // Get user details for name
+      const user = await this.getUser(tech.userId);
+
+      // Get assigned service requests
+      const techSRs = await db
+        .select()
+        .from(serviceRequests)
+        .where(eq(serviceRequests.assignedTechnicianId, tech.id));
+
+      const completedSRs = techSRs.filter(sr =>
+        sr.status === 'completed' &&
+        sr.actualEndTime && new Date(sr.actualEndTime) >= startDate
+      );
+
+      const pendingSRs = techSRs.filter(sr =>
+        ['pending', 'approved', 'scheduled', 'in_progress'].includes(sr.status)
+      );
+
+      const overdueSRs = techSRs.filter(sr =>
+        sr.status !== 'completed' &&
+        sr.status !== 'cancelled' &&
+        sr.scheduledDate && new Date(sr.scheduledDate) < new Date()
+      );
+
+      // Travel Cost from trips
+      const trips = await this.getTechnicianTrips({ technicianId: tech.id, startDate });
+      let totalTravelCost = 0;
+
+      for (const trip of trips) {
+        const costs = await this.getTechnicianTripCosts(trip.id);
+        if (costs && costs.totalEstimatedCost) {
+          totalTravelCost += Number(costs.totalEstimatedCost);
+        }
+      }
+
+      const totalAssigned = techSRs.length;
+      const completionRate = totalAssigned > 0 ? (completedSRs.length / totalAssigned) * 100 : 0;
+
+      // Last completed date
+      const lastCompleted = completedSRs.length > 0
+        ? completedSRs.sort((a, b) => new Date(b.actualEndTime!).getTime() - new Date(a.actualEndTime!).getTime())[0].actualEndTime
+        : null;
+
+      return {
+        technician_id: tech.id,
+        technician_name: user?.name || 'Unknown',
+        total_assigned: totalAssigned,
+        completed: completedSRs.length,
+        pending: pendingSRs.length,
+        overdue: overdueSRs.length,
+        travel_cost: totalTravelCost,
+        pm_completion_rate: Math.round(completionRate * 10) / 10,
+        last_completed_date: lastCompleted ? new Date(lastCompleted).toISOString().split('T')[0] : null
+      };
+    }));
+
+    return results;
+  }
+
+  // Training Module Methods
+  async createTrainingMaterial(data: any): Promise<any> {
+    const [material] = await db
+      .insert(trainingMaterials)
+      .values({
+        id: crypto.randomUUID(),
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        fileType: data.fileType,
+        fileName: data.fileName,
+        fileData: data.fileData,
+        fileSize: data.fileSize,
+        contentType: data.contentType,
+        forClient: data.forClient,
+        forTechnician: data.forTechnician,
+        uploadedBy: data.uploadedBy,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+      .returning();
+    
+    return material;
+  }
+
+  async getTrainingMaterialsForRole(userRole: string, userId: string): Promise<any[]> {
+    // Check if user is a client or a technician variant (technician, senior_technician, amc)
+    const isClient = userRole.toLowerCase() === 'client';
+    const roleColumn = isClient ? trainingMaterials.forClient : trainingMaterials.forTechnician;
+    
+    const materials = await db
+      .select({
+        id: trainingMaterials.id,
+        title: trainingMaterials.title,
+        description: trainingMaterials.description,
+        category: trainingMaterials.category,
+        fileType: trainingMaterials.fileType,
+        fileName: trainingMaterials.fileName,
+        fileSize: trainingMaterials.fileSize,
+        contentType: trainingMaterials.contentType,
+        createdAt: trainingMaterials.createdAt,
+        viewedAt: trainingViews.viewedAt,
+        isViewed: sql<boolean>`${trainingViews.id} IS NOT NULL`
+      })
+      .from(trainingMaterials)
+      .leftJoin(
+        trainingViews,
+        and(
+          eq(trainingViews.materialId, trainingMaterials.id),
+          eq(trainingViews.userId, userId)
+        )
+      )
+      .where(eq(roleColumn, true))
+      .orderBy(desc(trainingMaterials.createdAt));
+    
+    return materials;
+  }
+
+  async getUnreadTrainingCount(userId: string, userRole: string): Promise<number> {
+    // Check if user is a client or a technician variant (technician, senior_technician, amc)
+    const isClient = userRole.toLowerCase() === 'client';
+    const roleColumn = isClient ? trainingMaterials.forClient : trainingMaterials.forTechnician;
+    
+    const result = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(trainingMaterials)
+      .leftJoin(
+        trainingViews,
+        and(
+          eq(trainingViews.materialId, trainingMaterials.id),
+          eq(trainingViews.userId, userId)
+        )
+      )
+      .where(
+        and(
+          eq(roleColumn, true),
+          isNull(trainingViews.id)
+        )
+      );
+    
+    return result[0]?.count || 0;
+  }
+
+  async markTrainingAsViewed(materialId: string, userId: string, userRole: string): Promise<void> {
+    try {
+      console.log('[Training] Recording view:', { materialId, userId, userRole });
+      const result = await db
+        .insert(trainingViews)
+        .values({
+          id: crypto.randomUUID(),
+          materialId,
+          userId,
+          userRole,
+          viewedAt: new Date()
+        })
+        .onConflictDoNothing()
+        .returning();
+      console.log('[Training] View recorded successfully:', result.length > 0 ? 'new view' : 'duplicate view');
+    } catch (error) {
+      // Ignore duplicate key errors
+      console.log('[Training] View already recorded or error:', error);
+    }
+  }
+
+  async getTrainingMaterialFile(materialId: string): Promise<any> {
+    const [material] = await db
+      .select({
+        fileData: trainingMaterials.fileData,
+        fileName: trainingMaterials.fileName,
+        contentType: trainingMaterials.contentType,
+        fileSize: trainingMaterials.fileSize
+      })
+      .from(trainingMaterials)
+      .where(eq(trainingMaterials.id, materialId));
+    
+    return material;
+  }
+
+  async getAllTrainingMaterials(): Promise<any[]> {
+    const materials = await db
+      .select({
+        id: trainingMaterials.id,
+        title: trainingMaterials.title,
+        description: trainingMaterials.description,
+        category: trainingMaterials.category,
+        fileType: trainingMaterials.fileType,
+        fileName: trainingMaterials.fileName,
+        fileSize: trainingMaterials.fileSize,
+        forClient: trainingMaterials.forClient,
+        forTechnician: trainingMaterials.forTechnician,
+        createdAt: trainingMaterials.createdAt,
+        viewCount: sql<number>`COALESCE(COUNT(${trainingViews.id}), 0)::int`
+      })
+      .from(trainingMaterials)
+      .leftJoin(trainingViews, eq(trainingViews.materialId, trainingMaterials.id))
+      .groupBy(
+        trainingMaterials.id,
+        trainingMaterials.title,
+        trainingMaterials.description,
+        trainingMaterials.category,
+        trainingMaterials.fileType,
+        trainingMaterials.fileName,
+        trainingMaterials.fileSize,
+        trainingMaterials.forClient,
+        trainingMaterials.forTechnician,
+        trainingMaterials.createdAt
+      )
+      .orderBy(desc(trainingMaterials.createdAt));
+    
+    return materials;
+  }
+
+  async deleteTrainingMaterial(materialId: string): Promise<void> {
+    await db
+      .delete(trainingMaterials)
+      .where(eq(trainingMaterials.id, materialId));
+  }
+
+  async updateTrainingMaterial(materialId: string, data: any): Promise<any> {
+    const [updated] = await db
+      .update(trainingMaterials)
+      .set({
+        ...data,
+        updatedAt: new Date()
+      })
+      .where(eq(trainingMaterials.id, materialId))
+      .returning();
+    
+    return updated;
+  }
 
   // Connection pool for external Service Hub database
   private serviceHubPool = new NeonPool({
@@ -2959,6 +3473,249 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('[Storage] ❌ Error fetching local technicians:', error);
       return [];
+    }
+  }
+
+  // Expense History Methods
+  async getTechnicianExpenseHistory(filters: { year: number; month?: number; technicianId?: string }): Promise<any[]> {
+    try {
+      const { year, month, technicianId } = filters;
+      
+      console.log(`[Storage] Fetching expense history for year: ${year}, month: ${month || 'all'}, technicianId: ${technicianId || 'all'}`);
+      
+      // Build conditions
+      const conditions = [
+        eq(serviceRequests.status, 'completed'),
+        sql`EXTRACT(YEAR FROM ${serviceRequests.scheduledDate}) = ${year}`
+      ];
+      
+      if (month) {
+        conditions.push(sql`EXTRACT(MONTH FROM ${serviceRequests.scheduledDate}) = ${month}`);
+      }
+      
+      if (technicianId) {
+        conditions.push(eq(serviceRequests.assignedTechnicianId, technicianId));
+      }
+      
+      // Get all technicians
+      const allTechnicians = await this.getAllTechnicians();
+      
+      // Calculate expenses for each technician
+      const expenses = await Promise.all(
+        allTechnicians.map(async (tech) => {
+          // Get user details for name
+          const user = await this.getUser(tech.userId);
+          
+          // Get completed service requests for this technician in the period
+          const techServiceRequests = await db
+            .select({
+              id: serviceRequests.id,
+              scheduledDate: serviceRequests.scheduledDate
+            })
+            .from(serviceRequests)
+            .where(
+              and(
+                eq(serviceRequests.assignedTechnicianId, tech.id),
+                ...conditions
+              )
+            );
+          
+          // Count unique days worked
+          const uniqueDates = new Set(
+            techServiceRequests
+              .filter(sr => sr.scheduledDate)
+              .map(sr => new Date(sr.scheduledDate!).toISOString().split('T')[0])
+          );
+          const daysWorked = uniqueDates.size;
+          const servicesCompleted = techServiceRequests.length;
+          
+          // Get wage breakdown from technician profile
+          const dailyWage = Number(tech.grade) || 0;
+          const hotelAllowance = Number(tech.hotelAllowance) || 0;
+          const foodAllowance = Number(tech.foodAllowance) || 0;
+          const localTravelAllowance = Number(tech.localTravelAllowance) || 0;
+          const personalAllowance = Number(tech.personalAllowance) || 0;
+          
+          // Calculate totals
+          const totalWages = daysWorked * dailyWage;
+          const dailyAllowances = hotelAllowance + foodAllowance + localTravelAllowance + personalAllowance;
+          const totalAllowances = daysWorked * dailyAllowances;
+          const totalCost = totalWages + totalAllowances;
+          
+          return {
+            technicianId: tech.id,
+            technicianName: user?.name || tech.employeeCode || 'Unknown',
+            designation: tech.designation || 'N/A',
+            employeeCode: tech.employeeCode,
+            year,
+            month: month || null,
+            daysWorked,
+            servicesCompleted,
+            dailyWage,
+            totalWages,
+            totalAllowances,
+            totalCost,
+            breakdown: {
+              hotelAllowance: hotelAllowance * daysWorked,
+              foodAllowance: foodAllowance * daysWorked,
+              localTravelAllowance: localTravelAllowance * daysWorked,
+              personalAllowance: personalAllowance * daysWorked
+            }
+          };
+        })
+      );
+      
+      // Filter out technicians with no activity if filtering by specific period
+      const filteredExpenses = expenses.filter(e => e.daysWorked > 0 || !technicianId);
+      
+      console.log(`[Storage] Found ${filteredExpenses.length} technician expense records`);
+      return filteredExpenses;
+    } catch (error) {
+      console.error('[Storage] Error fetching technician expense history:', error);
+      throw error;
+    }
+  }
+
+  async getTechnicianYearlySummary(year: number): Promise<any[]> {
+    try {
+      console.log(`[Storage] Fetching yearly summary for year: ${year}`);
+      
+      const allTechnicians = await this.getAllTechnicians();
+      
+      const summary = await Promise.all(
+        allTechnicians.map(async (tech) => {
+          const user = await this.getUser(tech.userId);
+          
+          // Get all completed service requests for the year
+          const techServiceRequests = await db
+            .select({
+              id: serviceRequests.id,
+              scheduledDate: serviceRequests.scheduledDate
+            })
+            .from(serviceRequests)
+            .where(
+              and(
+                eq(serviceRequests.assignedTechnicianId, tech.id),
+                eq(serviceRequests.status, 'completed'),
+                sql`EXTRACT(YEAR FROM ${serviceRequests.scheduledDate}) = ${year}`
+              )
+            );
+          
+          // Count unique days worked
+          const uniqueDates = new Set(
+            techServiceRequests
+              .filter(sr => sr.scheduledDate)
+              .map(sr => new Date(sr.scheduledDate!).toISOString().split('T')[0])
+          );
+          const totalDaysWorked = uniqueDates.size;
+          const totalServicesCompleted = techServiceRequests.length;
+          
+          // Calculate total cost
+          const dailyWage = Number(tech.grade) || 0;
+          const dailyAllowances = 
+            (Number(tech.hotelAllowance) || 0) +
+            (Number(tech.foodAllowance) || 0) +
+            (Number(tech.localTravelAllowance) || 0) +
+            (Number(tech.personalAllowance) || 0);
+          
+          const totalCost = totalDaysWorked * (dailyWage + dailyAllowances);
+          
+          return {
+            technicianId: tech.id,
+            technicianName: user?.name || tech.employeeCode || 'Unknown',
+            designation: tech.designation || 'N/A',
+            totalDaysWorked,
+            totalServicesCompleted,
+            totalCost
+          };
+        })
+      );
+      
+      console.log(`[Storage] Generated yearly summary for ${summary.length} technicians`);
+      return summary;
+    } catch (error) {
+      console.error('[Storage] Error fetching yearly summary:', error);
+      throw error;
+    }
+  }
+
+  async getTechnicianMonthlyBreakdown(technicianId: string, year: number): Promise<any[]> {
+    try {
+      console.log(`[Storage] Fetching monthly breakdown for technician: ${technicianId}, year: ${year}`);
+      
+      const technician = await this.getTechnician(technicianId);
+      if (!technician) {
+        throw new Error('Technician not found');
+      }
+      
+      // Get wage breakdown
+      const dailyWage = Number(technician.grade) || 0;
+      const dailyAllowances = 
+        (Number(technician.hotelAllowance) || 0) +
+        (Number(technician.foodAllowance) || 0) +
+        (Number(technician.localTravelAllowance) || 0) +
+        (Number(technician.personalAllowance) || 0);
+      
+      // Get all completed service requests for the year
+      const serviceRequestsForYear = await db
+        .select({
+          id: serviceRequests.id,
+          scheduledDate: serviceRequests.scheduledDate
+        })
+        .from(serviceRequests)
+        .where(
+          and(
+            eq(serviceRequests.assignedTechnicianId, technicianId),
+            eq(serviceRequests.status, 'completed'),
+            sql`EXTRACT(YEAR FROM ${serviceRequests.scheduledDate}) = ${year}`
+          )
+        );
+      
+      // Group by month
+      const monthlyData: Record<number, { dates: Set<string>; count: number }> = {};
+      
+      serviceRequestsForYear.forEach(sr => {
+        if (sr.scheduledDate) {
+          const date = new Date(sr.scheduledDate);
+          const month = date.getMonth() + 1; // 1-12
+          const dateStr = date.toISOString().split('T')[0];
+          
+          if (!monthlyData[month]) {
+            monthlyData[month] = { dates: new Set(), count: 0 };
+          }
+          
+          monthlyData[month].dates.add(dateStr);
+          monthlyData[month].count++;
+        }
+      });
+      
+      // Create breakdown for all 12 months
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      
+      const breakdown = monthNames.map((monthName, index) => {
+        const month = index + 1;
+        const data = monthlyData[month] || { dates: new Set(), count: 0 };
+        const daysWorked = data.dates.size;
+        const servicesCompleted = data.count;
+        const totalCost = daysWorked * (dailyWage + dailyAllowances);
+        
+        return {
+          month,
+          monthName,
+          daysWorked,
+          servicesCompleted,
+          totalCost
+        };
+      });
+      
+      console.log(`[Storage] Generated monthly breakdown for technician ${technicianId}`);
+      return breakdown;
+    } catch (error) {
+      console.error('[Storage] Error fetching monthly breakdown:', error);
+      throw error;
     }
   }
 }

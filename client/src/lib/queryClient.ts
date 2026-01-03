@@ -32,7 +32,9 @@ export async function apiRequest(
 
   const headers: Record<string, string> = {};
 
-  if (data) {
+  // Only set Content-Type for non-FormData requests
+  // FormData will set its own Content-Type with boundary
+  if (data && !(data instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
 
@@ -83,17 +85,17 @@ export async function apiRequest(
   console.log(`[API] ${method} ${fullUrl}`);
 
   let res: Response;
-  try {
-    res = await fetch(fullUrl, {
-      method,
-      headers,
-      body: data ? JSON.stringify(data) : undefined,
-      credentials: "include",
-    });
-  } catch (fetchError) {
-    console.error(`[API] Network error ${method} ${fullUrl}:`, fetchError);
-    throw new Error(`Network error: Unable to ${method} ${fullUrl}. Please check your connection and ensure the server is running.`);
-  }
+try {
+  res = await fetch(fullUrl, {
+    method,
+    headers,
+    body: data ? (data instanceof FormData ? data : JSON.stringify(data)) : undefined,
+    credentials: "include",
+  });
+} catch (fetchError) {
+  console.error(`[API] Network error ${method} ${fullUrl}:`, fetchError);
+  throw new Error(`Network error: Unable to ${method} ${fullUrl}. Please check your connection and ensure the server is running.`);
+}
 
   console.log(`[API Response] ${method} ${fullUrl}`, { status: res.status, statusText: res.statusText });
 

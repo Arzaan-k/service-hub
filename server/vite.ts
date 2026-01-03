@@ -61,19 +61,27 @@ export async function setupVite(app: Express, server: Server) {
    */
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
+    
+    console.log("[VITE] Catch-all middleware triggered for:", url);
 
     // Skip API routes
     if (url.startsWith("/api/")) {
+      console.log("[VITE] Skipping API route:", url);
       return next();
     }
 
     try {
+      // Use process.cwd() to get the project root instead of __dirname
+      // because __dirname points to dist/server in compiled code
       const clientTemplate = path.resolve(
-        __dirname,
-        "..",
+        process.cwd(),
         "client",
         "index.html"
       );
+
+      console.log("[VITE] Attempting to serve:", url);
+      console.log("[VITE] Template path:", clientTemplate);
+      console.log("[VITE] Template exists:", fs.existsSync(clientTemplate));
 
       // Always reload index.html from disk (in case of changes)
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
@@ -89,8 +97,8 @@ export async function setupVite(app: Express, server: Server) {
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
 
-
       console.error("[VITE] Middleware error:", e);
+      console.error("[VITE] Error stack:", (e as Error).stack);
       next(e);
     }
   });

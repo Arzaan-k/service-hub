@@ -232,17 +232,27 @@ function getMissingDocuments(documents: any[]) {
  */
 export async function sendDocumentReminderEmail(technicianId: string) {
   try {
+    console.log(`[TECHNICIAN DOCUMENTS] Fetching technician ${technicianId}...`);
     const technician = await storage.getTechnician(technicianId);
     if (!technician) {
+      console.error(`[TECHNICIAN DOCUMENTS] Technician not found: ${technicianId}`);
       throw new Error('Technician not found');
     }
+    console.log(`[TECHNICIAN DOCUMENTS] Technician found: ${technician.userId}`);
 
     const user = await storage.getUser(technician.userId);
-    if (!user || !user.email) {
+    if (!user) {
+      console.error(`[TECHNICIAN DOCUMENTS] User not found for technician: ${technician.userId}`);
+      throw new Error('Technician user not found');
+    }
+    if (!user.email) {
+      console.error(`[TECHNICIAN DOCUMENTS] User has no email: ${user.id}`);
       throw new Error('Technician email not found');
     }
+    console.log(`[TECHNICIAN DOCUMENTS] User email: ${user.email}`);
 
     const documents = await storage.getTechnicianDocuments(technicianId);
+    console.log(`[TECHNICIAN DOCUMENTS] Documents count: ${documents.length}`);
     const uploadUrl = `${CLIENT_URL}/technician/submit-documents`;
 
     const emailHtml = `

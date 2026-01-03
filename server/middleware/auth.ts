@@ -79,8 +79,18 @@ export function requireRole(...roles: string[]) {
     if (roles.length > 0) {
       const userRole = (req.user.role || "client").toLowerCase();
       const allowed = roles.map(r => r.toLowerCase()).includes(userRole);
+      
+      // Debug logging
+      if (process.env.NODE_ENV === 'development') {
+        console.log("[requireRole] Checking role access:");
+        console.log("  - User ID:", req.user.id);
+        console.log("  - User Role:", userRole);
+        console.log("  - Required Roles:", roles);
+        console.log("  - Allowed:", allowed);
+      }
+      
       if (!allowed) {
-        return res.status(403).json({ error: "Forbidden" });
+        return res.status(403).json({ error: "Forbidden", message: `Role '${userRole}' not authorized. Required: ${roles.join(', ')}` });
       }
     }
 

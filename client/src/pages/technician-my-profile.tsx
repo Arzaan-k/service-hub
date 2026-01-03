@@ -14,7 +14,7 @@ import { MapPin, Phone, Star, Wrench, Save, Edit, FileText, Upload, Download, Ch
 import { getCurrentUser } from "@/lib/auth";
 import WageBreakdown from "@/components/wage-breakdown";
 import MapMyIndiaAutocomplete from "@/components/map-my-india-autocomplete";
-import { useNavigate } from "react-router-dom";
+import { useLocation } from "wouter";
 
 interface Technician {
   id: string;
@@ -214,8 +214,8 @@ export default function TechnicianMyProfile() {
 // Documents Section Component
 function TechnicianDocumentsSection({ technicianId }: { technicianId: string }) {
   const { toast } = useToast();
-  const navigate = useNavigate();
-  const [uploading, setUploading] = useState(false);
+  const [, setLocation] = useLocation();
+  const [uploadingDocs, setUploadingDocs] = useState<Record<string, boolean>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const DOCUMENT_TYPES = [
@@ -268,7 +268,7 @@ function TechnicianDocumentsSection({ technicianId }: { technicianId: string }) 
       return;
     }
 
-    setUploading(true);
+    setUploadingDocs(prev => ({ ...prev, [docType]: true }));
 
     try {
       const formData = new FormData();
@@ -298,7 +298,7 @@ function TechnicianDocumentsSection({ technicianId }: { technicianId: string }) 
         variant: "destructive",
       });
     } finally {
-      setUploading(false);
+      setUploadingDocs(prev => ({ ...prev, [docType]: false }));
     }
   };
 
@@ -323,7 +323,7 @@ function TechnicianDocumentsSection({ technicianId }: { technicianId: string }) 
             <Button 
               variant="outline" 
               size="sm"
-              onClick={() => navigate('/technician/submit-documents')}
+              onClick={() => setLocation('/technician/submit-documents')}
             >
               <Upload className="h-4 w-4 mr-2" />
               Upload All
@@ -391,9 +391,9 @@ function TechnicianDocumentsSection({ technicianId }: { technicianId: string }) 
                       variant={doc ? "outline" : "default"}
                       size="sm"
                       onClick={() => fileInputRefs.current[docType.id]?.click()}
-                      disabled={uploading}
+                      disabled={uploadingDocs[docType.id]}
                     >
-                      {uploading ? (
+                      {uploadingDocs[docType.id] ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
@@ -415,7 +415,7 @@ function TechnicianDocumentsSection({ technicianId }: { technicianId: string }) 
 
 // Document Reminder Banner Component
 function DocumentReminderBanner({ technicianId }: { technicianId: string }) {
-  const navigate = useNavigate();
+  const [, setLocation] = useLocation();
   const [dismissed, setDismissed] = useState(false);
 
   // Fetch document status
@@ -457,7 +457,7 @@ function DocumentReminderBanner({ technicianId }: { technicianId: string }) {
             <div className="flex gap-2 mt-4">
               <Button 
                 size="sm"
-                onClick={() => navigate('/technician/submit-documents')}
+                onClick={() => setLocation('/technician/submit-documents')}
                 className="bg-orange-600 hover:bg-orange-700"
               >
                 <Upload className="h-4 w-4 mr-2" />

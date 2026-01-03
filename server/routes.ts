@@ -45,14 +45,16 @@ import {
   recalculateTripCosts
 } from "./services/travel-planning";
 import { db } from './db';
-import { sql, eq, desc, isNotNull, isNull, and } from 'drizzle-orm';
+import { sql, eq, desc, isNotNull, isNull, and, or, not, inArray, SQL } from 'drizzle-orm';
 import { generateServiceReportPDF } from './services/pdfGenerator';
 import { sendEmail } from './services/emailService';
-import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers } from '@shared/schema';
+import { serviceReportPdfs, serviceRequests, serviceRequestRemarks, serviceRequestRecordings, containers, customers, feedback } from '@shared/schema';
 import { acknowledgeSummary } from './services/dailySummaryService';
+import technicianDocumentRoutes from './routes/technicianDocumentRoutes';
 import { getServiceSummaryScheduler } from './services/serviceSummaryScheduler';
 import { getWeeklySummaryScheduler } from './services/weeklySummaryScheduler';
 import { registerFinanceRoutes } from "./routes/finance";
+import trainingRoutes from './routes/training';
 
 // Initialize RAG services
 const ragAdapter = new RagAdapter();
@@ -107,6 +109,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Finance Routes
   registerFinanceRoutes(app);
+
+  // Register Training Routes
+  app.use('/api', trainingRoutes);
+
+  // Register Technician Document Routes
+  app.use('/api', technicianDocumentRoutes);
 
   // Third-party technicians helper functions (defined early for use throughout routes)
   const thirdPartyDir = path.join(process.cwd(), "server", "data");
@@ -1287,11 +1295,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(data);
     } catch (error) {
       console.error('Error fetching technician analytics:', error);
-      console.error('Error stack:', error.stack);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'N/A');
       res.status(500).json({
         error: "Failed to fetch technician analytics",
-        details: error.message,
-        stack: error.stack
+        details: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
     }
   });
@@ -2283,6 +2291,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get duplicate containers summary
+  app.get("/api/service-requests/duplicates", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const duplicates = await storage.getDuplicateContainers();
+      res.json(duplicates);
+    } catch (error: any) {
+      console.error('[API] Error fetching duplicate containers:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Debug endpoint to check container IDs
+  app.get("/api/debug/service-requests-containers", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { db } = await import('./db');
+      const { serviceRequests, containers } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      const requests = await db
+        .select({
+          id: serviceRequests.id,
+          requestNumber: serviceRequests.requestNumber,
+          jobOrder: serviceRequests.jobOrder,
+          containerId: serviceRequests.containerId,
+          status: serviceRequests.status,
+          containerCode: containers.containerCode
+        })
+        .from(serviceRequests)
+        .leftJoin(containers, eq(serviceRequests.containerId, containers.id))
+        .limit(50);
+
+      res.json(requests);
+    } catch (error: any) {
+      console.error('[API] Error fetching debug data:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Service History from imported Excel data
   app.get("/api/service-history", authenticateUser, async (req: AuthRequest, res) => {
     try {
@@ -2420,7 +2466,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const { customerCommunicationService } = await import('./services/whatsapp');
         const statusChanged = previousRequest && previousRequest.status !== request.status;
-        const updateType = statusChanged ? 'status_changed' : 'updated';
+        
+        // Determine specific notification type based on status change
+        let updateType: 'assigned' | 'started' | 'completed' | 'status_changed' | 'updated' = 'updated';
+        if (statusChanged) {
+          if (request.status === 'in_progress') {
+            updateType = 'started';
+          } else if (request.status === 'completed') {
+            updateType = 'completed';
+          } else {
+            updateType = 'status_changed';
+          }
+        }
+        
         await customerCommunicationService.notifyServiceRequestUpdate(request.id, updateType, previousRequest);
       } catch (notifError) {
         console.error('Failed to send WhatsApp notification:', notifError);
@@ -3536,7 +3594,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const cityClientMapping: Record<string, string[]> = {}; // Maps city to list of clients
 
         for (const sr of techServices) {
-          const container = sr.container || await storage.getContainer(sr.containerId).catch(() => null);
+          const srAny = sr as any; // Type assertion for optional properties
+          const container = srAny.container || await storage.getContainer(sr.containerId).catch(() => null);
           // Load customer data if not already populated
           const customer = sr.customerId ? await storage.getCustomer(sr.customerId).catch(() => null) : null;
           let clientName = customer?.companyName || 'Unknown Client';
@@ -3546,8 +3605,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (container && container.depot) {
             city = container.depot.trim();
           }
-          if (city === 'Unknown' && sr.siteAddress) {
-            city = sr.siteAddress.trim();
+          if (city === 'Unknown' && srAny.siteAddress) {
+            city = srAny.siteAddress.trim();
           }
 
           // Debug logging
@@ -3560,7 +3619,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               customerName: customer?.companyName,
               containerFound: !!container,
               containerDepot: container?.depot,
-              siteAddress: sr.siteAddress,
+              siteAddress: srAny.siteAddress,
               extractedCity: city,
               finalClientName: clientName
             });
@@ -3623,7 +3682,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const nextService = scheduledServices[0];
         let nextLocation = null;
         if (nextService) {
-          const container = nextService.container || await storage.getContainer(nextService.containerId).catch(() => null);
+          const nextServiceAny = nextService as any; // Type assertion for optional properties
+          const container = nextServiceAny.container || await storage.getContainer(nextService.containerId).catch(() => null);
           nextLocation = {
             city: container?.depot || container?.currentLocation?.city || 'Unknown',
             scheduledDate: nextService.scheduledDate,
@@ -4343,7 +4403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { startDate, endDate } = req.query;
 
       // Build date constraints
-      const dateFilter = [];
+      const dateFilter: SQL<unknown>[] = [];
       if (startDate) {
         dateFilter.push(sql`${serviceRequests.updatedAt} >= ${new Date(startDate as string).toISOString()}`);
       }
@@ -4395,7 +4455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               sql`${serviceRequests.workType} ILIKE '%PM%'`,
               sql`${serviceRequests.jobOrder} ILIKE '%PM%'`,
               sql`${serviceRequests.issueDescription} ILIKE '%PM%'`
-            )),
+            ) as SQL<unknown>),
             ...dateFilter
           ));
         const servicesDone = Number(servicesDoneQuery[0]?.count || 0);
@@ -4431,7 +4491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .from(serviceRequests)
           .where(and(
             eq(serviceRequests.assignedTechnicianId, techId),
-            inArray(serviceRequests.status, ['assigned', 'in_progress', 'awaiting_parts']),
+            sql`${serviceRequests.status} IN ('assigned', 'in_progress', 'awaiting_parts')`,
             ...dateFilter
           ));
         const pendingRequestsCount = Number(pendingQuery[0]?.count || 0);
@@ -4599,6 +4659,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(technician);
     } catch (error) {
       res.status(500).json({ error: "Failed to update technician location" });
+    }
+  });
+
+  // Expense History Routes
+  app.get("/api/technicians/expenses", authenticateUser, async (req, res) => {
+    try {
+      const { year, month, technicianId } = req.query;
+      
+      if (!year) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Year is required' 
+        });
+      }
+      
+      const expenses = await storage.getTechnicianExpenseHistory({
+        year: parseInt(year as string),
+        month: month ? parseInt(month as string) : undefined,
+        technicianId: technicianId as string
+      });
+      
+      // Calculate totals
+      const totals = {
+        totalDaysWorked: expenses.reduce((sum, e) => sum + e.daysWorked, 0),
+        totalServicesCompleted: expenses.reduce((sum, e) => sum + e.servicesCompleted, 0),
+        totalCost: expenses.reduce((sum, e) => sum + e.totalCost, 0),
+        totalWages: expenses.reduce((sum, e) => sum + e.totalWages, 0),
+        totalAllowances: expenses.reduce((sum, e) => sum + e.totalAllowances, 0)
+      };
+      
+      res.json({
+        success: true,
+        expenses,
+        totals
+      });
+    } catch (error) {
+      console.error('Error fetching expense history:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch expenses' });
+    }
+  });
+
+  app.get("/api/technicians/expenses/yearly", authenticateUser, async (req, res) => {
+    try {
+      const { year } = req.query;
+      
+      if (!year) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Year is required' 
+        });
+      }
+      
+      const summary = await storage.getTechnicianYearlySummary(parseInt(year as string));
+      
+      res.json({
+        success: true,
+        summary,
+        totalCost: summary.reduce((sum, s) => sum + s.totalCost, 0)
+      });
+    } catch (error) {
+      console.error('Error fetching yearly summary:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch summary' });
+    }
+  });
+
+  app.get("/api/technicians/:id/expenses/monthly", authenticateUser, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { year } = req.query;
+      
+      if (!year) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Year is required' 
+        });
+      }
+      
+      const breakdown = await storage.getTechnicianMonthlyBreakdown(
+        id, 
+        parseInt(year as string)
+      );
+      
+      res.json({
+        success: true,
+        breakdown,
+        totalCost: breakdown.reduce((sum, b) => sum + b.totalCost, 0)
+      });
+    } catch (error) {
+      console.error('Error fetching monthly breakdown:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch breakdown' });
     }
   });
 
@@ -5641,16 +5791,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[ADMIN PASSWORD RESET] Error:", error);
       res.status(500).json({ error: "Failed to reset password" });
-    }
-  });
-
-  // Inventory routes
-  app.get("/api/inventory", authenticateUser, async (req, res, next) => {
-    try {
-      // This would need a getAllInventory method in storage
-      return next();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch inventory" });
     }
   });
 

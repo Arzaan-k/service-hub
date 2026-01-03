@@ -59,6 +59,8 @@ interface ServiceRequest {
   actualStartTime?: string;
   actualEndTime?: string;
   createdAt: string;
+  isDuplicate?: boolean;
+  duplicateCount?: number;
 }
 
 export default function ServiceRequests() {
@@ -95,14 +97,17 @@ export default function ServiceRequests() {
     queryFn: async () => (await apiRequest("GET", "/api/technicians")).json()
   });
 
+  // Only load containers when dialog is open (lazy loading for performance)
   const { data: allContainers } = useQuery<any[]>({
     queryKey: ["/api/containers"],
-    queryFn: async () => (await apiRequest("GET", "/api/containers")).json()
+    queryFn: async () => (await apiRequest("GET", "/api/containers")).json(),
+    enabled: newDialogOpen // Only fetch when creating new service request
   });
 
   const { data: allCustomers } = useQuery<any[]>({
     queryKey: ["/api/customers"],
-    queryFn: async () => (await apiRequest("GET", "/api/customers")).json()
+    queryFn: async () => (await apiRequest("GET", "/api/customers")).json(),
+    enabled: newDialogOpen // Only fetch when creating new service request
   });
 
   // Dependent filtering: when container is selected, show only its customer; when customer selected, filter containers
@@ -490,14 +495,36 @@ export default function ServiceRequests() {
                 const assignButtonLabel = requestHasTechnician ? "Change Technician" : "Assign Technician";
 
                 return (
-                <Card key={(request as any)?._id || request.id} className={`card-surface hover:shadow-soft transition-all overflow-visible ${request.status === 'completed' ? 'bg-green-50/80 dark:bg-green-900/20 border-green-200 dark:border-green-800' : ''}`}>
+                <Card key={(request as any)?._id || request.id} className={`card-surface hover:shadow-soft transition-all overflow-visible ${
+                  request.isDuplicate 
+                    ? 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-500' 
+                    : request.status === 'completed' 
+                      ? 'bg-green-50/80 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+                      : ''
+                }`}>
                   <CardContent className="p-6">
+                    {/* Duplicate Warning Banner */}
+                    {request.isDuplicate && (
+                      <div className="mb-4 p-3 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center gap-2">
+                        <AlertCircle className="h-5 w-5 text-amber-700 dark:text-amber-400 flex-shrink-0" />
+                        <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                          ⚠️ This container has {request.duplicateCount} active service requests
+                        </span>
+                      </div>
+                    )}
+                    
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="text-lg font-semibold font-mono">
                             <Link to={`/service-requests/${request.id}`}>{request.requestNumber}</Link>
                           </h3>
+                          {request.isDuplicate && (
+                            <Badge className="bg-amber-500 text-white flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              Duplicate ({request.duplicateCount}x)
+                            </Badge>
+                          )}
                           {getStatusBadge(request.status)}
                           <Badge className={`${getPriorityBadge(request.priority)} border rounded-full`}>
                             {request.priority}
@@ -519,7 +546,9 @@ export default function ServiceRequests() {
                           <div className="flex items-center gap-2 text-sm">
                             <Package className="h-4 w-4 text-muted-foreground" />
                             <span className="font-medium">Container:</span>
-                            <span className="font-mono">{request.container.containerCode}</span>
+                            <span className={`font-mono ${request.isDuplicate ? 'font-bold text-amber-700 dark:text-amber-400' : ''}`}>
+                              {request.container.containerCode}
+                            </span>
                           </div>
                         )}
                         {request.customer && (

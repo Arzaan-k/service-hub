@@ -18,6 +18,7 @@ import ThirdPartyTechnicianForm from "@/components/technicians/third-party-techn
 import { websocket } from "@/lib/websocket";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { TechnicianPerformance } from "@/components/technicians/technician-performance";
+import TechnicianExpenseHistory from "./technician-expense-history";
 
 interface Technician {
   id: string;
@@ -89,7 +90,7 @@ export default function Technicians() {
     setAuthReady(true);
   }, []);
 
-  const { data: technicians, isLoading, error } = useQuery({
+  const { data: technicians = [], isLoading, error } = useQuery<any[]>({
     queryKey: ["/api/technicians"],
     enabled: authReady && !!authToken,
     retry: false,
@@ -168,7 +169,7 @@ export default function Technicians() {
     };
   }, [queryClient, refetchAssignedServices]);
 
-  const { data: thirdPartyTechs, isLoading: isLoadingThirdParty, error: thirdPartyError } = useQuery({
+  const { data: thirdPartyTechs = [], isLoading: isLoadingThirdParty, error: thirdPartyError } = useQuery<any[]>({
     queryKey: ["/api/thirdparty-technicians"],
     enabled: authReady && !!authToken,
     retry: false,
@@ -507,9 +508,10 @@ export default function Technicians() {
           </div>
 
           <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+            <TabsList className="grid w-full grid-cols-3 lg:w-[600px]">
               <TabsTrigger value="overview">Technician Overview</TabsTrigger>
               <TabsTrigger value="performance">Performance</TabsTrigger>
+              <TabsTrigger value="expenses">Expense History</TabsTrigger>
             </TabsList>
 
 
@@ -762,7 +764,7 @@ export default function Technicians() {
                     </div>
                   );
                 })}
-                {technicians && (technicians as any[]).length === 0 && (
+                {technicians.length === 0 && (
                   <div className="text-center py-12 text-sm text-muted-foreground">
                     No internal technicians found.
                   </div>
@@ -926,6 +928,10 @@ export default function Technicians() {
 
             <TabsContent value="performance">
               <TechnicianPerformance />
+            </TabsContent>
+
+            <TabsContent value="expenses">
+              <TechnicianExpenseHistory />
             </TabsContent>
           </Tabs >
         </div >

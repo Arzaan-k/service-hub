@@ -915,6 +915,36 @@ export const serviceRequestRecordings = pgTable("service_request_recordings", {
 export const insertServiceRequestRemarkSchema = createInsertSchema(serviceRequestRemarks).omit({ id: true, createdAt: true } as any);
 export const insertServiceRequestRecordingSchema = createInsertSchema(serviceRequestRecordings).omit({ id: true, createdAt: true } as any);
 
+// Training Materials table
+export const trainingMaterials = pgTable("training_materials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 100 }),
+  fileType: varchar("file_type", { length: 50 }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileData: bytea("file_data").notNull(),
+  fileSize: integer("file_size").notNull(),
+  contentType: varchar("content_type", { length: 100 }).notNull(),
+  forClient: boolean("for_client").default(false),
+  forTechnician: boolean("for_technician").default(false),
+  uploadedBy: varchar("uploaded_by").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Training Views table
+export const trainingViews = pgTable("training_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  materialId: varchar("material_id").references(() => trainingMaterials.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").notNull(),
+  userRole: varchar("user_role", { length: 50 }).notNull(),
+  viewedAt: timestamp("viewed_at").defaultNow().notNull(),
+});
+
+export const insertTrainingMaterialSchema = createInsertSchema(trainingMaterials).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertTrainingViewSchema = createInsertSchema(trainingViews).omit({ id: true, viewedAt: true } as any);
+
 // Types (updated according to PRD)
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -968,6 +998,11 @@ export type ServiceRequestRemark = typeof serviceRequestRemarks.$inferSelect;
 export type InsertServiceRequestRemark = z.infer<typeof insertServiceRequestRemarkSchema>;
 export type ServiceRequestRecording = typeof serviceRequestRecordings.$inferSelect;
 export type InsertServiceRequestRecording = z.infer<typeof insertServiceRequestRecordingSchema>;
+// Training types
+export type TrainingMaterial = typeof trainingMaterials.$inferSelect;
+export type InsertTrainingMaterial = z.infer<typeof insertTrainingMaterialSchema>;
+export type TrainingView = typeof trainingViews.$inferSelect;
+export type InsertTrainingView = z.infer<typeof insertTrainingViewSchema>;
 // Location Log types
 export type LocationLog = typeof locationLogs.$inferSelect;
 export type InsertLocationLog = z.infer<typeof insertLocationLogSchema>;
